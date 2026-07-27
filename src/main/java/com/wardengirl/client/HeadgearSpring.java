@@ -48,6 +48,17 @@ public final class HeadgearSpring {
     private int lastTick = Integer.MIN_VALUE;
 
     /**
+     * Multiplier on {@code STIFFNESS} for this instance. 1.0 for the right tendril, slightly less
+     * for the left, so the two sides do not move as one rigid piece — see
+     * {@link AnimParams#HEADGEAR_ASYMMETRY}.
+     */
+    private final double stiffnessScale;
+
+    public HeadgearSpring(double stiffnessScale) {
+        this.stiffnessScale = stiffnessScale;
+    }
+
+    /**
      * Cap on catch-up steps after a pause (game paused, window unfocused, chunk reload). Without
      * it, a one-minute gap would run 1200 iterations in a single frame and the spring would arrive
      * having "rung" through the whole backlog. One second is enough to look continuous.
@@ -82,7 +93,7 @@ public final class HeadgearSpring {
         this.lastTick = tickCount;
         steps = Math.min(steps, MAX_CATCHUP_TICKS);
 
-        double stiffness = AnimParams.HEADGEAR_STIFFNESS.get();
+        double stiffness = AnimParams.HEADGEAR_STIFFNESS.get() * this.stiffnessScale;
         double damping = AnimParams.HEADGEAR_DAMPING.get();
         for (int s = 0; s < steps; s++) {
             for (int i = 0; i < 3; i++) {
@@ -108,6 +119,11 @@ public final class HeadgearSpring {
         double raw = (interpolated - targetDeg) * AnimParams.HEADGEAR_AMPLITUDE.get();
         double max = Math.abs(AnimParams.HEADGEAR_MAX_ANGLE.get());
         return Math.max(-max, Math.min(max, raw));
+    }
+
+    /** The stiffness this instance actually integrates with, for the stability report. */
+    public double effectiveStiffness() {
+        return AnimParams.HEADGEAR_STIFFNESS.get() * this.stiffnessScale;
     }
 
     /** Spring angle, x/y/z degrees — for the trace readback. */

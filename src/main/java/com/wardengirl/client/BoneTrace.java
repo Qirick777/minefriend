@@ -18,7 +18,7 @@ import java.util.Map;
  * them. The bug was precisely a bone moving that nobody expected to move, so the one dump that
  * could have caught it was the one that had been narrowed away.
  *
- * <p>So: <b>9 bones × 3 axes, unconditionally.</b> "This motion only uses these bones" is an
+ * <p>So: <b>10 bones × 3 axes, unconditionally.</b> "This motion only uses these bones" is an
  * assumption, and assumptions are where bugs live. Narrowing the dump to match the assumption
  * guarantees the dump can never contradict it. The same now applies to positions, which had been
  * narrowed to root and body for exactly the reasoning this paragraph forbids.
@@ -41,7 +41,7 @@ import java.util.Map;
  * Angles do not show a grounding problem. hip zRot of 0.8° sits comfortably inside every band the
  * checks above can express, and still swings the sole through 0.17px because the foot is 12px from
  * the hip pivot. So the sole's own travel is measured directly — see
- * {@link #footDisplacement}. This is not a T2 one-off: it is the check that answers "do the feet
+ * {@link #accumulateFoot}. This is not a T2 one-off: it is the check that answers "do the feet
  * stay planted", and walking (T5), the sonic boom (T8) and the dash (T9) all need it.
  */
 public final class BoneTrace {
@@ -66,56 +66,79 @@ public final class BoneTrace {
      * growing amplitude while chasing a moving head can still produce bone values inside the clamp.
      * Divergence shows up in the velocity, which is why it is recorded separately.
      */
-    private static final double[] SPRING_ANGLE_MIN = new double[3];
-    private static final double[] SPRING_ANGLE_MAX = new double[3];
-    private static final double[] SPRING_VEL_MIN = new double[3];
-    private static final double[] SPRING_VEL_MAX = new double[3];
-    /** Largest |velocity| seen in the first and the last quarter of the window, per axis. */
-    private static final double[] SPRING_VEL_EARLY = new double[3];
-    private static final double[] SPRING_VEL_LATE = new double[3];
-    private static boolean springSeen = false;
+    private static final int SIDES = 2;
+    private static final String[] SIDE_NAME = {"오른쪽", "왼쪽"};
+    private static final double[][] SPRING_ANGLE_MIN = new double[SIDES][3];
+    private static final double[][] SPRING_ANGLE_MAX = new double[SIDES][3];
+    private static final double[][] SPRING_VEL_MIN = new double[SIDES][3];
+    private static final double[][] SPRING_VEL_MAX = new double[SIDES][3];
+    private static final double[] SPRING_STIFFNESS = new double[SIDES];
+    private static final boolean[] SPRING_SEEN = new boolean[SIDES];
     private static int totalTicks = 0;
 
-    /** Called by the model once per frame while a trace is running. */
-    public static void noteSpring(double[] angles, double[] velocities) {
-        if (remainingTicks <= 0) {
+    /**
+     * How often the {@code MAX_ANGLE} clamp actually engaged, per side and axis.
+     *
+     * <p>Requested after the clamp was raised 35 → 45: a clamp is a safety net, and a safety net
+     * that carries load every swing is really a limit. The bone's min/max cannot answer this —
+     * reaching exactly ±MAX once looks the same as sitting on it for half the window.
+     */
+    private static final int[][] CLAMP_HITS = new int[SIDES][3];
+    private static final int[] SPRING_SAMPLES = new int[SIDES];
+
+    /** Called by the model once per frame per side while a trace is running. */
+    public static void noteSpring(int side, double[] angles, double[] velocities,
+                                  double effectiveStiffness) {
+        if (remainingTicks <= 0 || side < 0 || side >= SIDES) {
             return;
         }
+        SPRING_STIFFNESS[side] = effectiveStiffness;
+        SPRING_SAMPLES[side]++;
+        double amplitude = AnimParams.HEADGEAR_AMPLITUDE.get();
+        double max = Math.abs(AnimParams.HEADGEAR_MAX_ANGLE.get());
         for (int i = 0; i < 3; i++) {
-            if (!springSeen) {
-                SPRING_ANGLE_MIN[i] = angles[i];
-                SPRING_ANGLE_MAX[i] = angles[i];
-                SPRING_VEL_MIN[i] = velocities[i];
-                SPRING_VEL_MAX[i] = velocities[i];
+            if (!SPRING_SEEN[side]) {
+                SPRING_ANGLE_MIN[side][i] = angles[i];
+                SPRING_ANGLE_MAX[side][i] = angles[i];
+                SPRING_VEL_MIN[side][i] = velocities[i];
+                SPRING_VEL_MAX[side][i] = velocities[i];
             }
-            SPRING_ANGLE_MIN[i] = Math.min(SPRING_ANGLE_MIN[i], angles[i]);
-            SPRING_ANGLE_MAX[i] = Math.max(SPRING_ANGLE_MAX[i], angles[i]);
-            SPRING_VEL_MIN[i] = Math.min(SPRING_VEL_MIN[i], velocities[i]);
-            SPRING_VEL_MAX[i] = Math.max(SPRING_VEL_MAX[i], velocities[i]);
-            double speed = Math.abs(velocities[i]);
-            if (sampleCount <= totalTicks / 4) {
-                SPRING_VEL_EARLY[i] = Math.max(SPRING_VEL_EARLY[i], speed);
-            } else if (sampleCount >= totalTicks * 3 / 4) {
-                SPRING_VEL_LATE[i] = Math.max(SPRING_VEL_LATE[i], speed);
+            SPRING_ANGLE_MIN[side][i] = Math.min(SPRING_ANGLE_MIN[side][i], angles[i]);
+            SPRING_ANGLE_MAX[side][i] = Math.max(SPRING_ANGLE_MAX[side][i], angles[i]);
+            SPRING_VEL_MIN[side][i] = Math.min(SPRING_VEL_MIN[side][i], velocities[i]);
+            SPRING_VEL_MAX[side][i] = Math.max(SPRING_VEL_MAX[side][i], velocities[i]);
+        }
+        SPRING_SEEN[side] = true;
+        // The clamp is evaluated on the raw pre-clamp value, which is why the head target has to be
+        // re-derived here rather than read back off the bone: the bone only ever shows the clamped
+        // result and could not distinguish "reached the limit" from "was held at the limit".
+        double[] head = LAST.get(Bones.HEAD);
+        if (head != null) {
+            for (int i = 0; i < 3; i++) {
+                double raw = (angles[i] - head[i]) * amplitude;
+                if (Math.abs(raw) >= max - 1e-6) {
+                    CLAMP_HITS[side][i]++;
+                }
             }
         }
-        springSeen = true;
     }
 
     public static void start(int ticks) {
         remainingTicks = ticks;
         totalTicks = ticks;
         sampleCount = 0;
-        springSeen = false;
-        java.util.Arrays.fill(SPRING_VEL_EARLY, 0.0D);
-        java.util.Arrays.fill(SPRING_VEL_LATE, 0.0D);
+        java.util.Arrays.fill(SPRING_SEEN, false);
+        java.util.Arrays.fill(SPRING_SAMPLES, 0);
+        for (int side = 0; side < SIDES; side++) {
+            java.util.Arrays.fill(CLAMP_HITS[side], 0);
+        }
         MIN.clear();
         MAX.clear();
         FIRST.clear();
         LAST.clear();
         MONOTONIC.clear();
         FOOT.clear();
-        WardenGirlMod.LOGGER.info("[trace] 시작 — {}틱 동안 본 9개 × 3축 전부 기록한다", ticks);
+        WardenGirlMod.LOGGER.info("[trace] 시작 — {}틱 동안 본 10개 × 3축 전부 기록한다", ticks);
     }
 
     public static boolean isRunning() {
@@ -125,8 +148,8 @@ public final class BoneTrace {
     /**
      * One sample.
      *
-     * @param rotations bone -> {x,y,z} in degrees, all nine bones
-     * @param positions bone -> {x,y,z} in model pixels, all nine bones
+     * @param rotations bone -> {x,y,z} in degrees, all ten bones
+     * @param positions bone -> {x,y,z} in model pixels, all ten bones
      */
     public static void sample(Map<String, double[]> rotations, Map<String, double[]> positions) {
         if (remainingTicks <= 0) {
@@ -371,10 +394,12 @@ public final class BoneTrace {
         // oscillator is 2π/√STIFFNESS ticks (≈12.6 at 0.25), which is what the drift guard needs.
         double springPeriod = 2 * Math.PI / Math.sqrt(Math.max(1e-6, AnimParams.HEADGEAR_STIFFNESS.get()));
         double springMax = Math.abs(AnimParams.HEADGEAR_MAX_ANGLE.get());
-        m.put(Bones.HEADGEAR, new Expect[]{
-                Expect.band(0, springMax, springPeriod),
-                Expect.band(0, springMax, springPeriod),
-                Expect.band(0, springMax, springPeriod)});
+        for (String tendril : Bones.HEADGEAR) {
+            m.put(tendril, new Expect[]{
+                    Expect.band(0, springMax, springPeriod),
+                    Expect.band(0, springMax, springPeriod),
+                    Expect.band(0, springMax, springPeriod)});
+        }
         // arm zRot carries an outward-only bias: amp*(1+sin) spans 0 .. 2*amp.
         m.put(Bones.ARM_RIGHT, new Expect[]{
                 Expect.constant(AnimParams.OFFSET_ARM_R_X.get()),
@@ -402,7 +427,7 @@ public final class BoneTrace {
         Map<String, Expect[]> expect = expectations();
         int fails = 0;
 
-        WardenGirlMod.LOGGER.info("[trace] === {}샘플 수집 완료. 본 9개 × 3축 판정 ===", sampleCount);
+        WardenGirlMod.LOGGER.info("[trace] === {}샘플 수집 완료. 본 10개 × 3축 판정 ===", sampleCount);
         WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
                 "[trace] %-10s %-5s %10s %10s %-6s %-26s %s",
                 "본", "축", "최소", "최대", "종류", "기대", "판정"));
@@ -464,7 +489,7 @@ public final class BoneTrace {
         fails += reportFeet();
 
         if (fails == 0) {
-            WardenGirlMod.LOGGER.info("[trace] === 판정: 전 항목 통과 (회전 27 + 스프링 3 + 발끝 2) ===");
+            WardenGirlMod.LOGGER.info("[trace] === 판정: 전 항목 통과 (회전 30 + 스프링 좌우 + 발끝 2) ===");
         } else {
             WardenGirlMod.LOGGER.error("[trace] === 판정: 실패 {}개 ===", fails);
         }
@@ -501,52 +526,79 @@ public final class BoneTrace {
      * the spring was actually driven. They are <em>information</em>, not verdicts.
      */
     private static int reportSpring() {
-        if (!springSeen) {
-            WardenGirlMod.LOGGER.warn("[trace] 4.5 스프링 표본 없음 — headgear 스프링이 돌지 않았다");
+        if (!SPRING_SEEN[0] && !SPRING_SEEN[1]) {
+            WardenGirlMod.LOGGER.warn("[trace] 4.5 스프링 표본 없음 — 감각 촉수 스프링이 돌지 않았다");
             return 1;
         }
-        double k = AnimParams.HEADGEAR_STIFFNESS.get();
+        int fails = 0;
         double c = AnimParams.HEADGEAR_DAMPING.get();
-        boolean stable = k > 0 && k < 4 - 2 * c && c > 0 && c < 2;
-        double det = 1 - c;
-        double tr = 2 - c - k;
-        double disc = tr * tr - 4 * det;
-        double magnitude = disc < 0 ? Math.sqrt(Math.abs(det))
-                : Math.max(Math.abs((tr + Math.sqrt(disc)) / 2), Math.abs((tr - Math.sqrt(disc)) / 2));
-        String mode;
-        if (disc < 0) {
-            double period = 2 * Math.PI / Math.atan2(Math.sqrt(-disc) / 2, tr / 2);
-            double settle = magnitude >= 1 ? Double.POSITIVE_INFINITY
-                    : Math.log(0.01) / Math.log(magnitude);
-            mode = String.format(Locale.ROOT, "감쇠진동 주기 %.1f틱, 1%%까지 %.0f틱", period, settle);
-        } else {
-            mode = "과감쇠 (진동 없음)";
-        }
-        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                "[trace] --- 4.5 스프링 안정성 (해석): STIFFNESS=%.3f DAMPING=%.3f  |λ|=%.4f  %s  %s ---",
-                k, c, magnitude, mode,
-                stable ? "OK 안정 (Jury 조건 충족)" : "FAIL 발산 (Jury 조건 위반)"));
-
-        WardenGirlMod.LOGGER.info("[trace] --- 4.5 스프링 실측 (판정 아님, 참고값) ---");
-        String[] axis = {"x", "y", "z"};
-        String[] headAxis = {"head xRot", "head yRot", "head zRot"};
         double[] headMin = MIN.get(Bones.HEAD);
         double[] headMax = MAX.get(Bones.HEAD);
-        for (int i = 0; i < 3; i++) {
-            double springSpan = SPRING_ANGLE_MAX[i] - SPRING_ANGLE_MIN[i];
-            double headSpan = headMin == null ? 0 : headMax[i] - headMin[i];
-            String overshoot = headSpan <= 1e-6
-                    ? "  (입력이 거의 없어 초과폭 무의미)"
-                    : String.format(Locale.ROOT, "  입력폭 %.3f 대비 초과 %+.1f%%",
-                            headSpan, 100.0D * (springSpan / headSpan - 1.0D));
+        String[] axis = {"x", "y", "z"};
+        String[] headAxis = {"head xRot", "head yRot", "head zRot"};
+
+        for (int side = 0; side < SIDES; side++) {
+            if (!SPRING_SEEN[side]) {
+                WardenGirlMod.LOGGER.warn("[trace] 4.5 스프링 {} 표본 없음", SIDE_NAME[side]);
+                fails++;
+                continue;
+            }
+            double k = SPRING_STIFFNESS[side];
+            boolean stable = k > 0 && k < 4 - 2 * c && c > 0 && c < 2;
+            if (!stable) {
+                fails++;
+            }
+            double det = 1 - c;
+            double tr = 2 - c - k;
+            double disc = tr * tr - 4 * det;
+            double magnitude = disc < 0 ? Math.sqrt(Math.abs(det))
+                    : Math.max(Math.abs((tr + Math.sqrt(disc)) / 2),
+                               Math.abs((tr - Math.sqrt(disc)) / 2));
+            String mode;
+            if (disc < 0) {
+                double period = 2 * Math.PI / Math.atan2(Math.sqrt(-disc) / 2, tr / 2);
+                double settle = magnitude >= 1 ? Double.POSITIVE_INFINITY
+                        : Math.log(0.01) / Math.log(magnitude);
+                mode = String.format(Locale.ROOT, "감쇠진동 주기 %.1f틱, 1%%까지 %.0f틱", period, settle);
+            } else {
+                mode = "과감쇠 (진동 없음)";
+            }
             WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                    "[trace] 스프링 %s축  각도 %+8.3f ~ %+8.3f (폭 %.3f)   속도 %+7.3f ~ %+7.3f   "
-                            + "|속도| 초반 %.3f → 후반 %.3f   [%s]%s",
-                    axis[i], SPRING_ANGLE_MIN[i], SPRING_ANGLE_MAX[i], springSpan,
-                    SPRING_VEL_MIN[i], SPRING_VEL_MAX[i],
-                    SPRING_VEL_EARLY[i], SPRING_VEL_LATE[i], headAxis[i], overshoot));
+                    "[trace] --- 4.5 스프링 %s 안정성(해석): k=%.4f c=%.3f  |λ|=%.4f  %s  %s ---",
+                    SIDE_NAME[side], k, c, magnitude, mode,
+                    stable ? "OK 안정 (Jury 조건 충족)" : "FAIL 발산 (Jury 조건 위반)"));
+
+            int samples = Math.max(1, SPRING_SAMPLES[side]);
+            for (int i = 0; i < 3; i++) {
+                double springSpan = SPRING_ANGLE_MAX[side][i] - SPRING_ANGLE_MIN[side][i];
+                double headSpan = headMin == null ? 0 : headMax[i] - headMin[i];
+                String overshoot = headSpan <= 1e-6
+                        ? "입력 거의 없음"
+                        : String.format(Locale.ROOT, "입력폭 %.3f 대비 초과 %+.1f%%",
+                                headSpan, 100.0D * (springSpan / headSpan - 1.0D));
+                double hitPct = 100.0D * CLAMP_HITS[side][i] / samples;
+                WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                        "[trace] 스프링 %s %s축  각도 %+9.3f ~ %+9.3f (폭 %.3f)  속도 %+7.3f ~ %+7.3f  "
+                                + "[%s] %s  클램프 접촉 %d/%d (%.1f%%)",
+                        SIDE_NAME[side], axis[i],
+                        SPRING_ANGLE_MIN[side][i], SPRING_ANGLE_MAX[side][i], springSpan,
+                        SPRING_VEL_MIN[side][i], SPRING_VEL_MAX[side][i],
+                        headAxis[i], overshoot, CLAMP_HITS[side][i], samples, hitPct));
+            }
         }
-        return stable ? 0 : 1;
+        // The whole point of splitting the bone: identical springs would produce identical output
+        // and the two tendrils would move as one rigid piece.
+        if (SPRING_SEEN[0] && SPRING_SEEN[1]) {
+            double diff = 0;
+            for (int i = 0; i < 3; i++) {
+                diff = Math.max(diff, Math.abs(SPRING_ANGLE_MAX[0][i] - SPRING_ANGLE_MAX[1][i]));
+            }
+            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                    "[trace] 좌우 비대칭 확인: k 오른쪽 %.4f / 왼쪽 %.4f, 각도 최대치 차 %.4f도  %s",
+                    SPRING_STIFFNESS[0], SPRING_STIFFNESS[1], diff,
+                    diff > 1e-6 ? "OK 좌우가 다르게 움직인다" : "주의: 좌우가 완전히 동일하다"));
+        }
+        return fails;
     }
 
     private static int reportFeet() {

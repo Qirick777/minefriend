@@ -21,15 +21,24 @@ public final class Bones {
     public static final String HIP = "hip";
     public static final String BODY = "body";
     public static final String HEAD = "head";
-    public static final String HEADGEAR = "headgear";
+    /**
+     * The warden's sensory tendrils. Split left/right after T3 so the two springs can run
+     * independently — with one bone both halves move identically, which reads as machinery.
+     */
+    public static final String HEADGEAR_RIGHT = "headgear_right";
+    public static final String HEADGEAR_LEFT = "headgear_left";
     public static final String ARM_RIGHT = "arm_right";
     public static final String ARM_LEFT = "arm_left";
     public static final String LEG_RIGHT = "leg_right";
     public static final String LEG_LEFT = "leg_left";
 
-    /** All nine, in the hierarchy order given by the design doc Part 4.0 tree. */
+    /** All ten, in the hierarchy order given by the design doc Part 4.0 tree. */
     public static final List<String> ALL = List.of(
-            ROOT, HIP, BODY, HEAD, HEADGEAR, ARM_RIGHT, ARM_LEFT, LEG_RIGHT, LEG_LEFT);
+            ROOT, HIP, BODY, HEAD, HEADGEAR_RIGHT, HEADGEAR_LEFT,
+            ARM_RIGHT, ARM_LEFT, LEG_RIGHT, LEG_LEFT);
+
+    /** The two spring-driven tendrils, right then left. */
+    public static final List<String> HEADGEAR = List.of(HEADGEAR_RIGHT, HEADGEAR_LEFT);
 
     /**
      * Default axis-test angle.
@@ -101,7 +110,8 @@ public final class Bones {
             // root carries position only (bounce, recoil travel) and has no rotation keyframes.
             case ROOT -> "(root 는 위치 전용 — 회전 키프레임 없음. 규약은 적용되나 미사용)";
             // headgear obeys the convention but is driven by the 4.5 spring, never by keyframes.
-            case HEADGEAR -> "(headgear 는 키프레임 없음 — 4.5 스프링 출력에만 규약 적용)";
+            case HEADGEAR_RIGHT, HEADGEAR_LEFT ->
+                    "(감각 촉수는 키프레임 없음 — 4.5 스프링 출력에만 규약 적용)";
             default -> "(알 수 없는 본)";
         };
     }

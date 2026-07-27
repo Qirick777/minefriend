@@ -94,7 +94,9 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         // offsets are deliberately skipped. Otherwise a "+45° on one axis" reading would silently
         // be 45° plus a 4° offset, and the number on screen would not be the number reported.
         if (applyAxisTest(animatable)) {
-            springs.computeIfAbsent(animatable.getId(), k -> new HeadgearSpring()).reset();
+            for (HeadgearSpring spring : springsFor(animatable)) {
+                spring.reset();
+            }
             return;
         }
         applyStaticOffsets();
@@ -161,37 +163,48 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      * single spring instance would have all of them driving the same state — two mobs looking in
      * different directions would fight over one decoration angle. Keyed by entity id instead.
      */
-    private final Map<Integer, HeadgearSpring> springs = new HashMap<>();
+    private final Map<Integer, HeadgearSpring[]> springs = new HashMap<>();
 
     /** Bounded so despawned entities cannot leak; springs are cheap to re-seed. */
     private static final int MAX_TRACKED_ENTITIES = 64;
 
-    private void applyHeadgearSpring(WardenGirlEntity animatable) {
-        Optional<GeoBone> maybeHeadgear = getBone(Bones.HEADGEAR);
-        Optional<GeoBone> maybeHead = getBone(Bones.HEAD);
-        if (maybeHeadgear.isEmpty() || maybeHead.isEmpty()) {
-            return;
-        }
+    /** {right, left}, in the order of {@link Bones#HEADGEAR}. */
+    private HeadgearSpring[] springsFor(WardenGirlEntity animatable) {
         if (this.springs.size() > MAX_TRACKED_ENTITIES) {
             this.springs.clear();
         }
-        HeadgearSpring spring =
-                this.springs.computeIfAbsent(animatable.getId(), k -> new HeadgearSpring());
+        return this.springs.computeIfAbsent(animatable.getId(), k -> new HeadgearSpring[]{
+                new HeadgearSpring(1.0D),
+                new HeadgearSpring(1.0D - AnimParams.HEADGEAR_ASYMMETRY.get())});
+    }
 
+    private void applyHeadgearSpring(WardenGirlEntity animatable) {
+        Optional<GeoBone> maybeHead = getBone(Bones.HEAD);
+        if (maybeHead.isEmpty()) {
+            return;
+        }
         // head's rotation *after* C1, the static offset and the look addition — the decoration is
         // lagging behind the pose actually being drawn, not behind some earlier stage of it.
         double[] target = AxisConvention.readDegrees(maybeHead.get());
-        spring.advanceTo(animatable.tickCount, target);
-
         float partialTick = Minecraft.getInstance().getPartialTick();
-        GeoBone headgear = maybeHeadgear.get();
-        // ASSIGNED, not added — see HeadgearSpring's class doc. This is what lets headgear keep
-        // its Part 10.4 status of having no animation channel at all.
-        headgear.setRotX(AxisConvention.toRad(spring.output(0, partialTick, target[0])));
-        headgear.setRotY(AxisConvention.toRad(spring.output(1, partialTick, target[1])));
-        headgear.setRotZ(AxisConvention.toRad(spring.output(2, partialTick, target[2])));
+        HeadgearSpring[] pair = springsFor(animatable);
 
-        BoneTrace.noteSpring(spring.angles(), spring.velocities());
+        for (int side = 0; side < 2; side++) {
+            Optional<GeoBone> maybeBone = getBone(Bones.HEADGEAR.get(side));
+            if (maybeBone.isEmpty()) {
+                continue;
+            }
+            HeadgearSpring spring = pair[side];
+            spring.advanceTo(animatable.tickCount, target);
+            GeoBone bone = maybeBone.get();
+            // ASSIGNED, not added — see HeadgearSpring's class doc. This is what lets the tendrils
+            // keep their Part 10.4 status of having no animation channel at all.
+            bone.setRotX(AxisConvention.toRad(spring.output(0, partialTick, target[0])));
+            bone.setRotY(AxisConvention.toRad(spring.output(1, partialTick, target[1])));
+            bone.setRotZ(AxisConvention.toRad(spring.output(2, partialTick, target[2])));
+            BoneTrace.noteSpring(side, spring.angles(), spring.velocities(),
+                    spring.effectiveStiffness());
+        }
     }
 
     private long lastParamGeneration = -1L;

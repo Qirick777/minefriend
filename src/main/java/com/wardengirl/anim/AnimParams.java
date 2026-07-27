@@ -27,10 +27,15 @@ import java.util.Map;
  *
  * <h2>Presets</h2>
  *
- * <p>Every parameter carries five levels on a geometric scale — <b>×0.25 / ×0.5 / ×1 / ×2 / ×4</b>
- * of its default. Geometric rather than linear because the question being answered is "what order
- * of magnitude is right", and equal ratios are what the eye actually compares. Nudging a default
- * by ±10% cannot answer that; seeing 0.1 next to 1.6 can.
+ * <p>Preset levels are a geometric scale — <b>×0.25 / ×0.5 / ×1 / ×2 / ×4</b> of the default.
+ * Geometric rather than linear because the question being answered is "what order of magnitude is
+ * right", and equal ratios are what the eye actually compares. Nudging a default by ±10% cannot
+ * answer that; seeing 0.1 next to 1.6 can.
+ *
+ * <p><b>The sweep applies to oscillation amplitudes only</b> — breathing, sway, weight shift,
+ * bounce. Static pose offsets and rate constants are excluded: see {@link Param#presetScaled}.
+ * Those are shapes and ratios, not magnitudes, and ×4 on them produces a different pose or a
+ * divergent spring rather than a bigger version of the same motion.
  *
  * <p>Units are degrees for rotations, pixels for positions, and ticks for periods and phase
  * delays, per Part 4.0.3. Nothing here is "degrees of phase per tick" — the json divides 360 by
@@ -211,18 +216,23 @@ public final class AnimParams {
             "deg", "T2", "체중 이동에 대한 머리 반대 보정 (5.27틱 지연 = 79틱에서 -24°)", "head");
 
     // ---- 4.3.4 기본 자세 오프셋 (정적, C1 과 별개로 상시 가산) --------------------------------------
+    //
+    // None of these are preset-swept. A static pose offset is a SHAPE, not a magnitude: turning the
+    // 안짱 from 2 degrees into 8 is not searching an amplitude range, it is standing differently —
+    // and it measurably broke the grounding, driving the sole corner from 0.0987px to 0.3946px.
+    // The preset sweep keeps only the oscillation amplitudes it was designed to answer for.
 
-    public static final Param OFFSET_ARM_R_X = add("offset_arm_right_x", null, 4.0D,
+    public static final Param OFFSET_ARM_R_X = addFixed("offset_arm_right_x", null, 4.0D,
             "deg", "T2", "오른팔을 힘 빼고 살짝 앞으로", "arm_right");
-    public static final Param OFFSET_ARM_L_X = add("offset_arm_left_x", null, 4.0D,
+    public static final Param OFFSET_ARM_L_X = addFixed("offset_arm_left_x", null, 4.0D,
             "deg", "T2", "왼팔을 힘 빼고 살짝 앞으로", "arm_left");
-    public static final Param OFFSET_LEG_R_Y = add("offset_leg_right_y", null, 2.0D,
+    public static final Param OFFSET_LEG_R_Y = addFixed("offset_leg_right_y", null, 2.0D,
             "deg", "T2", "오른발 안짱", "leg_right");
-    public static final Param OFFSET_LEG_L_Y = add("offset_leg_left_y", null, -2.0D,
+    public static final Param OFFSET_LEG_L_Y = addFixed("offset_leg_left_y", null, -2.0D,
             "deg", "T2", "왼발 안짱", "leg_left");
-    public static final Param OFFSET_HEAD_X = add("offset_head_x", null, -3.0D,
+    public static final Param OFFSET_HEAD_X = addFixed("offset_head_x", null, -3.0D,
             "deg", "T2", "목 앞으로", "head");
-    public static final Param OFFSET_BODY_X = add("offset_body_x", null, -1.5D,
+    public static final Param OFFSET_BODY_X = addFixed("offset_body_x", null, -1.5D,
             "deg", "T2", "어깨 앞으로", "body");
 
     // ---- 4.5.1 headgear 감쇠 스프링 (T3) --------------------------------------------------------
@@ -232,13 +242,34 @@ public final class AnimParams {
     // and not the spring angle itself. Applying the angle would turn the decoration twice.
 
     public static final Param HEADGEAR_STIFFNESS = addFixed("headgear_stiffness", null, 0.25D,
-            "계수", "T3", "스프링 강성. 클수록 빠르게 따라온다. 4.5.2 상태별 전환 대상", "headgear");
+            "계수", "T3", "스프링 강성. 클수록 빠르게 따라온다. 4.5.2 상태별 전환 대상", "headgear_right", "headgear_left");
     public static final Param HEADGEAR_DAMPING = addFixed("headgear_damping", null, 0.35D,
-            "계수", "T3", "감쇠. 발산하면 올린다. 1.0 을 넘기면 속도 항의 부호가 매 틱 뒤집혀 발산한다", "headgear");
+            "계수", "T3", "감쇠. 발산하면 올린다. 1.0 을 넘기면 속도 항의 부호가 매 틱 뒤집혀 발산한다", "headgear_right", "headgear_left");
     public static final Param HEADGEAR_AMPLITUDE = add("headgear_amplitude", null, 1.3D,
-            "배율", "T3", "지연 오차분에 곱하는 배율. 장식이 과장되게 휘청이는 정도", "headgear");
-    public static final Param HEADGEAR_MAX_ANGLE = add("headgear_max_angle", null, 35.0D,
-            "deg", "T3", "스프링 출력 클램프. 장식이 머리를 뚫고 돌아가는 것을 막는다", "headgear");
+            "배율", "T3", "지연 오차분에 곱하는 배율. 장식이 과장되게 휘청이는 정도", "headgear_right", "headgear_left");
+    public static final Param HEADGEAR_MAX_ANGLE = add("headgear_max_angle", null, 45.0D,
+            "deg", "T3",
+            "스프링 출력 클램프. 35 에서는 기본 AMPLITUDE 만으로도 pitch 스윙에서 클램프에 닿아 "
+                    + "튜닝 여지가 없었다. 클램프는 안전장치이지 상시 제한이 아니다 (35 → 45)",
+            "headgear_right", "headgear_left");
+
+    /**
+     * Left-right stiffness split, as a fraction. Right uses {@code STIFFNESS}, left uses
+     * {@code STIFFNESS × (1 - HEADGEAR_ASYMMETRY)}.
+     *
+     * <p>Splitting the bone in two achieves <em>nothing</em> on its own: both springs take the same
+     * input (head rotation) and the same constants, so they produce bit-identical output and the
+     * two tendrils move as one rigid piece. Some difference has to exist for the split to mean
+     * anything. A stiffness ratio is the option with no steady-state cost — both sides still
+     * converge on the same equilibrium, only the transient differs — so the tendrils drift apart
+     * while moving and agree again when still.
+     *
+     * <p>Excluded from the preset sweep for the same reason as the stiffness it scales. Set it to
+     * 0 to make the two sides identical again.
+     */
+    public static final Param HEADGEAR_ASYMMETRY = addFixed("headgear_asymmetry", null, 0.06D,
+            "비율", "T3", "좌우 스프링 강성 차이. 왼쪽 = STIFFNESS × (1 - 이 값). 0 이면 좌우 동일",
+            "headgear_left");
 
     // ---- 4.6 시선 추적 (T3 에서는 가산과 클램프만. 감쇠 보간 · 근거리 반응은 T4) ------------------------
 
@@ -251,8 +282,10 @@ public final class AnimParams {
      */
     public static final Param LOOK_GAIN = addFixed("look_gain", null, 1.0D,
             "배율", "T3", "바닐라 시선을 head 본에 싣는 배율. 1.0 = 엔티티가 실제로 보는 방향 그대로", "head");
-    public static final Param LOOK_YAW_MAX = add("look_yaw_max", null, 70.0D,
-            "deg", "T3", "head yRot 클램프 (4.6). GeckoLib 이 이미 ±88° 로 좁혀 보내므로 이중 클램프다 — Part 11 참조",
+    public static final Param LOOK_YAW_MAX = add("look_yaw_max", null, 75.0D,
+            "deg", "T3",
+            "head yRot 클램프 (4.6). 바닐라 getMaxHeadYRot() 과 같은 값이라 기준이 명확하다. "
+                    + "70 이면 실측 6.0%, 75 면 4.0% 의 시간 동안 걸린다 (70/75/90 비교는 param set 으로)",
             "head");
     public static final Param LOOK_PITCH_MAX = add("look_pitch_max", null, 35.0D,
             "deg", "T3", "head xRot 클램프 (4.6)", "head");
