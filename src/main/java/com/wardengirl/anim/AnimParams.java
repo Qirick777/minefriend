@@ -125,39 +125,58 @@ public final class AnimParams {
         return p;
     }
 
-    // ---- 4.3.1 호흡 (주기 30tick) -------------------------------------------------------------
+    // ---- 4.3.1 호흡 -------------------------------------------------------------------------
+    //
+    // Periods, not speeds. The json divides 360 by the period, so what is tuned here is the number
+    // a human actually reasons about: "how many ticks per breath". Amplitude alone cannot fix an
+    // impression of "too fast", so the period has to be reachable from the command too.
 
-    public static final Param BREATH_SPEED = add("breath_speed", "wg_breath_speed", 12.0D,
-            "deg/tick", "T2", "호흡 위상 속도. 12 = 30틱 주기 (360/30)", "body", "head", "arm_right", "arm_left", "leg_right", "leg_left");
-    public static final Param BREATH_BODY_X = add("breath_body_x", "wg_breath_body_x", 0.7D,
+    public static final Param BREATH_PERIOD = add("breath_period", "wg_breath_period", 44.0D,
+            "tick", "T2", "호흡 주기. 44틱 ≈ 분당 27회 (30틱은 분당 40회로 사람의 3배 가까이 빨랐다)",
+            "body", "head", "arm_right", "arm_left");
+    public static final Param BREATH_BODY_X = add("breath_body_x", "wg_breath_body_x", 0.5D,
             "deg", "T2", "들숨에 상체를 뒤로 젖히는 진폭", "body");
-    public static final Param BREATH_BODY_Y = add("breath_body_y", "wg_breath_body_y", 0.15D,
+    public static final Param BREATH_BODY_Y = add("breath_body_y", "wg_breath_body_y", 0.12D,
             "px", "T2", "흉곽 상승", "body");
-    public static final Param BREATH_HEAD_X = add("breath_head_x", "wg_breath_head_x", 0.35D,
-            "deg", "T2", "머리 수평 유지 보정 (2틱 지연)", "head");
-    public static final Param BREATH_ARM_Z = add("breath_arm_z", "wg_breath_arm_z", 0.5D,
-            "deg", "T2", "들숨에 양팔이 바깥으로 (좌우 반대 부호)", "arm_right", "arm_left");
-    public static final Param BREATH_LEG_X = add("breath_leg_x", "wg_breath_leg_x", 0.2D,
-            "deg", "T2", "체중 후방 이동", "leg_right", "leg_left");
+    public static final Param BREATH_HEAD_X = add("breath_head_x", "wg_breath_head_x", 0.25D,
+            "deg", "T2", "머리 수평 유지 보정 (위상 -16°)", "head");
+    public static final Param BREATH_ARM_Z = add("breath_arm_z", "wg_breath_arm_z", 0.35D,
+            "deg", "T2", "들숨에 어깨가 바깥으로. 바깥 방향 바이어스 (관통 방지)", "arm_right", "arm_left");
 
-    // ---- 4.3.2 바운스 (주기 25tick) ------------------------------------------------------------
+    // ---- 4.3.2 바운스 ------------------------------------------------------------------------
 
-    public static final Param BOUNCE_SPEED = add("bounce_speed", "wg_bounce_speed", 7.2D,
-            "deg/tick", "T2", "바운스 위상 속도. 7.2 = 25틱 주기", "root");
-    /** Design doc Part 4.12: tuning priority #1. Slim model may make this read as too much. */
-    public static final Param BOUNCE_AMPLITUDE = add("bounce_amplitude", "wg_bounce_amp", 0.4D,
-            "px", "T2", "느긋한 상하 호흡감. 튜닝 1순위. 0.2~1.0 을 먼저 훑을 것", "root");
+    public static final Param BOUNCE_PERIOD = add("bounce_period", "wg_bounce_period", 25.0D,
+            "tick", "T2", "바운스 주기", "root");
+    /**
+     * Confirmed 0 for the idle pose by human judgement — a standing companion should not bob.
+     * The formula and the parameter are kept rather than deleted because T5 may want bounce while
+     * walking; this is "off when standing", not "removed".
+     */
+    public static final Param BOUNCE_AMPLITUDE = add("bounce_amplitude", "wg_bounce_amp", 0.0D,
+            "px", "T2", "정지 상태 기본값 0 (사용자 판정). 수식은 T5 이동 중 바운스 대비로 보존", "root");
 
-    // ---- 4.3.3 미세 흔들림 (주기 53tick) --------------------------------------------------------
+    // ---- 4.3.3 미세 흔들림 --------------------------------------------------------------------
 
-    public static final Param SWAY_SPEED = add("sway_speed", "wg_sway_speed", 6.8D,
-            "deg/tick", "T2", "미세 흔들림 위상 속도. 호흡·바운스와 서로소에 가까워 반복 감지가 안 된다", "body", "head", "hip");
-    public static final Param SWAY_BODY_Z = add("sway_body_z", "wg_sway_body_z", 0.8D,
+    public static final Param SWAY_PERIOD = add("sway_period", "wg_sway_period", 53.0D,
+            "tick", "T2", "미세 흔들림 주기", "body", "head", "hip");
+    public static final Param SWAY_BODY_Z = add("sway_body_z", "wg_sway_body_z", 1.2D,
             "deg", "T2", "상체 좌우", "body");
-    public static final Param SWAY_HEAD_Z = add("sway_head_z", "wg_sway_head_z", 0.5D,
-            "deg", "T2", "머리 반대 보정", "head");
-    public static final Param SWAY_HIP_Y = add("sway_hip_y", "wg_sway_hip_y", 0.3D,
-            "deg", "T2", "전신 미세 비틀기 (구판 leg yRot 오류의 대체 — 감사 후보 B-5)", "hip");
+    public static final Param SWAY_HEAD_Z = add("sway_head_z", "wg_sway_head_z", 0.7D,
+            "deg", "T2", "머리 반대 보정 (위상 -14°)", "head");
+    public static final Param SWAY_HIP_Y = add("sway_hip_y", "wg_sway_hip_y", 0.5D,
+            "deg", "T2", "전신 미세 비틀기 (위상 -20°)", "hip");
+
+    // ---- 4.3.5 체중 이동 ---------------------------------------------------------------------
+    //
+    // The third axis, and the slowest. 44 / 53 / 79 share no common multiple, so the three layers
+    // never realign — that non-repetition is the entire point of this layer, not its amplitude.
+
+    public static final Param WEIGHT_SHIFT_PERIOD = add("weight_shift_period", "wg_weight_period", 79.0D,
+            "tick", "T2", "체중 이동 주기. 44/53 과 공배수가 없어 위상이 계속 어긋난다", "hip", "head");
+    public static final Param WEIGHT_SHIFT_AMP = add("weight_shift_amp", "wg_weight_amp", 0.8D,
+            "deg", "T2", "아주 느린 좌우 체중 이동 (hip zRot)", "hip");
+    public static final Param WEIGHT_SHIFT_HEAD_Z = add("weight_shift_head_z", "wg_weight_head_z", 0.4D,
+            "deg", "T2", "체중 이동에 대한 머리 반대 보정 (위상 -24°)", "head");
 
     // ---- 4.3.4 기본 자세 오프셋 (정적, C1 과 별개로 상시 가산) --------------------------------------
 
