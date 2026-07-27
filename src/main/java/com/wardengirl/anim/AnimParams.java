@@ -417,11 +417,16 @@ public final class AnimParams {
      * two sides and only a person looking at it can say which it is. 0 stands the torso upright
      * without touching the spec number anywhere else.
      *
-     * <p>Negative leans back. The range is symmetric so that overshooting in either direction is
-     * reachable while sweeping.
+     * <p><b>Negative leans forward</b> — 4.4.2 writes the forward lean as {@code body.xRot -4},
+     * and Part 3.6 requires a parameter's default to carry the design doc's sign unchanged. The
+     * first version of this defaulted to {@code +4.0} and put a bare {@code query.wg_walk_body_lean}
+     * where the json had held {@code -4}; the minus was simply lost and the torso leaned back.
+     * The range is symmetric so that overshooting either way is reachable while sweeping.
      */
-    public static final Param WALK_BODY_LEAN = addShape("walk_body_lean", 4.0D, -10.0D, 10.0D,
-            "deg", "T5", "걷기 상시 상체 전방 기울기 (4.4.2). 0 이면 상체가 수직", "body");
+    public static final Param WALK_BODY_LEAN = addShape("walk_body_lean", -4.0D, -10.0D, 10.0D,
+            "deg", "T5",
+            "걷기 상시 상체 기울기 (4.4.2 body.xRot -4). 음수가 앞으로 숙임. 0 이면 수직",
+            "body");
 
     /**
      * 걷기 종료 유예, 틱. 임계 미만이 이만큼 <em>연속</em>되어야 걷기를 끝낸다.
