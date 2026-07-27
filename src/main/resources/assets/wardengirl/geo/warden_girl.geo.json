@@ -4,8 +4,8 @@
     {
       "description": {
         "identifier": "geometry.warden_girl",
-        "texture_width": 128,
-        "texture_height": 128,
+        "texture_width": 64,
+        "texture_height": 64,
         "visible_bounds_width": 3,
         "visible_bounds_height": 4,
         "visible_bounds_offset": [
@@ -53,8 +53,8 @@
                 4
               ],
               "uv": [
-                32,
-                32
+                16,
+                16
               ]
             }
           ]
@@ -129,18 +129,18 @@
                     0
                   ],
                   "uv_size": [
-                    128,
-                    128
+                    64,
+                    64
                   ]
                 },
                 "south": {
                   "uv": [
-                    0,
+                    64,
                     0
                   ],
                   "uv_size": [
-                    128,
-                    128
+                    -64,
+                    64
                   ]
                 }
               }
@@ -172,22 +172,22 @@
               "uv": {
                 "north": {
                   "uv": [
-                    128,
+                    64,
                     0
                   ],
                   "uv_size": [
-                    -128,
-                    128
+                    -64,
+                    64
                   ]
                 },
                 "south": {
                   "uv": [
-                    128,
+                    0,
                     0
                   ],
                   "uv_size": [
-                    -128,
-                    128
+                    64,
+                    64
                   ]
                 }
               }
@@ -215,8 +215,8 @@
                 4
               ],
               "uv": [
-                80,
-                32
+                40,
+                16
               ]
             }
           ]
@@ -242,8 +242,8 @@
                 4
               ],
               "uv": [
-                64,
-                96
+                32,
+                48
               ]
             }
           ]
@@ -270,7 +270,7 @@
               ],
               "uv": [
                 0,
-                32
+                16
               ]
             }
           ]
@@ -296,8 +296,8 @@
                 4
               ],
               "uv": [
-                32,
-                96
+                16,
+                48
               ]
             }
           ]
