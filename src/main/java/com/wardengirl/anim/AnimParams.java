@@ -336,8 +336,8 @@ public final class AnimParams {
      * same. Three round trips were spent arguing about a picture that could not answer the
      * question. Hiding one side answers it in a single frame.
      */
-    public static final Param HEADGEAR_SOLO = addShape("headgear_solo", 0.0D, 0.0D, 2.0D,
-            "0/1/2", "T3", "진단용. 0=좌우 모두, 1=오른쪽만, 2=왼쪽만",
+    public static final Param HEADGEAR_SOLO = addShape("headgear_solo", 0.0D, 0.0D, 3.0D,
+            "0-3", "T3", "진단용. 0=좌우 모두, 1=오른쪽만, 2=왼쪽만, 3=둘 다 숨김",
             "headgear_right", "headgear_left");
 
     // ---- 4.6 시선 추적 (T3 에서는 가산과 클램프만. 감쇠 보간 · 근거리 반응은 T4) ------------------------

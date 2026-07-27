@@ -69,7 +69,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      */
     @Override
     public RenderType getRenderType(WardenGirlEntity animatable, ResourceLocation texture) {
-        return RenderType.entityTranslucent(texture);
+        return RenderType.entityCutoutNoCull(texture);
     }
 
     @Override
@@ -209,13 +209,14 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         HeadgearSpring[] pair = springsFor(animatable);
 
         int solo = (int) Math.round(AnimParams.HEADGEAR_SOLO.get());
+            // 3 = 둘 다 숨김 (촉수 레이어가 다른 본에 새는지 확인용)
         for (int side = 0; side < 2; side++) {
             Optional<GeoBone> maybeBone = getBone(Bones.HEADGEAR.get(side));
             if (maybeBone.isEmpty()) {
                 continue;
             }
             // Diagnostic isolation — see AnimParams.HEADGEAR_SOLO.
-            boolean suppressed = solo != 0 && solo != side + 1;
+            boolean suppressed = solo == 3 || (solo != 0 && solo != side + 1);
             HeadgearSpring spring = pair[side];
             spring.advanceTo(animatable.tickCount, target);
             GeoBone bone = maybeBone.get();
