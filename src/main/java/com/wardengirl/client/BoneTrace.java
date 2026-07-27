@@ -100,6 +100,21 @@ public final class BoneTrace {
     private static final double[] SPRING_PENDING_RIGHT = new double[3];
     private static boolean pendingRightValid = false;
 
+    /**
+     * 본 회전 시계열. 루프 이음매와 전이는 min/max 로는 볼 수 없다.
+     *
+     * <p>min/max 는 "어디까지 갔는가" 만 말한다. 26틱 사이클이 0/26 에서 매끄럽게 이어지는지,
+     * 걷기→정지 전이가 6틱에 걸쳐 잦아드는지 한 프레임에 끊기는지는 <em>순서</em>가 있어야
+     * 답할 수 있는 질문이다. 그래서 몇 개 축만 값 그대로 남기고 1차 차분을 함께 낸다 —
+     * 이음매에서만 차분이 튀면 불연속이고, 전이가 한 프레임에 끝나면 그 한 칸만 크다.
+     */
+    private static final String[] SERIES_BONES = {Bones.LEG_RIGHT, Bones.ARM_RIGHT, Bones.BODY};
+    private static final int[] SERIES_AXIS = {0, 0, 1};   // leg_r xRot, arm_r xRot, body yRot
+    private static final int SERIES_CAP = 4000;
+    private static final double[][] SERIES = new double[SERIES_BONES.length][SERIES_CAP];
+    private static final int[] SERIES_TICK = new int[SERIES_CAP];
+    private static int seriesCount = 0;
+
     /** 4.4.3 방향 전환 기울임: hip zRot 과 그것을 만든 yaw 변화율. */
     private static double turnLeanMin = Double.POSITIVE_INFINITY;
     private static double turnLeanMax = Double.NEGATIVE_INFINITY;
@@ -282,6 +297,7 @@ public final class BoneTrace {
         lookPendingValid = false;
         lookFirstTick = Integer.MIN_VALUE;
         lookLastTick = Integer.MIN_VALUE;
+        seriesCount = 0;
         turnLeanMin = Double.POSITIVE_INFINITY;
         turnLeanMax = Double.NEGATIVE_INFINITY;
         turnRateMin = Double.POSITIVE_INFINITY;
@@ -350,6 +366,15 @@ public final class BoneTrace {
                 }
             }
             LAST.put(bone, new double[]{v[0], v[1], v[2]});
+        }
+
+        if (seriesCount < SERIES_CAP) {
+            for (int i = 0; i < SERIES_BONES.length; i++) {
+                double[] v = rotations.get(SERIES_BONES[i]);
+                SERIES[i][seriesCount] = v == null ? 0.0D : v[SERIES_AXIS[i]];
+            }
+            SERIES_TICK[seriesCount] = tickCount;
+            seriesCount++;
         }
 
         if (lookPendingValid && lookSamples < LOOK_CAPACITY) {
@@ -674,6 +699,7 @@ public final class BoneTrace {
         positions.forEach((bone, v) -> WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
                 "[trace] %-10s 위치(px) 마지막 = (%+.4f, %+.4f, %+.4f)", bone, v[0], v[1], v[2])));
 
+        reportSeries();
         reportTurnLean();
         fails += reportLook();
         fails += reportSpring();
@@ -683,6 +709,47 @@ public final class BoneTrace {
             WardenGirlMod.LOGGER.info("[trace] === 판정: 전 항목 통과 (회전 30 + 시선 + 스프링 좌우 + 발끝 2) ===");
         } else {
             WardenGirlMod.LOGGER.error("[trace] === 판정: 실패 {}개 ===", fails);
+        }
+    }
+
+    /**
+     * Dumps the tracked axes with their first difference.
+     *
+     * <p>The difference is per <em>sample</em>, not per tick, and samples are per frame — so the
+     * absolute size means little, but a single sample whose difference dwarfs its neighbours is a
+     * discontinuity wherever it lands. Printed as one row per sample so the seam and the
+     * transition can be located by eye as well as by the summary.
+     */
+    private static void reportSeries() {
+        if (seriesCount < 4) {
+            return;
+        }
+        String[] label = {"leg_right.xRot", "arm_right.xRot", "body.yRot"};
+        for (int i = 0; i < SERIES_BONES.length; i++) {
+            double maxAbs = 0;
+            double sum = 0;
+            int n = 0;
+            for (int j = 1; j < seriesCount; j++) {
+                double d = Math.abs(SERIES[i][j] - SERIES[i][j - 1]);
+                maxAbs = Math.max(maxAbs, d);
+                sum += d;
+                n++;
+            }
+            double mean = n > 0 ? sum / n : 0;
+            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                    "[trace] --- 시계열 %s: 표본 %d, 1차차분 평균 %.5f 최대 %.5f (최대/평균 %.2f) ---",
+                    label[i], seriesCount, mean, maxAbs, mean > 1e-9 ? maxAbs / mean : 0.0D));
+        }
+        int step = Math.max(1, seriesCount / 260);
+        WardenGirlMod.LOGGER.info("[trace] 시계열 행 (t=엔티티틱, d=직전 표본 대비 차분):");
+        for (int j = 0; j < seriesCount; j += step) {
+            double d0 = j > 0 ? SERIES[0][j] - SERIES[0][j - 1] : 0;
+            double d1 = j > 0 ? SERIES[1][j] - SERIES[1][j - 1] : 0;
+            double d2 = j > 0 ? SERIES[2][j] - SERIES[2][j - 1] : 0;
+            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                    "[trace]  S %5d t=%6d  leg_r.x %+9.4f d%+8.4f | arm_r.x %+9.4f d%+8.4f "
+                            + "| body.y %+8.4f d%+8.4f",
+                    j, SERIES_TICK[j], SERIES[0][j], d0, SERIES[1][j], d1, SERIES[2][j], d2));
         }
     }
 
