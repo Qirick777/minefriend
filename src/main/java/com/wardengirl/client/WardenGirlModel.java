@@ -153,6 +153,11 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             damperFor(animatable).reset();
             return;
         }
+        applyVitalMotion(animatable);
+        if (VitalCheck.isRunning()) {
+            VitalCheck.sample(readAllBones(), readAllPositions(), animatable.tickCount,
+                    Minecraft.getInstance().getPartialTick());
+        }
         applyStaticOffsets();
         applyLook(animatable, animationState);
         applyTurnLean(animatable);
@@ -406,6 +411,41 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     }
 
     /**
+     * 4.3 C1 상시 레이어 — the Java addition that replaced the {@code vital} controller.
+     *
+     * <p>Why it is here rather than on a controller: {@link VitalMotion}'s class doc. The short
+     * version is that {@code AnimationProcessor} adds each controller's value to the bone's
+     * <em>initial snapshot</em>, not to the previous controller's result, so C2 erased C1 outright
+     * — measured, seven axes at exactly 0.000 oscillation. {@code setCustomAnimations} runs after
+     * every controller, so nothing can overwrite what is written here.
+     *
+     * <p>Skipped while {@code signtest} is playing, for the same reason
+     * {@link #applyAxisTest} owns the whole rig: signtest reads a bone and expects to see the
+     * constant the json put there. Up to 2° of breathing on top would make a ±0.001 comparison
+     * meaningless.
+     */
+    private void applyVitalMotion(WardenGirlEntity animatable) {
+        if (AnimParams.C1_SOURCE.get() < 0.5D || animatable.isSignTest()) {
+            return;
+        }
+        float partialTick = Minecraft.getInstance().getPartialTick();
+        VitalMotion.Contribution c = VitalMotion.evaluate(animatable.tickCount + partialTick);
+
+        addRotX(Bones.BODY, c.bodyRotX());
+        addRotY(Bones.BODY, c.bodyRotY());
+        addRotZ(Bones.BODY, c.bodyRotZ());
+        addPosY(Bones.BODY, c.bodyPosY());
+        addRotX(Bones.HEAD, c.headRotX());
+        addRotZ(Bones.HEAD, c.headRotZ());
+        addRotZ(Bones.ARM_RIGHT, c.armRightRotZ());
+        addRotZ(Bones.ARM_LEFT, c.armLeftRotZ());
+        // root.pos.y overlaps C2's walk bounce, and position is pure assignment rather than
+        // addition, so C2 wins outright there. Harmless while bounce_amplitude is 0, and left
+        // unresolved on purpose — Part 11.
+        addPosY(Bones.ROOT, c.rootPosY());
+    }
+
+    /**
      * 4.3.4 기본 자세 오프셋 — static, always added, on top of C1.
      *
      * <p><b>Added, not assigned.</b> C1 has already written this frame's breathing and sway into
@@ -478,6 +518,17 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
 
     private void addRotZ(String bone, double degrees) {
         getBone(bone).ifPresent(b -> b.setRotZ(b.getRotZ() + AxisConvention.toRad(degrees)));
+    }
+
+    /**
+     * Adds to a bone's y position offset, in model pixels.
+     *
+     * <p>No conversion: positions are pixels on both sides, and y is the one axis
+     * {@link AxisConvention#setPositionPx} does not negate. x would need the negation and does not
+     * appear in C1, so there is deliberately no {@code addPosX} to get it wrong with.
+     */
+    private void addPosY(String bone, double pixels) {
+        getBone(bone).ifPresent(b -> b.setPosY(b.getPosY() + (float) pixels));
     }
 
     // ---- T1 axis verification harness ---------------------------------------------------------

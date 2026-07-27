@@ -156,17 +156,22 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     // ---- GeoEntity --------------------------------------------------------------------------
 
     /**
-     * C1 only. Design doc Part 4.2.
+     * Two controllers. Design doc Part 4.2.
      *
-     * <p>{@code vital} is registered as an unconditional loop that always returns
-     * {@link PlayState#CONTINUE}. There is no code path that stops it, by design: Part 4.1 원칙 6
-     * and Part 10.5 both forbid stopping C1. C2 (locomotion) and C3 (action) are separate
-     * controllers and arrive in T5 and T6.
+     * <p>The first is unconditional and always returns {@link PlayState#CONTINUE}. There is no code
+     * path that stops it, by design: Part 4.1 원칙 6 and Part 10.5 both forbid stopping C1.
+     *
+     * <p>What it plays is now a switch. C1 moved to {@link com.wardengirl.client.VitalMotion} in T5
+     * because two controllers writing the same bone means the later one erases the earlier — so
+     * this controller normally plays {@link AnimRegistry#BASE_LOOP}, a zero clip whose job is to
+     * reset the channels Java adds to. {@code c1_source = 0} puts the old Molang clip back for
+     * A/B measurement.
      */
     @Override
     public void registerControllers(AnimatableManager.ControllerRegistrar registrar) {
         registrar.add(new AnimationController<>(this, AnimRegistry.CONTROLLER_VITAL, 0,
-                state -> state.setAndContinue(AnimRegistry.VITAL)));
+                state -> state.setAndContinue(AnimParams.C1_SOURCE.get() >= 0.5D
+                        ? AnimRegistry.BASE_LOOP : AnimRegistry.VITAL_LOOP)));
         registrar.add(new AnimationController<>(this, AnimRegistry.CONTROLLER_LOCOMOTION,
                 AnimRegistry.TRANSITION_TICKS, this::locomotionPredicate));
     }

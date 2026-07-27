@@ -9,20 +9,45 @@ public final class AnimRegistry {
     private AnimRegistry() {
     }
 
-    /** C1 controller name. Design doc Part 4.2. */
+    /**
+     * The always-on controller. Design doc Part 4.2.
+     *
+     * <p>Still named {@code vital} because that is the controller C1 used to live on, and the name
+     * is what GeckoLib keys its per-controller state by. What it <em>plays</em> changed in T5: C1's
+     * Molang moved to {@link com.wardengirl.client.VitalMotion} and this controller now plays
+     * {@link #BASE}, a clip of constant zeros whose only job is to overwrite every channel Java
+     * adds to. See {@link #BASE}.
+     */
     public static final String CONTROLLER_VITAL = "vital";
 
-    /**
-     * C1 — breathing, bounce, micro-sway. Design doc Part 4.3.
-     *
-     * <p>Loops forever and is never stopped: Part 4.1 원칙 6 and Part 10.5 both forbid it. The only
-     * exception the doc allows is amplitude 0 during ticks 0–3 of the sonic boom, which is T8.
-     */
-    public static final RawAnimation VITAL =
-            RawAnimation.begin().thenLoop(CONTROLLER_VITAL);
+    /** The pre-migration C1 clip, kept for the A/B comparison. See {@link #BASE}. */
+    public static final String VITAL = "vital";
 
-    /** Guards against a typo in the name above silently producing a still model. */
-    public static final Animation.LoopType VITAL_LOOP = Animation.LoopType.LOOP;
+    /**
+     * C1 — breathing, bounce, micro-sway, as Molang. Design doc Part 4.3.
+     *
+     * <p>Selected by {@code c1_source = 0}. The live path is {@code c1_source = 1}, which plays
+     * {@link #BASE_LOOP} and adds C1 in Java instead — see {@link com.wardengirl.client.VitalMotion}
+     * for why.
+     */
+    public static final RawAnimation VITAL_LOOP =
+            RawAnimation.begin().thenLoop(VITAL);
+
+    /**
+     * The zero baseline. Constant 0 on every channel Java writes with {@code +=}.
+     *
+     * <p>Not decoration and not a placeholder. {@code GeoBone}'s setters mark the bone as changed
+     * and {@code AnimationProcessor} then skips its reset-to-initial-snapshot step for that bone
+     * forever, so a bone that Java adds to and no clip assigns to accumulates one offset per frame.
+     * {@code idle} is an empty clip and {@code walk} covers only some channels, so neither can
+     * serve; this clip does. The json file carries the full reasoning.
+     */
+    public static final String BASE = "base";
+
+    public static final RawAnimation BASE_LOOP = RawAnimation.begin().thenLoop(BASE);
+
+    /** Guards against a typo in the names above silently producing a still model. */
+    public static final Animation.LoopType ALWAYS_ON_LOOP = Animation.LoopType.LOOP;
 
     /** C2 controller name. Design doc Part 4.2 / 4.4. */
     public static final String CONTROLLER_LOCOMOTION = "locomotion";

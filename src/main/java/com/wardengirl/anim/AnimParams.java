@@ -172,6 +172,23 @@ public final class AnimParams {
         return p;
     }
 
+    // ---- C1 공급 경로 (T5 이관 검증용) ----------------------------------------------------------
+
+    /**
+     * 0 = json Molang (이관 전), 1 = Java 가산 (이관 후, 기본).
+     *
+     * <p>이관이 "부호도 크기도 바뀌지 않았다" 를 주장하려면 두 경로의 본 값을 대조해야 하고,
+     * 빌드를 두 번 하면 틱 기준이 달라져 같은 시점을 비교할 수 없다. 스위치를 두면 한 빌드
+     * 안에서 두 경로를 몇 초 간격으로 재는 것이 가능해진다 — Part 6.2 "원하는 상황을 즉시
+     * 만들어라".
+     *
+     * <p>0 으로 두면 T5 에서 실측한 결함(C2 가 C1 을 덮어 7축 진동 폭이 0.000)이 그대로
+     * 재현된다. 그것이 이 값이 0 일 때의 의미이고, 기본값이 1 인 이유다.
+     */
+    public static final Param C1_SOURCE = addShape("c1_source", 1.0D, 0.0D, 1.0D,
+            "flag", "T5", "C1 공급 경로. 0 = json Molang(이관 전), 1 = Java 가산(이관 후)",
+            "root", "body", "head", "arm_right", "arm_left");
+
     // ---- 4.3.1 호흡 -------------------------------------------------------------------------
     //
     // Periods, not speeds. The json divides 360 by the period, so what is tuned here is the number

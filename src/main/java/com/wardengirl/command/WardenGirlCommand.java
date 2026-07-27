@@ -96,6 +96,11 @@ public final class WardenGirlCommand {
                         .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
                                 .executes(ctx -> trace(ctx.getSource(),
                                         IntegerArgumentType.getInteger(ctx, "ticks")))))
+                .then(Commands.literal("vitalcheck")
+                        .executes(ctx -> vitalCheck(ctx.getSource(), 200))
+                        .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
+                                .executes(ctx -> vitalCheck(ctx.getSource(),
+                                        IntegerArgumentType.getInteger(ctx, "ticks")))))
                 .then(Commands.literal("param")
                         .then(Commands.literal("list")
                                 .executes(ctx -> paramList(ctx.getSource())))
@@ -169,6 +174,28 @@ public final class WardenGirlCommand {
                                 "%d틱 동안 본 9개 × 3축 전부 기록한다.%n"
                                         + "         각 축을 사양 범위와 대조해 OK / FAIL 범위이탈 / FAIL 단조누적 으로 판정한다.%n"
                                         + "         결과는 로그의 [trace] 행에 나온다 (클라이언트만 본을 볼 수 있다).",
+                                ticks))
+                        .withStyle(ChatFormatting.WHITE)), true);
+        return 1;
+    }
+
+    // ---- /wardengirl vitalcheck <ticks> -------------------------------------------------------
+
+    /**
+     * T5 — C1 이관 검증. See {@link com.wardengirl.client.VitalCheck}.
+     *
+     * <p>Separate from {@code trace} on purpose. {@code trace} judges the rig against the spec
+     * ranges; this compares one layer against its own formula, and mixing the two would bury a
+     * nine-line residual table inside a sixty-line report.
+     */
+    private static int vitalCheck(CommandSourceStack source, int ticks) {
+        ModNetwork.broadcastVitalCheck(ticks);
+        source.sendSuccess(() -> Component.literal("[vitalcheck] ").withStyle(ChatFormatting.GOLD)
+                .append(Component.literal(String.format(Locale.ROOT,
+                                "%d틱 동안 C1 9채널을 수식과 대조한다.%n"
+                                        + "         c1_source 0 = json Molang(이관 전), 1 = Java 가산(이관 후).%n"
+                                        + "         두 값 모두에서 잔차가 0 이면 이관 전후가 부호도 크기도 같다는 뜻이다.%n"
+                                        + "         결과는 로그의 [vitalcheck] 행에 나온다.",
                                 ticks))
                         .withStyle(ChatFormatting.WHITE)), true);
         return 1;

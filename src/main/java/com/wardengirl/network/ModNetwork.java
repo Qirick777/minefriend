@@ -45,6 +45,30 @@ public final class ModNetwork {
                 ParamSyncPacket::encode, ParamSyncPacket::decode, ParamSyncPacket::handle);
         CHANNEL.registerMessage(1, TracePacket.class,
                 TracePacket::encode, TracePacket::decode, TracePacket::handle);
+        CHANNEL.registerMessage(2, VitalCheckPacket.class,
+                VitalCheckPacket::encode, VitalCheckPacket::decode, VitalCheckPacket::handle);
+    }
+
+    /** Asks every client to measure C1 against its formula for the given number of ticks. */
+    public static void broadcastVitalCheck(int ticks) {
+        CHANNEL.send(PacketDistributor.ALL.noArg(), new VitalCheckPacket(ticks));
+    }
+
+    public record VitalCheckPacket(int ticks) {
+
+        public static void encode(VitalCheckPacket packet, FriendlyByteBuf buf) {
+            buf.writeVarInt(packet.ticks);
+        }
+
+        public static VitalCheckPacket decode(FriendlyByteBuf buf) {
+            return new VitalCheckPacket(buf.readVarInt());
+        }
+
+        public static void handle(VitalCheckPacket packet, Supplier<NetworkEvent.Context> ctx) {
+            ctx.get().enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
+                    () -> () -> com.wardengirl.client.VitalCheck.start(packet.ticks)));
+            ctx.get().setPacketHandled(true);
+        }
     }
 
     /** Asks every client to trace its rig for the given number of ticks. */
