@@ -167,6 +167,16 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         ClipStructureCheck.verifyTransitionCoverage(
                 AnimRegistry.IDLE, getAnimation(animatable, AnimRegistry.IDLE),
                 AnimRegistry.WALK, getAnimation(animatable, AnimRegistry.WALK));
+        // base no longer carries the locomotion channels (it polluted the transition snapshot), so
+        // the "nothing accumulates" guarantee now depends on which locomotion clip is playing.
+        // Each one is checked separately: a gap that exists only during signtest is still a gap.
+        software.bernie.geckolib.core.animation.Animation base =
+                getAnimation(animatable, AnimRegistry.BASE);
+        for (String clip : new String[]{AnimRegistry.WALK, AnimRegistry.IDLE,
+                AnimRegistry.SIGN_TEST}) {
+            ClipStructureCheck.verifyAccumulationCoverage(base, clip,
+                    getAnimation(animatable, clip));
+        }
     }
 
     @Override

@@ -49,6 +49,70 @@ public final class ClipStructureCheck {
         ROTATION, POSITION, SCALE
     }
 
+    /**
+     * Every channel Java writes with {@code +=} in {@code setCustomAnimations}.
+     *
+     * <p><b>Hand-maintained, and that is the point.</b> There is no way to derive this from the
+     * code — it is the set of {@code addRot*}/{@code addPos*} targets across C1, C3, the static
+     * offsets, the look, the turn lean and the walk blend. Writing it out here makes it an
+     * independent statement that the checker can hold the clips against; deriving it from the clips
+     * would make the check vacuous.
+     *
+     * <p><b>Add a channel to this list whenever a new Java writer appears.</b> A channel that is
+     * written with {@code +=} and assigned by no clip accumulates one offset per frame forever —
+     * {@code AnimationProcessor} skips its reset once the bone is marked changed, and nothing
+     * un-marks it. That is what made a leg spin through 360° for a whole task cycle in T2.
+     *
+     * <p>{@code headgear_*} is deliberately absent: the 4.5 spring <em>assigns</em> its bones every
+     * frame rather than adding, so accumulation is not possible there.
+     */
+    private static final Set<Key> JAVA_ADDED = new LinkedHashSet<>(java.util.List.of(
+            new Key(Bones.BODY, Channel.ROTATION),      // C1 x/y/z, 4.3.4 offset x, blend y
+            new Key(Bones.BODY, Channel.POSITION),      // 4.3.1 chest rise
+            new Key(Bones.HEAD, Channel.ROTATION),      // C1 x/z, 4.3.4 offset x, 4.6 look, blend y
+            new Key(Bones.HIP, Channel.ROTATION),       // 4.4.3 turn lean z
+            new Key(Bones.ARM_RIGHT, Channel.ROTATION), // C1 z, 4.3.4 offset x, blend x
+            new Key(Bones.ARM_LEFT, Channel.ROTATION),
+            new Key(Bones.LEG_RIGHT, Channel.ROTATION), // 4.3.4 offset y
+            new Key(Bones.LEG_LEFT, Channel.ROTATION),
+            new Key(Bones.ROOT, Channel.POSITION)));    // 4.3.2 bounce
+
+    /**
+     * Checks that every {@link #JAVA_ADDED} channel is assigned every frame, for one locomotion clip.
+     *
+     * <p>The always-on {@code base} clip and whichever clip the locomotion controller is playing are
+     * the only assigners, so coverage has to hold for <b>each</b> locomotion clip separately —
+     * {@code walk}, {@code idle} and {@code signtest} are not interchangeable, and a gap that only
+     * exists while one of them plays is exactly the kind that survives testing.
+     *
+     * @return true when covered
+     */
+    public static boolean verifyAccumulationCoverage(Animation base, String clipName,
+                                                     Animation clip) {
+        if (base == null || clip == null) {
+            WardenGirlMod.LOGGER.warn("[clipcheck] base + {} 누적 방지 검사 불가 — 클립을 찾지 못했다",
+                    clipName);
+            return false;
+        }
+        Set<Key> covered = channels(base);
+        covered.addAll(channels(clip));
+        Set<Key> missing = new LinkedHashSet<>(JAVA_ADDED);
+        missing.removeAll(covered);
+        if (missing.isEmpty()) {
+            WardenGirlMod.LOGGER.info(
+                    "[clipcheck] base + {} 누적 방지 커버리지 OK — Java 가 += 로 쓰는 채널 {}개 전부 대입된다",
+                    clipName, JAVA_ADDED.size());
+            return true;
+        }
+        WardenGirlMod.LOGGER.error(
+                "[clipcheck] **base + {} 재생 중 누적이 발생한다.** 대입되지 않는 채널 {}개: {}",
+                clipName, missing.size(), missing);
+        WardenGirlMod.LOGGER.error(
+                "[clipcheck] Java 가 += 로 쓰는데 어느 클립도 대입하지 않으면 프레임마다 누적된다 "
+                        + "(T2 다리 360도). base 또는 {} 에 상수 0 채널을 추가해라", clipName);
+        return false;
+    }
+
     private record Key(String bone, Channel channel) {
         @Override
         public String toString() {
