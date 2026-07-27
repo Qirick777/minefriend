@@ -176,6 +176,17 @@ public final class JsonAxisConvention {
                 out.add(k);
                 continue;
             }
+            // Expression-valued keyframes cannot take spline control points here. getPointOnSpline
+            // reads easingArgs RAW and mixes them with animationStartValue/animationEndValue — and
+            // for a non-Constant those two have been through toRadians by the time they arrive,
+            // while the args have not. p0/p3 in degrees against p1/p2 in radians is not a curve,
+            // it is garbage. Such a keyframe drops to LINEAR instead: the broken no-args
+            // catmullrom branch is the one thing that must never be reached.
+            if (!(k.startValue() instanceof Constant) || !(k.endValue() instanceof Constant)) {
+                out.add(new Keyframe<>(k.length(), k.startValue(), k.endValue(),
+                        EasingType.LINEAR, k.easingArgs()));
+                continue;
+            }
             IValue p0 = frames.get(Math.floorMod(i - 1, n)).startValue();
             IValue p3 = frames.get(Math.floorMod(i + 1, n)).endValue();
             out.add(new Keyframe<>(k.length(), k.startValue(), k.endValue(), k.easingType(),

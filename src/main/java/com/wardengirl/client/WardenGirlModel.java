@@ -133,6 +133,9 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
                 parser.setValue("query." + p.molang, p::get);
             }
         }
+        // 4.4.2 상체 기울기. addShape 는 molang 이름을 갖지 않으므로 여기서 직접 노출한다 —
+        // 이 값은 크기가 아니라 자세라서 프리셋 스윕 대상이 아니고, 그것이 addShape 를 쓴 이유다.
+        parser.setValue("query.wg_walk_body_lean", AnimParams.WALK_BODY_LEAN::get);
     }
 
     @Override

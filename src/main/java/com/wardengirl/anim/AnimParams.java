@@ -408,6 +408,21 @@ public final class AnimParams {
             "블록", "T4", "근거리 판정 거리. 이 안에서 look_damping -> look_damping_near 로 선형 보간",
             "head");
 
+    // ---- 4.4.2 걷기 (T5) --------------------------------------------------------------------
+
+    /**
+     * 4.4.2 상시 전방 기울기. {@code body.xRot}, 걷는 동안만.
+     *
+     * <p>Doc value 4.0. Exposed because "종종거린다" and "구부정하다" are the same number seen from
+     * two sides and only a person looking at it can say which it is. 0 stands the torso upright
+     * without touching the spec number anywhere else.
+     *
+     * <p>Negative leans back. The range is symmetric so that overshooting in either direction is
+     * reachable while sweeping.
+     */
+    public static final Param WALK_BODY_LEAN = addShape("walk_body_lean", 4.0D, -10.0D, 10.0D,
+            "deg", "T5", "걷기 상시 상체 전방 기울기 (4.4.2). 0 이면 상체가 수직", "body");
+
     // ---- 4.4.3 방향 전환 기울임 (T5) -------------------------------------------------------
 
     /**
