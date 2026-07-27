@@ -2,9 +2,11 @@ package com.wardengirl.client;
 
 import com.wardengirl.WardenGirlMod;
 import com.wardengirl.anim.AnimParams;
+import com.wardengirl.anim.AnimRegistry;
 import com.wardengirl.anim.AxisConvention;
 import com.wardengirl.anim.Bones;
 import com.wardengirl.anim.ClipSampler;
+import com.wardengirl.anim.ClipStructureCheck;
 import com.wardengirl.anim.JsonAxisConvention;
 import com.wardengirl.entity.WardenGirlEntity;
 import net.minecraft.client.Minecraft;
@@ -139,10 +141,39 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         parser.setValue("query.wg_walk_body_lean", AnimParams.WALK_BODY_LEAN::get);
     }
 
+    /**
+     * Runs {@link ClipStructureCheck} once, the first frame a WardenGirl is drawn.
+     *
+     * <p>Not at mod init: {@code GeckoLibCache} has not loaded the animation file yet at that point,
+     * and a check that silently finds nothing to check is worse than no check. Here the clips are
+     * guaranteed resolvable, and the flag makes it cost one boolean read per frame afterwards.
+     *
+     * <p>Once per model instance, not once per resource reload — {@link #convertedAnimations} is
+     * never cleared, so an F3+T edit does not re-trigger this. Re-checking after a reload would be
+     * better and is not implemented.
+     */
+    private boolean structureChecked = false;
+
+    private void checkClipStructure(WardenGirlEntity animatable) {
+        if (this.structureChecked) {
+            return;
+        }
+        this.structureChecked = true;
+        // walk -> idle is the transition that was measured broken. idle -> walk is checked too:
+        // it happens to be covered today, but "happens to be" is not a guarantee anyone stated.
+        ClipStructureCheck.verifyTransitionCoverage(
+                AnimRegistry.WALK, getAnimation(animatable, AnimRegistry.WALK),
+                AnimRegistry.IDLE, getAnimation(animatable, AnimRegistry.IDLE));
+        ClipStructureCheck.verifyTransitionCoverage(
+                AnimRegistry.IDLE, getAnimation(animatable, AnimRegistry.IDLE),
+                AnimRegistry.WALK, getAnimation(animatable, AnimRegistry.WALK));
+    }
+
     @Override
     public void setCustomAnimations(WardenGirlEntity animatable, long instanceId,
                                     AnimationState<WardenGirlEntity> animationState) {
         super.setCustomAnimations(animatable, instanceId, animationState);
+        checkClipStructure(animatable);
 
         // The axis harness is a measuring tool: when it is on it owns the whole rig, so the static
         // offsets are deliberately skipped. Otherwise a "+45° on one axis" reading would silently

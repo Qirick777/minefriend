@@ -894,16 +894,95 @@
       "loop": true,
       "animation_length": 0.05,
       "//": [
-        "4.4.1 idle 정지. 본이 하나도 없는 빈 클립이다 - 의도적이다.",
+        "4.4.1 idle 정지. walk 가 구동하는 모든 채널의 상수 0 을 갖는다.",
         "",
-        "PlayState.STOP 은 transitionLength 를 적용하지 않는다. AnimationController.process 에서",
-        "STOP 이면 State.STOPPED 로 놓고 즉시 return 하며, 전이 로직은 그 검사보다 위에 있어",
-        "타지 않는다. 그래서 걷기 기여가 한 프레임에 0 이 되고, justStopped 가 남아",
-        "재시작 때 재생 위치가 0 으로 리셋된다.",
+        "■ 본이 없으면 전이가 성립하지 않는다 (T5 실측, 원인 확정)",
         "",
-        "빈 클립을 재생하면 STOP 분기를 아예 타지 않으므로 6틱 전이가 실제로 작동한다.",
-        "본이 없으니 본에 기여하지 않는다 - 4.4.1 'C1만 재생' 과 실질 동일하다."
-      ]
+        "구판은 본이 하나도 없는 빈 클립이었다. 그것이 PlayState.STOP 분기를 피하는 데는",
+        "성공했지만 전이는 여전히 작동하지 않았다. 실측 signature:",
+        "",
+        "  leg_right.xRot   t=354  +15.6800  ->  t=355  +0.0000   (한 프레임, 차분 -15.68)",
+        "  arm_right.xRot   t=354   -2.4533  ->  t=355  +4.0000   (+4.0 = offset_arm_right_x 단독)",
+        "",
+        "원인은 한 층 아래에 있었다. AnimationController.process 의 TRANSITIONING 분기는",
+        "currentAnimation.animation().boneAnimations() 즉 **대상(새) 클립의 본 배열**만 훑고,",
+        "거기서 찾은 본에 대해서만 addNextRotation 을 호출한다 (4.8.4, offset 352).",
+        "saveSnapshotsForAnimation 도 같은 배열을 훑는다 (offset 36 / 46).",
+        "",
+        "빈 클립은 본이 0개다. 그래서 스냅샷이 저장되지 않고, 어떤 본의 큐에도",
+        "AnimationPoint 가 들어가지 않고, AnimationProcessor 가 poll 에서 null 을 받아",
+        "세 축 전부 쓰기를 건너뛴다. 본에는 base 가 쓴 0 만 남는다. 전이 길이가",
+        "보간할 대상 자체가 없다.",
+        "",
+        "전이 상태에는 정상 진입한다. currentAnimation 은 null 이 아니다 — 빈 Animation 을",
+        "감싼 유효한 QueuedAnimation 이다.",
+        "",
+        "■ 그래서 상수 0 채널을 넣는다",
+        "",
+        "0 값을 가진 채널이 있으면 전이 루프가 훑을 본이 생기고, 걷기의 마지막 자세에서",
+        "0 까지 transitionLength(6틱) 에 걸쳐 보간된다.",
+        "",
+        "■ walk 와의 의존 관계 — walk 에 채널을 추가하면 여기도 추가해야 한다",
+        "",
+        "하나라도 빠지면 그 축만 한 프레임에 뚝 끊긴다. json 키프레임은 축 단위가 아니라",
+        "본·채널 단위로 존재하므로(회전 채널은 항상 x/y/z 세 축을 함께 갖는다) 대조 단위도",
+        "(본, 채널) 이다. ClipStructureCheck 가 게임 시작 시 자동으로 대조하고 빠진 것을",
+        "로그에 낸다 — 규칙을 사람의 기억에 맡기지 않는다.",
+        "",
+        "base 클립과 값이 겹치지만 컨트롤러가 다르다(base=vital, idle=locomotion). base 가",
+        "먼저 0 을 쓰고 locomotion 이 전이값으로 덮는다. 착지값은 양쪽 다 0 이라 같다."
+      ],
+      "bones": {
+        "root": {
+          "position": [
+            0,
+            0,
+            0
+          ]
+        },
+        "body": {
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        },
+        "head": {
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        },
+        "arm_right": {
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        },
+        "arm_left": {
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        },
+        "leg_right": {
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        },
+        "leg_left": {
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        }
+      }
     }
   }
 }

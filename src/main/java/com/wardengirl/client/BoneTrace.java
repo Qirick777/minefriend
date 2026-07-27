@@ -113,6 +113,8 @@ public final class BoneTrace {
     private static final int SERIES_CAP = 4000;
     private static final double[][] SERIES = new double[SERIES_BONES.length][SERIES_CAP];
     private static final int[] SERIES_TICK = new int[SERIES_CAP];
+    /** Walk state at each sample, so the report can separate transition phases from steady walking. */
+    private static final boolean[] SERIES_WALK = new boolean[SERIES_CAP];
     private static int seriesCount = 0;
 
     /** 4.4.3 방향 전환 기울임: hip zRot 과 그것을 만든 yaw 변화율. */
@@ -380,6 +382,7 @@ public final class BoneTrace {
                 SERIES[i][seriesCount] = v == null ? 0.0D : v[SERIES_AXIS[i]];
             }
             SERIES_TICK[seriesCount] = tickCount;
+            SERIES_WALK[seriesCount] = Boolean.TRUE.equals(lastWalkState);
             seriesCount++;
         }
 
@@ -816,6 +819,81 @@ public final class BoneTrace {
      * discontinuity wherever it lands. Printed as one row per sample so the seam and the
      * transition can be located by eye as well as by the summary.
      */
+    /** Ticks after an edge that still count as "inside the transition". Spec length is 6. */
+    private static final int PHASE_WINDOW_TICKS = 8;
+
+    /**
+     * Splits the first differences into STOP transition / START transition / steady walking.
+     *
+     * <h2>Why the split is the whole point</h2>
+     *
+     * A single "max first difference" over a window that contains starts, stops and steady walking
+     * cannot say which of the three is discontinuous — and all three are separate questions:
+     * 4.4.1's stop transition, its start transition, and 4.4.2's 26-tick loop seam. The seam in
+     * particular has been unmeasurable until now because an 18° stop snap dominated every window it
+     * appeared in.
+     *
+     * <h2>Steady = walking and not near any edge</h2>
+     *
+     * Classified by distance in <b>ticks</b> from the nearest state change, not by sample index —
+     * frames per tick wanders, so an index window would cover a different amount of time on every
+     * run.
+     */
+    private static void reportByPhase() {
+        if (seriesCount < 8) {
+            return;
+        }
+        String[] label = {"leg_right.xRot", "arm_right.xRot", "body.yRot"};
+        double ticks = Math.max(1, SERIES_TICK[seriesCount - 1] - SERIES_TICK[0]);
+        double framesPerTick = seriesCount / ticks;
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace] --- 전이 구간별 1차차분. 프레임/틱 = %.2f (창 %d틱, 표본 %d) ---",
+                framesPerTick, (int) ticks, seriesCount));
+
+        for (int i = 0; i < SERIES_BONES.length; i++) {
+            double[] worst = new double[3];
+            int[] count = new int[3];
+            double[] sum = new double[3];
+            for (int j = 1; j < seriesCount; j++) {
+                int phase = phaseOf(j);
+                if (phase < 0) {
+                    continue;
+                }
+                double d = Math.abs(SERIES[i][j] - SERIES[i][j - 1]);
+                worst[phase] = Math.max(worst[phase], d);
+                sum[phase] += d;
+                count[phase]++;
+            }
+            String[] name = {"정지 전이(walk->idle)", "시작 전이(idle->walk)", "정상 걷기(루프 이음매)"};
+            for (int p = 0; p < 3; p++) {
+                if (count[p] == 0) {
+                    WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                            "[trace]   %-14s %-24s 표본 0 — **측정 불가**", label[i], name[p]));
+                    continue;
+                }
+                WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                        "[trace]   %-14s %-24s 표본 %5d  평균 %7.4f  최대 %8.4f  (최대/평균 %6.2f)",
+                        label[i], name[p], count[p], sum[p] / count[p], worst[p],
+                        sum[p] > 1e-9 ? worst[p] / (sum[p] / count[p]) : 0.0D));
+            }
+        }
+    }
+
+    /** 0 = stop transition, 1 = start transition, 2 = steady walk, -1 = steady idle (ignored). */
+    private static int phaseOf(int j) {
+        int tick = SERIES_TICK[j];
+        for (int k = 1; k < seriesCount; k++) {
+            if (SERIES_WALK[k] == SERIES_WALK[k - 1]) {
+                continue;
+            }
+            int edge = SERIES_TICK[k];
+            if (tick >= edge && tick <= edge + PHASE_WINDOW_TICKS) {
+                return SERIES_WALK[k] ? 1 : 0;
+            }
+        }
+        return SERIES_WALK[j] ? 2 : -1;
+    }
+
     private static void reportSeries() {
         if (seriesCount < 4) {
             return;
@@ -859,6 +937,7 @@ public final class BoneTrace {
                         label[i], j, SERIES_TICK[j], SERIES[i][j], d, j == arg ? "   <== 최대" : ""));
             }
         }
+        reportByPhase();
         int step = Math.max(1, seriesCount / 260);
         WardenGirlMod.LOGGER.info("[trace] 시계열 행 (t=엔티티틱, d=직전 표본 대비 차분):");
         for (int j = 0; j < seriesCount; j += step) {
