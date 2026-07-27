@@ -2,6 +2,7 @@ package com.wardengirl.command;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.wardengirl.anim.AnimParams;
@@ -80,6 +81,11 @@ public final class WardenGirlCommand {
                                                         StringArgumentType.getString(ctx, "bone"),
                                                         StringArgumentType.getString(ctx, "axis"),
                                                         DoubleArgumentType.getDouble(ctx, "degrees")))))))
+                .then(Commands.literal("trace")
+                        .executes(ctx -> trace(ctx.getSource(), 200))
+                        .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
+                                .executes(ctx -> trace(ctx.getSource(),
+                                        IntegerArgumentType.getInteger(ctx, "ticks")))))
                 .then(Commands.literal("param")
                         .then(Commands.literal("list")
                                 .executes(ctx -> paramList(ctx.getSource())))
@@ -97,6 +103,20 @@ public final class WardenGirlCommand {
                                                 .executes(ctx -> paramSet(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "key"),
                                                         DoubleArgumentType.getDouble(ctx, "value"))))))));
+    }
+
+    // ---- /wardengirl trace <ticks> ----------------------------------------------------------
+
+    private static int trace(CommandSourceStack source, int ticks) {
+        ModNetwork.broadcastTrace(ticks);
+        source.sendSuccess(() -> Component.literal("[trace] ").withStyle(ChatFormatting.GOLD)
+                .append(Component.literal(String.format(Locale.ROOT,
+                                "%d틱 동안 본 9개 × 3축 전부 기록한다.%n"
+                                        + "         각 축을 사양 범위와 대조해 OK / FAIL 범위이탈 / FAIL 단조누적 으로 판정한다.%n"
+                                        + "         결과는 로그의 [trace] 행에 나온다 (클라이언트만 본을 볼 수 있다).",
+                                ticks))
+                        .withStyle(ChatFormatting.WHITE)), true);
+        return 1;
     }
 
     // ---- /wardengirl param ------------------------------------------------------------------

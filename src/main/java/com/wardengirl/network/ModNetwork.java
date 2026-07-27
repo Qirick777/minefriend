@@ -4,6 +4,8 @@ import com.wardengirl.WardenGirlMod;
 import com.wardengirl.anim.AnimParams;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
 import net.minecraftforge.network.NetworkRegistry;
 import net.minecraftforge.network.PacketDistributor;
@@ -41,6 +43,32 @@ public final class ModNetwork {
     public static void register() {
         CHANNEL.registerMessage(0, ParamSyncPacket.class,
                 ParamSyncPacket::encode, ParamSyncPacket::decode, ParamSyncPacket::handle);
+        CHANNEL.registerMessage(1, TracePacket.class,
+                TracePacket::encode, TracePacket::decode, TracePacket::handle);
+    }
+
+    /** Asks every client to trace its rig for the given number of ticks. */
+    public static void broadcastTrace(int ticks) {
+        CHANNEL.send(PacketDistributor.ALL.noArg(), new TracePacket(ticks));
+    }
+
+    public record TracePacket(int ticks) {
+
+        public static void encode(TracePacket packet, FriendlyByteBuf buf) {
+            buf.writeVarInt(packet.ticks);
+        }
+
+        public static TracePacket decode(FriendlyByteBuf buf) {
+            return new TracePacket(buf.readVarInt());
+        }
+
+        public static void handle(TracePacket packet, Supplier<NetworkEvent.Context> ctx) {
+            // BoneTrace is a client-only class; DistExecutor keeps it off a dedicated server's
+            // classloader entirely rather than merely unreached.
+            ctx.get().enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
+                    () -> () -> com.wardengirl.client.BoneTrace.start(packet.ticks)));
+            ctx.get().setPacketHandled(true);
+        }
     }
 
     /** Pushes the given parameter values to every connected client. */

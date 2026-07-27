@@ -94,6 +94,9 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         }
         applyStaticOffsets();
         reportParamChange();
+        if (BoneTrace.isRunning()) {
+            BoneTrace.sample(readAllBones(), readMovedPositions());
+        }
     }
 
     private long lastParamGeneration = -1L;
@@ -126,6 +129,13 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      * these same bones; assigning here would delete them and the model would go still.
      */
     private void applyStaticOffsets() {
+        // These are ADDED, and that is only safe because every bone below has a rotation channel in
+        // warden_girl.animation.json — even the legs, whose channel is a literal zero.
+        //
+        // GeoBone's setters call markRotationAsChanged() internally, and AnimationProcessor skips
+        // its reset-to-snapshot step for any bone already marked changed. So a bone that the
+        // animation never writes gets marked by this very method on frame 1, is never reset again,
+        // and accumulates one offset per frame. That is what made the legs spin.
         // xRot, not zRot. An inward zRot offset is geometrically impossible here: the arm's inner
         // face sits flush against the torso (both at x = ±4), so any inward z rotation drives the
         // arm into the body. Fore/aft rotation has nothing to collide with. See Part 11.
