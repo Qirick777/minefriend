@@ -185,11 +185,19 @@ public final class AnimParams {
             "deg", "T2", "들숨에 상체를 뒤로 젖히는 진폭", "body");
     public static final Param BREATH_BODY_Y = add("breath_body_y", "wg_breath_body_y", 0.12D,
             "px", "T2", "흉곽 상승", "body");
-    public static final Param BREATH_HEAD_X = add("breath_head_x", "wg_breath_head_x", 0.25D,
+    public static final Param BREATH_HEAD_X = add("breath_head_x", "wg_breath_head_x", -0.25D,
             "deg", "T2", "머리 수평 유지 보정 (2.0틱 지연 = 60틱에서 -12°. 구판 44틱 -16° 환산)", "head");
-    public static final Param BREATH_ARM_Z = add("breath_arm_z", "wg_breath_arm_z", 0.35D,
-            "deg", "T2", "들숨에 어깨가 바깥으로. 바깥 방향 바이어스 (관통 방지). 1.5틱 지연 = 60틱에서 -9°",
-            "arm_right", "arm_left");
+    /**
+     * 4.3.1 팔 zRot, <b>좌우 분리</b>. 4.0.2 "대칭 동작은 좌우를 따로 적는다" 를 파라미터에도 적용.
+     *
+     * <p>하나로 두면 어느 한쪽 json 식에 반드시 마이너스가 들어가고, 그것이 Part 3.6 의
+     * "json 식에서 부호를 뒤집지 않는다" 를 깬다. 쪼개는 비용은 파라미터 하나가 둘이 되는
+     * 것뿐이고, 좌우를 따로 조정할 수 있게 되므로 튜닝 자유도는 오히려 는다.
+     */
+    public static final Param BREATH_ARM_R_Z = add("breath_arm_r_z", "wg_breath_arm_r_z", 0.35D,
+            "deg", "T2", "들숨에 오른어깨가 바깥으로. 바깥 방향 바이어스 (관통 방지)", "arm_right");
+    public static final Param BREATH_ARM_L_Z = add("breath_arm_l_z", "wg_breath_arm_l_z", -0.35D,
+            "deg", "T2", "들숨에 왼어깨가 바깥으로. 좌우 zRot 부호가 반대다 (4.0.2)", "arm_left");
 
     // ---- 4.3.2 바운스 ------------------------------------------------------------------------
 
@@ -209,7 +217,7 @@ public final class AnimParams {
             "tick", "T2", "미세 흔들림 주기", "body", "head");
     public static final Param SWAY_BODY_Z = add("sway_body_z", "wg_sway_body_z", 1.2D,
             "deg", "T2", "상체 좌우", "body");
-    public static final Param SWAY_HEAD_Z = add("sway_head_z", "wg_sway_head_z", 0.7D,
+    public static final Param SWAY_HEAD_Z = add("sway_head_z", "wg_sway_head_z", -0.7D,
             "deg", "T2", "머리 반대 보정 (2.06틱 지연 = 53틱에서 -14°)", "head");
     /**
      * Body, not hip. Rotating the hip swings the feet along a 12px arc, which reads as sliding —

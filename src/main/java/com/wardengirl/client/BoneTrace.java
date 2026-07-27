@@ -565,7 +565,8 @@ public final class BoneTrace {
     private static Map<String, Expect[]> expectations() {
         double breathBody = AnimParams.BREATH_BODY_X.get();
         double breathHead = AnimParams.BREATH_HEAD_X.get();
-        double armZ = AnimParams.BREATH_ARM_Z.get();
+        double armRZ = AnimParams.BREATH_ARM_R_Z.get();
+        double armLZ = AnimParams.BREATH_ARM_L_Z.get();
         double swayBodyZ = AnimParams.SWAY_BODY_Z.get();
         double swayBodyY = AnimParams.SWAY_BODY_Y.get();
         double swayHead = AnimParams.SWAY_HEAD_Z.get();
@@ -617,11 +618,11 @@ public final class BoneTrace {
         m.put(Bones.ARM_RIGHT, new Expect[]{
                 Expect.constant(AnimParams.OFFSET_ARM_R_X.get()),
                 Expect.constant(0),
-                Expect.band(armZ, armZ, pBreath)});
+                Expect.band(armRZ, Math.abs(armRZ), pBreath)});
         m.put(Bones.ARM_LEFT, new Expect[]{
                 Expect.constant(AnimParams.OFFSET_ARM_L_X.get()),
                 Expect.constant(0),
-                Expect.band(-armZ, armZ, pBreath)});
+                Expect.band(armLZ, Math.abs(armLZ), pBreath)});
         m.put(Bones.LEG_RIGHT, new Expect[]{
                 Expect.constant(0),
                 Expect.constant(AnimParams.OFFSET_LEG_R_Y.get()),

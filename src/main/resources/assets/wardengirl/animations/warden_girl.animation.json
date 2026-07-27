@@ -79,9 +79,9 @@
         "head": {
           "//": "4.3.1 수평 유지 보정 + 4.3.3 흔들림 반대 보정 + 4.3.5 체중이동 반대 보정. zRot 은 두 항의 합",
           "rotation": [
-            "-query.wg_breath_head_x * math.sin((query.wg_time - 2.0) * 360 / query.wg_breath_period)",
+            "query.wg_breath_head_x * math.sin((query.wg_time - 2.0) * 360 / query.wg_breath_period)",
             0,
-            "-query.wg_sway_head_z * math.sin((query.wg_time - 2.0611) * 360 / query.wg_sway_period) - query.wg_weight_head_z * math.sin((query.wg_time - 5.2667) * 360 / query.wg_weight_period)"
+            "query.wg_sway_head_z * math.sin((query.wg_time - 2.0611) * 360 / query.wg_sway_period) - query.wg_weight_head_z * math.sin((query.wg_time - 5.2667) * 360 / query.wg_weight_period)"
           ]
         },
         "arm_right": {
@@ -94,7 +94,7 @@
           "rotation": [
             0,
             0,
-            "query.wg_breath_arm_z * (1 + math.sin((query.wg_time - 1.5) * 360 / query.wg_breath_period))"
+            "query.wg_breath_arm_r_z * (1 + math.sin((query.wg_time - 1.5) * 360 / query.wg_breath_period))"
           ]
         },
         "arm_left": {
@@ -102,7 +102,7 @@
           "rotation": [
             0,
             0,
-            "-query.wg_breath_arm_z * (1 + math.sin((query.wg_time - 1.5) * 360 / query.wg_breath_period))"
+            "query.wg_breath_arm_l_z * (1 + math.sin((query.wg_time - 1.5) * 360 / query.wg_breath_period))"
           ]
         },
         "leg_right": {
