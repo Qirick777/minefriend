@@ -159,18 +159,24 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         // here rather than inside applyActionMotion because C1 writes body.yRot too, and once it
         // has, the walk's share is no longer separable.
         double[] walkOnly = readBlendAxes();
-        applyVitalMotion(animatable);
+        VitalMotion.Contribution vital = applyVitalMotion(animatable);
         if (VitalCheck.isRunning()) {
             VitalCheck.sample(readAllBones(), readAllPositions(), animatable.tickCount,
                     Minecraft.getInstance().getPartialTick());
         }
-        applyActionMotion(animatable, walkOnly);
+        ActionInfo action = applyActionMotion(animatable, walkOnly);
         applyStaticOffsets();
         applyLook(animatable, animationState);
         applyTurnLean(animatable);
         applyHeadgearSpring(animatable);
         applyOverlayVisibility();
         reportParamChange();
+        if (BlendCheck.isRunning()) {
+            BlendCheck.sample(walkOnly,
+                    vital == null ? null : new double[]{vital.bodyRotY()},
+                    action.c3(), action.eff(), action.weight(), readAllBones(),
+                    animatable.walkStateForReport(), animatable.tickCount);
+        }
         if (BoneTrace.isRunning()) {
             // Read-only: isWalkingForAnimation() advances the hysteresis, and calling it here would
             // run that state machine at frame rate on top of its normal per-frame call.
@@ -434,9 +440,9 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      * constant the json put there. Up to 2° of breathing on top would make a ±0.001 comparison
      * meaningless.
      */
-    private void applyVitalMotion(WardenGirlEntity animatable) {
+    private VitalMotion.Contribution applyVitalMotion(WardenGirlEntity animatable) {
         if (AnimParams.C1_SOURCE.get() < 0.5D || animatable.isSignTest()) {
-            return;
+            return null;
         }
         float partialTick = Minecraft.getInstance().getPartialTick();
         VitalMotion.Contribution c = VitalMotion.evaluate(animatable.tickCount + partialTick);
@@ -453,6 +459,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         // addition, so C2 wins outright there. Harmless while bounce_amplitude is 0, and left
         // unresolved on purpose — Part 11.
         addPosY(Bones.ROOT, c.rootPosY());
+        return c;
     }
 
     // ---- C3 액션 레이어 (직접 평가) ---------------------------------------------------------
@@ -488,7 +495,18 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      * on the bone and cannot be un-written. It rides the same fade envelope as C3, so it cannot
      * snap: at envelope 0 the effective weight is exactly 1 and this is a no-op.
      */
-    private void applyActionMotion(WardenGirlEntity animatable, double[] walkOnly) {
+    /**
+     * What C3 did this frame, on the four axes it shares with C2. Order matches
+     * {@link #readBlendAxes}: arm_right.xRot, arm_left.xRot, body.yRot, head.yRot.
+     *
+     * @param c3     the clip's contribution after the fade envelope, degrees
+     * @param eff    the effective walk weight actually used, per channel
+     * @param weight the fade envelope
+     */
+    private record ActionInfo(double[] c3, double[] eff, double weight) {
+    }
+
+    private ActionInfo applyActionMotion(WardenGirlEntity animatable, double[] walkOnly) {
         if (this.actions.size() > MAX_TRACKED_ENTITIES) {
             this.actions.clear();
         }
@@ -540,7 +558,24 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         }
         // After the check, so the measured delta is C3's own contribution and not C3 plus a walk
         // rescale that has nothing to do with the clip.
-        applyWalkBlend(walkOnly, weight);
+        double[] eff = applyWalkBlend(walkOnly, weight);
+        return new ActionInfo(blendChannels(pose, weight), eff, weight);
+    }
+
+    /** C3's contribution on the four shared axes, after the fade. Zero when nothing is playing. */
+    private static double[] blendChannels(ClipSampler.Pose pose, double weight) {
+        if (pose == null) {
+            return new double[4];
+        }
+        double[] armR = pose.rotationsDeg().get(Bones.ARM_RIGHT);
+        double[] armL = pose.rotationsDeg().get(Bones.ARM_LEFT);
+        double[] body = pose.rotationsDeg().get(Bones.BODY);
+        double[] head = pose.rotationsDeg().get(Bones.HEAD);
+        return new double[]{
+                armR == null ? 0.0D : armR[0] * weight,
+                armL == null ? 0.0D : armL[0] * weight,
+                body == null ? 0.0D : body[1] * weight,
+                head == null ? 0.0D : head[1] * weight};
     }
 
     private static LinkedHashMap<String, double[]> delta(Map<String, double[]> before,
@@ -554,14 +589,21 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         return out;
     }
 
-    private void applyWalkBlend(double[] walkOnly, double envelope) {
+    /**
+     * @return the effective walk weight per channel, in {@link #readBlendAxes} order
+     */
+    private double[] applyWalkBlend(double[] walkOnly, double envelope) {
         double arm = effectiveBlend(AnimParams.BLEND_WALK_ARM_X.get(), envelope);
         double body = effectiveBlend(AnimParams.BLEND_WALK_BODY_Y.get(), envelope);
         double head = effectiveBlend(AnimParams.BLEND_WALK_HEAD_Y.get(), envelope);
+        // Four axes and nothing else. The legs are deliberately absent: a mob whose legs stop
+        // mid-stride to swing at something is worse than one whose arms are over-rotated, and
+        // 4.4.2's leg swing is the whole reason the walk reads as walking.
         addRotX(Bones.ARM_RIGHT, walkOnly[0] * (arm - 1.0D));
         addRotX(Bones.ARM_LEFT, walkOnly[1] * (arm - 1.0D));
         addRotY(Bones.BODY, walkOnly[2] * (body - 1.0D));
         addRotY(Bones.HEAD, walkOnly[3] * (head - 1.0D));
+        return new double[]{arm, arm, body, head};
     }
 
     private static double effectiveBlend(double weight, double envelope) {

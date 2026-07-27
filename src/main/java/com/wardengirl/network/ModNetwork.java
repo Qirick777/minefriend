@@ -49,6 +49,30 @@ public final class ModNetwork {
                 VitalCheckPacket::encode, VitalCheckPacket::decode, VitalCheckPacket::handle);
         CHANNEL.registerMessage(3, ActionCheckPacket.class,
                 ActionCheckPacket::encode, ActionCheckPacket::decode, ActionCheckPacket::handle);
+        CHANNEL.registerMessage(4, BlendCheckPacket.class,
+                BlendCheckPacket::encode, BlendCheckPacket::decode, BlendCheckPacket::handle);
+    }
+
+    /** Asks every client to measure C2+C3 composition on the shared axes. */
+    public static void broadcastBlendCheck(int ticks) {
+        CHANNEL.send(PacketDistributor.ALL.noArg(), new BlendCheckPacket(ticks));
+    }
+
+    public record BlendCheckPacket(int ticks) {
+
+        public static void encode(BlendCheckPacket packet, FriendlyByteBuf buf) {
+            buf.writeVarInt(packet.ticks);
+        }
+
+        public static BlendCheckPacket decode(FriendlyByteBuf buf) {
+            return new BlendCheckPacket(buf.readVarInt());
+        }
+
+        public static void handle(BlendCheckPacket packet, Supplier<NetworkEvent.Context> ctx) {
+            ctx.get().enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
+                    () -> () -> com.wardengirl.client.BlendCheck.start(packet.ticks)));
+            ctx.get().setPacketHandled(true);
+        }
     }
 
     /** Asks every client to verify the C3 direct-evaluation path for the given number of ticks. */

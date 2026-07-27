@@ -268,6 +268,14 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     }
 
     public boolean isWalkingForAnimation() {
+        // Verification stimulus. Placed before the hysteresis so that clearing it hands control
+        // straight back to the real test - which is what makes walk_force 1 -> 0 a clean,
+        // repeatable idle transition rather than one that has to wait out the grace period.
+        if (AnimParams.WALK_FORCE.get() >= 0.5D) {
+            this.lastMovingTick = this.tickCount;
+            this.walkingForAnimation = true;
+            return true;
+        }
         double vx = Math.abs(getDeltaMovement().x);
         double vz = Math.abs(getDeltaMovement().z);
         double avg = (vx + vz) / 2.0D;

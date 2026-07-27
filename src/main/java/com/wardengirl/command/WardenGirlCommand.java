@@ -107,6 +107,11 @@ public final class WardenGirlCommand {
                         .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
                                 .executes(ctx -> actionCheck(ctx.getSource(),
                                         IntegerArgumentType.getInteger(ctx, "ticks")))))
+                .then(Commands.literal("blendcheck")
+                        .executes(ctx -> blendCheck(ctx.getSource(), 200))
+                        .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
+                                .executes(ctx -> blendCheck(ctx.getSource(),
+                                        IntegerArgumentType.getInteger(ctx, "ticks")))))
                 .then(Commands.literal("action")
                         .then(Commands.literal("stop")
                                 .executes(ctx -> action(ctx.getSource(), "")))
@@ -252,6 +257,21 @@ public final class WardenGirlCommand {
                                         + "         이 창 안에서 /wardengirl action actiontest 를 걸어야 한다.%n"
                                         + "         걸지 않으면 잔차가 전부 0 이지만 '측정 불가' 로 나온다.%n"
                                         + "         결과는 로그의 [actioncheck] 행에 나온다.",
+                                ticks))
+                        .withStyle(ChatFormatting.WHITE)), true);
+        return 1;
+    }
+
+    // ---- /wardengirl blendcheck <ticks> -------------------------------------------------------
+
+    private static int blendCheck(CommandSourceStack source, int ticks) {
+        ModNetwork.broadcastBlendCheck(ticks);
+        source.sendSuccess(() -> Component.literal("[blendcheck] ").withStyle(ChatFormatting.GOLD)
+                .append(Component.literal(String.format(Locale.ROOT,
+                                "%d틱 동안 겹치는 4축에서 C2 + C3 합성을 실측한다.%n"
+                                        + "         ai on 과 action actiontest 가 겹쳐야 한다. 겹친 프레임이 0 이면 측정 불가다.%n"
+                                        + "         head.yRot 판정에는 look_gain 0 이 필요하다.%n"
+                                        + "         결과는 로그의 [blendcheck] 행에 나온다.",
                                 ticks))
                         .withStyle(ChatFormatting.WHITE)), true);
         return 1;
