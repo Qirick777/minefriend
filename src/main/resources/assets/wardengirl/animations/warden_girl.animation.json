@@ -22,10 +22,10 @@
 
       "bones": {
         "root": {
-          "//": "4.3.2 바운스. abs(sin) 이 바닥에서 튕기는 리듬을 만든다",
+          "//": "4.3.2 바운스. 순수 sin — abs 를 쓰면 바닥에서 튕기는 리듬이 되어 '제자리 뛰기' 로 읽힌다",
           "position": [
             0,
-            "query.wg_bounce_amp * math.abs(math.sin(query.wg_time * query.wg_bounce_speed))",
+            "query.wg_bounce_amp * math.sin(query.wg_time * query.wg_bounce_speed)",
             0
           ]
         },
@@ -81,20 +81,20 @@
         },
 
         "leg_right": {
-          "//": "4.3.1 체중 후방 이동(xRot) + 4.3.2 접지 시 벌어짐(zRot)",
+          "//": "4.3.1 체중 후방 이동. 접지 벌림(zRot)은 폐기 — 튕김이 없어졌으므로 흡수할 충격도 없다",
           "rotation": [
             "-query.wg_breath_leg_x * math.sin(query.wg_time * query.wg_breath_speed)",
             0,
-            "query.wg_bounce_leg_z * (1 - math.abs(math.sin(query.wg_time * query.wg_bounce_speed)))"
+            0
           ]
         },
 
         "leg_left": {
-          "//": "xRot 은 양다리 같은 부호, zRot 은 좌우 반대 부호",
+          "//": "xRot 은 양다리 같은 부호",
           "rotation": [
             "-query.wg_breath_leg_x * math.sin(query.wg_time * query.wg_breath_speed)",
             0,
-            "-query.wg_bounce_leg_z * (1 - math.abs(math.sin(query.wg_time * query.wg_bounce_speed)))"
+            0
           ]
         }
       }

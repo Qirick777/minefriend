@@ -143,12 +143,10 @@ public final class AnimParams {
     // ---- 4.3.2 바운스 (주기 25tick) ------------------------------------------------------------
 
     public static final Param BOUNCE_SPEED = add("bounce_speed", "wg_bounce_speed", 7.2D,
-            "deg/tick", "T2", "바운스 위상 속도. 7.2 = 25틱 주기이나 abs() 때문에 실질 12.5틱", "root", "leg_right", "leg_left");
+            "deg/tick", "T2", "바운스 위상 속도. 7.2 = 25틱 주기", "root");
     /** Design doc Part 4.12: tuning priority #1. Slim model may make this read as too much. */
     public static final Param BOUNCE_AMPLITUDE = add("bounce_amplitude", "wg_bounce_amp", 0.4D,
-            "px", "T2", "귀여움의 핵심. 튜닝 1순위. 0.2~1.0 을 먼저 훑을 것", "root");
-    public static final Param BOUNCE_LEG_Z = add("bounce_leg_z", "wg_bounce_leg_z", 0.4D,
-            "deg", "T2", "접지 순간 다리가 미세하게 벌어짐 (무릎 없음의 유일한 대체)", "leg_right", "leg_left");
+            "px", "T2", "느긋한 상하 호흡감. 튜닝 1순위. 0.2~1.0 을 먼저 훑을 것", "root");
 
     // ---- 4.3.3 미세 흔들림 (주기 53tick) --------------------------------------------------------
 
@@ -163,10 +161,10 @@ public final class AnimParams {
 
     // ---- 4.3.4 기본 자세 오프셋 (정적, C1 과 별개로 상시 가산) --------------------------------------
 
-    public static final Param OFFSET_ARM_R_Z = add("offset_arm_right_z", null, -4.0D,
-            "deg", "T2", "오른팔 안쪽으로 모음", "arm_right");
-    public static final Param OFFSET_ARM_L_Z = add("offset_arm_left_z", null, 4.0D,
-            "deg", "T2", "왼팔 안쪽으로 모음", "arm_left");
+    public static final Param OFFSET_ARM_R_X = add("offset_arm_right_x", null, 4.0D,
+            "deg", "T2", "오른팔을 힘 빼고 살짝 앞으로", "arm_right");
+    public static final Param OFFSET_ARM_L_X = add("offset_arm_left_x", null, 4.0D,
+            "deg", "T2", "왼팔을 힘 빼고 살짝 앞으로", "arm_left");
     public static final Param OFFSET_LEG_R_Y = add("offset_leg_right_y", null, 2.0D,
             "deg", "T2", "오른발 안짱", "leg_right");
     public static final Param OFFSET_LEG_L_Y = add("offset_leg_left_y", null, -2.0D,
@@ -175,28 +173,6 @@ public final class AnimParams {
             "deg", "T2", "목 앞으로", "head");
     public static final Param OFFSET_BODY_X = add("offset_body_x", null, -1.5D,
             "deg", "T2", "어깨 앞으로", "body");
-
-    // ---- 이후 태스크에서 사용. 값만 보유한다 (Part 3.5 "전 파라미터 단일 파일") ---------------------
-    // 이 값들을 읽는 코드는 아직 없다. T3/T4 에서 붙는다.
-
-    public static final Param HEADGEAR_STIFFNESS = add("headgear_stiffness", null, 0.25D,
-            "-", "T3", "4.5.1 스프링 강성. 낮으면 늦게 따라온다", "headgear");
-    public static final Param HEADGEAR_DAMPING = add("headgear_damping", null, 0.35D,
-            "-", "T3", "4.5.1 감쇠. 낮으면 오래 흔들린다", "headgear");
-    public static final Param HEADGEAR_AMPLITUDE = add("headgear_amplitude", null, 1.3D,
-            "-", "T3", "4.5.1 최종 배율 (오버슈트)", "headgear");
-    public static final Param HEADGEAR_MAX_ANGLE = add("headgear_max_angle", null, 35.0D,
-            "deg", "T3", "4.5.1 안전 클램프", "headgear");
-    public static final Param LOOK_DAMPING = add("look_damping", null, 0.13D,
-            "-", "T4", "4.6 시선 감쇠", "head");
-    public static final Param LOOK_DAMPING_NEAR = add("look_damping_near", null, 0.06D,
-            "-", "T4", "4.6 근거리 감쇠 (느긋하게)", "head");
-    public static final Param LOOK_NEAR_DISTANCE = add("look_near_distance", null, 3.0D,
-            "block", "T4", "4.6 근거리 판정", "head");
-    public static final Param LOOK_YAW_MAX = add("look_yaw_max", null, 70.0D,
-            "deg", "T4", "4.6 목 좌우 한계", "head");
-    public static final Param LOOK_PITCH_MAX = add("look_pitch_max", null, 35.0D,
-            "deg", "T4", "4.6 목 상하 한계", "head");
 
     // ------------------------------------------------------------------------------------------
 

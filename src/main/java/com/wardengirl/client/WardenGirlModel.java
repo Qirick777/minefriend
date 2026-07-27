@@ -126,8 +126,11 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      * these same bones; assigning here would delete them and the model would go still.
      */
     private void applyStaticOffsets() {
-        addRotZ(Bones.ARM_RIGHT, AnimParams.OFFSET_ARM_R_Z.get());
-        addRotZ(Bones.ARM_LEFT, AnimParams.OFFSET_ARM_L_Z.get());
+        // xRot, not zRot. An inward zRot offset is geometrically impossible here: the arm's inner
+        // face sits flush against the torso (both at x = ±4), so any inward z rotation drives the
+        // arm into the body. Fore/aft rotation has nothing to collide with. See Part 11.
+        addRotX(Bones.ARM_RIGHT, AnimParams.OFFSET_ARM_R_X.get());
+        addRotX(Bones.ARM_LEFT, AnimParams.OFFSET_ARM_L_X.get());
         addRotY(Bones.LEG_RIGHT, AnimParams.OFFSET_LEG_R_Y.get());
         addRotY(Bones.LEG_LEFT, AnimParams.OFFSET_LEG_L_Y.get());
         addRotX(Bones.HEAD, AnimParams.OFFSET_HEAD_X.get());
