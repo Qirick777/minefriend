@@ -4,110 +4,302 @@
     {
       "description": {
         "identifier": "geometry.warden_girl",
-        "texture_width": 64,
-        "texture_height": 64,
+        "texture_width": 128,
+        "texture_height": 128,
         "visible_bounds_width": 3,
         "visible_bounds_height": 4,
-        "visible_bounds_offset": [0, 1.5, 0]
+        "visible_bounds_offset": [
+          0,
+          1.5,
+          0
+        ]
       },
       "bones": [
         {
           "name": "root",
-          "pivot": [0, 0, 0]
+          "pivot": [
+            0,
+            0,
+            0
+          ]
         },
         {
           "name": "hip",
           "parent": "root",
-          "pivot": [0, 12, 0]
+          "pivot": [
+            0,
+            12,
+            0
+          ]
         },
         {
           "name": "body",
           "parent": "hip",
-          "pivot": [0, 12, 0],
+          "pivot": [
+            0,
+            12,
+            0
+          ],
           "cubes": [
-            { "origin": [-4, 12, -2], "size": [8, 12, 4], "uv": [16, 16] }
+            {
+              "origin": [
+                -4,
+                12,
+                -2
+              ],
+              "size": [
+                8,
+                12,
+                4
+              ],
+              "uv": [
+                32,
+                32
+              ]
+            }
           ]
         },
         {
           "name": "head",
           "parent": "body",
-          "pivot": [0, 24, 0],
+          "pivot": [
+            0,
+            24,
+            0
+          ],
           "cubes": [
-            { "origin": [-4, 24, -4], "size": [8, 8, 8], "uv": [0, 0] }
+            {
+              "origin": [
+                -4,
+                24,
+                -4
+              ],
+              "size": [
+                8,
+                8,
+                8
+              ],
+              "uv": [
+                0,
+                0
+              ]
+            }
           ]
         },
         {
           "name": "headgear_right",
           "parent": "head",
           "//": [
-            "4.5 워든 감각 촉수 (오른쪽). 머리 오른쪽 면 x=-4 에서 위로 뻗는 얇은 평면.",
+            "4.5 워든 감각 촉수. 본체와 다른 텍스처(tendril.png)로 그린다 - TendrilRenderLayer.",
             "",
             "*** 촉수 평면 크기는 아래 size 의 [폭, 길이, 0] 두 값이다. F3+T 로 즉시 반영된다. ***",
-            "  현재 3 x 13. 폭을 w, 길이를 h 로 바꾸면 다음 두 가지를 함께 고쳐야 한다:",
-            "    1) origin x = (피벗 x) - w/2  ... 평면을 피벗 위에 가운데 맞춤",
-            "    2) uv 영역 크기는 2*(w+깊이) 가로 x (깊이+h) 세로 = 2w x h 이다.",
-            "       10x10 이면 uv 영역이 20x10 이 되므로 오른쪽 [0,32], 왼쪽 [24,32] 를 쓴다",
-            "       (v 32~48 대역이 비어 있다. 겹치면 check_geo.py 가 잡는다)",
-            "  깊이는 0 을 유지한다. 두께는 inflate 가 준다 - 0 이면 z-fighting 이 난다.",
+            "  현재 10 x 10. 폭을 w, 길이를 h 로 바꾸면 origin x = (피벗 x) - w/2 를 함께 고친다.",
+            "  깊이는 0 을 유지한다 - 두께는 inflate 가 준다. 0 이면 z-fighting 이 난다.",
             "",
-            "각도(바깥/뒤로)와 부착 위치는 여기 있지 않다. geo.json 은 로드 시 한 번만 읽혀",
-            "커맨드로 바꿀 수 없기 때문이다. headgear_splay / headgear_tilt /",
-            "headgear_pivot_x / headgear_pivot_y 파라미터로 옮겼다 (AnimParams)."
+            "uv 는 면별(north/south) 이고 uv_size 가 선언 시트 크기(128)와 같다.",
+            "정규화 결과가 0~1 이 되어 바인딩된 텍스처 '전체' 를 샘플링하므로,",
+            "tendril.png 의 실제 픽셀 크기가 몇이든 그대로 맞는다. 본체 시트와 무관하다.",
+            "왼쪽은 uv_size 가 음수 - 같은 파일을 좌우 반전해서 공용한다.",
+            "",
+            "각도와 부착 위치는 여기 없다. headgear_splay / headgear_tilt /",
+            "headgear_pivot_x / headgear_pivot_y 파라미터다 (param set 으로 즉시 반영)."
           ],
-          "pivot": [-4, 29, 0],
+          "pivot": [
+            -4.0,
+            30,
+            0
+          ],
           "cubes": [
             {
-              "origin": [-5.5, 29, 0],
-              "size": [3, 13, 0],
+              "origin": [
+                -9.0,
+                30,
+                0
+              ],
+              "size": [
+                10,
+                10,
+                0
+              ],
               "inflate": 0.02,
-              "uv": [0, 32]
+              "uv": {
+                "north": {
+                  "uv": [
+                    0,
+                    0
+                  ],
+                  "uv_size": [
+                    128,
+                    128
+                  ]
+                },
+                "south": {
+                  "uv": [
+                    0,
+                    0
+                  ],
+                  "uv_size": [
+                    128,
+                    128
+                  ]
+                }
+              }
             }
           ]
         },
         {
           "name": "headgear_left",
           "parent": "head",
-          "//": "좌우 대칭. 크기 규칙은 headgear_right 주석 참조. 각도는 파라미터에 있다",
-          "pivot": [4, 29, 0],
+          "//": "좌우 대칭. uv_size 가 음수라 같은 tendril.png 를 좌우 반전해 쓴다",
+          "pivot": [
+            4.0,
+            30,
+            0
+          ],
           "cubes": [
             {
-              "origin": [2.5, 29, 0],
-              "size": [3, 13, 0],
+              "origin": [
+                -1.0,
+                30,
+                0
+              ],
+              "size": [
+                10,
+                10,
+                0
+              ],
               "inflate": 0.02,
-              "uv": [8, 32]
+              "uv": {
+                "north": {
+                  "uv": [
+                    128,
+                    0
+                  ],
+                  "uv_size": [
+                    -128,
+                    128
+                  ]
+                },
+                "south": {
+                  "uv": [
+                    128,
+                    0
+                  ],
+                  "uv_size": [
+                    -128,
+                    128
+                  ]
+                }
+              }
             }
           ]
         },
         {
           "name": "arm_right",
           "parent": "body",
-          "pivot": [-5, 22, 0],
+          "pivot": [
+            -5,
+            22,
+            0
+          ],
           "cubes": [
-            { "origin": [-7, 12, -2], "size": [3, 12, 4], "uv": [40, 16] }
+            {
+              "origin": [
+                -7,
+                12,
+                -2
+              ],
+              "size": [
+                3,
+                12,
+                4
+              ],
+              "uv": [
+                80,
+                32
+              ]
+            }
           ]
         },
         {
           "name": "arm_left",
           "parent": "body",
-          "pivot": [5, 22, 0],
+          "pivot": [
+            5,
+            22,
+            0
+          ],
           "cubes": [
-            { "origin": [4, 12, -2], "size": [3, 12, 4], "uv": [32, 48] }
+            {
+              "origin": [
+                4,
+                12,
+                -2
+              ],
+              "size": [
+                3,
+                12,
+                4
+              ],
+              "uv": [
+                64,
+                96
+              ]
+            }
           ]
         },
         {
           "name": "leg_right",
           "parent": "hip",
-          "pivot": [-2.0, 12, 0],
+          "pivot": [
+            -2.0,
+            12,
+            0
+          ],
           "cubes": [
-            { "origin": [-4.0, 0, -2], "size": [4, 12, 4], "uv": [0, 16] }
+            {
+              "origin": [
+                -4.0,
+                0,
+                -2
+              ],
+              "size": [
+                4,
+                12,
+                4
+              ],
+              "uv": [
+                0,
+                32
+              ]
+            }
           ]
         },
         {
           "name": "leg_left",
           "parent": "hip",
-          "pivot": [2.0, 12, 0],
+          "pivot": [
+            2.0,
+            12,
+            0
+          ],
           "cubes": [
-            { "origin": [0.0, 0, -2], "size": [4, 12, 4], "uv": [16, 48] }
+            {
+              "origin": [
+                0.0,
+                0,
+                -2
+              ],
+              "size": [
+                4,
+                12,
+                4
+              ],
+              "uv": [
+                32,
+                96
+              ]
+            }
           ]
         }
       ]

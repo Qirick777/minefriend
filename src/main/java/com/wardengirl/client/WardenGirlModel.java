@@ -170,7 +170,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
 
     /** Where warden_girl.geo.json actually puts the tendril pivots; the parameters offset from here. */
     private static final double GEO_PIVOT_X = 4.0D;
-    private static final double GEO_PIVOT_Y = 29.0D;
+    private static final double GEO_PIVOT_Y = 30.0D;
 
     /** {right, left}, in the order of {@link Bones#HEADGEAR}. */
     private HeadgearSpring[] springsFor(WardenGirlEntity animatable) {
@@ -220,6 +220,11 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             bone.setRotX(AxisConvention.toRad(tilt + spring.output(0, partialTick, target[0])));
             bone.setRotY(AxisConvention.toRad(spring.output(1, partialTick, target[1])));
             bone.setRotZ(AxisConvention.toRad(splay + spring.output(2, partialTick, target[2])));
+
+            // The body pass must not draw these — TendrilRenderLayer redraws them from
+            // tendril.png, and a visible bone would be drawn twice, once with the skin's UVs.
+            // Set every frame rather than once, so the state cannot drift.
+            bone.setHidden(true);
 
             // Attachment point, as a translation of the whole bone. The render applies
             // T(pos)·T(pivot)·R·T(-pivot), so a root vertex sitting on the pivot lands at

@@ -7,12 +7,15 @@ import software.bernie.geckolib.renderer.GeoEntityRenderer;
 /**
  * Entity renderer. Design doc Part 3.5 file layout.
  *
- * <p>T1 scope: wiring only. No layers, no glow, no dynamic texturing.
+ * <p>One render layer, added in T3: the sensory tendrils use a separate texture file so it can be
+ * redrawn independently of the skin. See {@link TendrilRenderLayer}.
  */
 public class WardenGirlRenderer extends GeoEntityRenderer<WardenGirlEntity> {
 
     public WardenGirlRenderer(EntityRendererProvider.Context context) {
         super(context, new WardenGirlModel());
         this.shadowRadius = 0.4F;
+        // The tendrils are drawn from their own texture; the model hides them during the body pass.
+        addRenderLayer(new TendrilRenderLayer(this));
     }
 }

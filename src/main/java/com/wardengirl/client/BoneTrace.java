@@ -418,11 +418,18 @@ public final class BoneTrace {
         // oscillator is 2π/√STIFFNESS ticks (≈12.6 at 0.25), which is what the drift guard needs.
         double springPeriod = 2 * Math.PI / Math.sqrt(Math.max(1e-6, AnimParams.HEADGEAR_STIFFNESS.get()));
         double springMax = Math.abs(AnimParams.HEADGEAR_MAX_ANGLE.get());
-        for (String tendril : Bones.HEADGEAR) {
-            m.put(tendril, new Expect[]{
+        // The bone carries the BASE POSE plus the spring output, so the band has to be centred on
+        // the base. Centring it on zero produced two FAILs the moment headgear_splay was swept to
+        // 90 — the check was measuring a value it did not model. xRot is centred on the tilt, zRot
+        // on ±splay (outward is negative on the right tendril, positive on the left).
+        double splay = AnimParams.HEADGEAR_SPLAY.get();
+        double tilt = AnimParams.HEADGEAR_TILT.get();
+        for (int i = 0; i < Bones.HEADGEAR.size(); i++) {
+            double outward = i == 0 ? -1.0D : 1.0D;
+            m.put(Bones.HEADGEAR.get(i), new Expect[]{
+                    Expect.band(tilt, springMax, springPeriod),
                     Expect.band(0, springMax, springPeriod),
-                    Expect.band(0, springMax, springPeriod),
-                    Expect.band(0, springMax, springPeriod)});
+                    Expect.band(splay * outward, springMax, springPeriod)});
         }
         // arm zRot carries an outward-only bias: amp*(1+sin) spans 0 .. 2*amp.
         m.put(Bones.ARM_RIGHT, new Expect[]{

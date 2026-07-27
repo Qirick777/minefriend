@@ -299,10 +299,10 @@ public final class AnimParams {
     // error is computed before the base pose is added. Changing the base cannot destabilise it.
 
     /** Outward lean, degrees. Right tendril leans toward −X, left toward +X. */
-    public static final Param HEADGEAR_SPLAY = addShape("headgear_splay", 30.0D, 0.0D, 90.0D,
-            "deg", "T3", "촉수 바깥 각도. 0 = 수직, 90 = 수평", "headgear_right", "headgear_left");
+    public static final Param HEADGEAR_SPLAY = addShape("headgear_splay", 5.0D, 0.0D, 90.0D,
+            "deg", "T3", "촉수 바깥 각도. 0 = 수직, 90 = 수평. 텍스처가 이미 사선이라 기본은 거의 0", "headgear_right", "headgear_left");
     /** Backward lean, degrees. Positive tips the ends toward the mob's back. */
-    public static final Param HEADGEAR_TILT = addShape("headgear_tilt", 10.0D, -45.0D, 45.0D,
+    public static final Param HEADGEAR_TILT = addShape("headgear_tilt", 0.0D, -45.0D, 45.0D,
             "deg", "T3", "촉수 뒤로 젖힘. 양수 = 뒤로, 음수 = 앞으로", "headgear_right", "headgear_left");
     /**
      * Attachment x, in model pixels, mirrored left/right. The geo pivot stays at 4; this is applied
@@ -316,7 +316,7 @@ public final class AnimParams {
     public static final Param HEADGEAR_PIVOT_X = addShape("headgear_pivot_x", 4.0D, 0.0D, 8.0D,
             "px", "T3", "촉수 부착 x (좌우 대칭). 4 = 머리 옆면, 0 = 머리 중앙",
             "headgear_right", "headgear_left");
-    public static final Param HEADGEAR_PIVOT_Y = addShape("headgear_pivot_y", 29.0D, 24.0D, 34.0D,
+    public static final Param HEADGEAR_PIVOT_Y = addShape("headgear_pivot_y", 30.0D, 24.0D, 34.0D,
             "px", "T3", "촉수 부착 y. 머리 큐브는 y24~32", "headgear_right", "headgear_left");
 
     // ---- 4.6 시선 추적 (T3 에서는 가산과 클램프만. 감쇠 보간 · 근거리 반응은 T4) ------------------------
