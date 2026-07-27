@@ -24,3 +24,8 @@ run-data
 
 # Files from Forge MDK
 forge*changelog.txt
+
+# 설계서 정본은 docs/워든걸_1차설계서.md 하나뿐이다.
+# 루트에 사본이 올라오면 초안이 정본을 덮어쓰는 사고가 난다(실제 발생). 커밋 자체를 막는다.
+/워든걸*.md
+/*설계서*.md

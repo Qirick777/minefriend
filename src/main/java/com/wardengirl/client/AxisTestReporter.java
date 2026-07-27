@@ -50,7 +50,7 @@ public final class AxisTestReporter {
                                 "bone=%s  축=%s  요청=%+.1f°  실측=(x %+.3f°, y %+.3f°, z %+.3f°)",
                                 boneName, axis, degrees, target[0], target[1], target[2]))
                         .withStyle(ChatFormatting.WHITE)));
-        send(Component.literal("                 기대: " + Bones.expectation(boneName, axis))
+        send(Component.literal("                 기대: " + Bones.expectation(boneName, axis, degrees))
                 .withStyle(ChatFormatting.YELLOW));
 
         // The full dump goes to the log rather than chat — eight lines of chat per test would bury

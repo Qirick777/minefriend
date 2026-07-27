@@ -55,36 +55,43 @@ public final class Bones {
     }
 
     /**
-     * What Part 4.0 says a <em>positive</em> rotation on this bone/axis should look like.
+     * The physical meaning of a rotation, per design doc Part 4.0.1's derived table.
      *
-     * <p>This is the whole point of the T1 axis check: the command prints the expectation, the
-     * human looks at the screen, and the two either agree or they do not. GeckoLib's json axis
-     * directions are not guaranteed to match this table — that is exactly what is being tested.
+     * <p>Sign-aware: pass the actual signed angle, because every entry reverses with the sign and
+     * a human reading "위를 봄" while looking at a downward tilt is exactly the confusion this is
+     * meant to prevent.
+     *
+     * <p>These are <em>derived</em> descriptions, not the convention itself. The convention is
+     * stated once, in {@link AxisConvention}: the point above the pivot moves toward the mob's
+     * back for +xRot, and toward the mob's left for +yRot / +zRot.
      */
-    public static String expectation(String bone, Axis axis) {
+    public static String expectation(String bone, Axis axis, double degrees) {
+        boolean pos = degrees >= 0;
         return switch (bone) {
-            case BODY -> switch (axis) {
-                case X -> "앞으로 숙임";
-                case Y -> "오른쪽으로 비틀기";
-                case Z -> "오른쪽으로 기울임";
-            };
             case HEAD -> switch (axis) {
-                case X -> "아래를 봄";
-                case Y -> "오른쪽을 봄";
-                case Z -> "오른쪽으로 갸웃";
+                case X -> pos ? "위를 봄" : "아래를 봄";
+                case Y -> pos ? "왼쪽을 봄" : "오른쪽을 봄";
+                case Z -> pos ? "왼쪽 갸웃" : "오른쪽 갸웃";
             };
-            case ARM_RIGHT, ARM_LEFT -> switch (axis) {
-                case X -> "뒤로 젖힘";
-                case Y -> "(규약 없음 — Part 4.0 arm yRot 미정의)";
-                case Z -> "몸 안쪽으로 붙임";
+            case BODY -> switch (axis) {
+                case X -> pos ? "뒤로 젖힘" : "앞으로 숙임";
+                case Y -> pos ? "왼쪽 비틀기" : "오른쪽 비틀기";
+                case Z -> pos ? "왼쪽 기울임" : "오른쪽 기울임";
             };
-            case LEG_RIGHT, LEG_LEFT -> switch (axis) {
-                case X -> "뒤로 뻗음";
-                case Y -> "발끝 안쪽";
-                case Z -> "벌림";
+            case ARM_RIGHT, LEG_RIGHT -> switch (axis) {
+                case X -> pos ? "앞으로 휘두름" : "뒤로 젖힘";
+                case Y -> pos ? "위에서 볼 때 반시계" : "위에서 볼 때 시계";
+                case Z -> pos ? "바깥으로 벌림" : "안쪽으로 붙임";
             };
-            case ROOT -> "(규약 없음 — root 는 위치 전용: 바운스 / 반동 이동)";
-            case HEADGEAR -> "(규약 없음 — headgear 는 4.5 물리 추종 전용, 키프레임 금지)";
+            case ARM_LEFT, LEG_LEFT -> switch (axis) {
+                case X -> pos ? "앞으로 휘두름" : "뒤로 젖힘";
+                case Y -> pos ? "위에서 볼 때 반시계" : "위에서 볼 때 시계";
+                case Z -> pos ? "안쪽으로 붙임" : "바깥으로 벌림";
+            };
+            // root carries position only (bounce, recoil travel) and has no rotation keyframes.
+            case ROOT -> "(root 는 위치 전용 — 회전 키프레임 없음. 규약은 적용되나 미사용)";
+            // headgear obeys the convention but is driven by the 4.5 spring, never by keyframes.
+            case HEADGEAR -> "(headgear 는 키프레임 없음 — 4.5 스프링 출력에만 규약 적용)";
             default -> "(알 수 없는 본)";
         };
     }

@@ -1,6 +1,7 @@
 package com.wardengirl.client;
 
 import com.wardengirl.WardenGirlMod;
+import com.wardengirl.anim.AxisConvention;
 import com.wardengirl.anim.Bones;
 import com.wardengirl.entity.WardenGirlEntity;
 import net.minecraft.resources.ResourceLocation;
@@ -46,10 +47,8 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      * <p>Runs after the animation processor, so whatever is written here is the last word on the
      * bone — which is what makes it a usable measuring stick.
      *
-     * <p><strong>Units:</strong> {@link GeoBone} rotations are radians, not degrees. Verified from
-     * the GeckoLib bytecode: {@code RenderUtils.rotateMatrixAroundBone} feeds the values to
-     * {@code com.mojang.math.Axis.rotation(float)}, which is the radian entry point
-     * ({@code rotationDegrees} is the degree one). Writing 10 here would be ~573°.
+     * <p><strong>Units:</strong> everything here is in degrees. {@link AxisConvention} is the only
+     * place they become radians for GeckoLib (design doc Part 4.0.2).
      */
     @Override
     public void setCustomAnimations(WardenGirlEntity animatable, long instanceId,
@@ -91,12 +90,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         }
         GeoBone bone = maybeBone.get();
 
-        float radians = (float) Math.toRadians(degrees);
-        switch (axis) {
-            case X -> bone.setRotX(radians);
-            case Y -> bone.setRotY(radians);
-            case Z -> bone.setRotZ(radians);
-        }
+        AxisConvention.set(bone, axis, degrees);
 
         // Read the values back off the bones rather than echoing what we intended to write.
         // Part 6.2 principle 2: the report has to be an observation, not a restatement.
@@ -112,10 +106,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     private java.util.LinkedHashMap<String, double[]> readAllBones() {
         java.util.LinkedHashMap<String, double[]> out = new java.util.LinkedHashMap<>();
         for (String name : Bones.ALL) {
-            getBone(name).ifPresent(b -> out.put(name, new double[]{
-                    Math.toDegrees(b.getRotX()),
-                    Math.toDegrees(b.getRotY()),
-                    Math.toDegrees(b.getRotZ())}));
+            getBone(name).ifPresent(b -> out.put(name, AxisConvention.readDegrees(b)));
         }
         return out;
     }
@@ -129,11 +120,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      */
     private void resetAllBones() {
         for (String name : Bones.ALL) {
-            getBone(name).ifPresent(bone -> {
-                bone.setRotX(0);
-                bone.setRotY(0);
-                bone.setRotZ(0);
-            });
+            getBone(name).ifPresent(AxisConvention::zero);
         }
     }
 }

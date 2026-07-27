@@ -155,12 +155,12 @@ public final class WardenGirlCommand {
                                 "대상 UUID=%s  (거리 %.1fm)%n           본 = %s,  축 = %s,  각도 = +%.1f°%n"
                                         + "           요청 회전 (xRot, yRot, zRot) = (%.1f, %.1f, %.1f)°%n"
                                         + "           상태 변경: \"%s\" -> \"%s\"%n"
-                                        + "           Part 4.0 기대: %s",
+                                        + "           Part 4.0 유도: %s",
                                 target.getUUID(), distance,
                                 boneName, axis, angle,
                                 rx, ry, rz,
                                 before, after,
-                                Bones.expectation(boneName, axis)))
+                                Bones.expectation(boneName, axis, degrees)))
                         .withStyle(ChatFormatting.WHITE)), true);
         source.sendSuccess(() -> Component.literal(
                         "           ※ 한 번에 한 축만 적용된다. 나머지 두 축과 다른 본은 전부 0 으로 초기화된다.")
