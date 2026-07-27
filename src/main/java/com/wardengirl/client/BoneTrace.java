@@ -86,6 +86,19 @@ public final class BoneTrace {
     private static final int[][] CLAMP_HITS = new int[SIDES][3];
     private static final int[] SPRING_SAMPLES = new int[SIDES];
 
+    /**
+     * Largest <em>simultaneous</em> difference between the two tendrils, per axis.
+     *
+     * <p>The first version of this compared the two sides' angle <em>maxima</em> and reported
+     * 0.0527° for a swing where the rendered bones actually differed by 1.2°. Of course it did:
+     * both springs eventually reach nearly the same extreme, they just reach it at different
+     * moments, so comparing extremes measures almost nothing. What shows on screen is the two
+     * tendrils holding different angles <em>at the same instant</em>, which is this.
+     */
+    private static final double[] SPRING_SPLIT_MAX = new double[3];
+    private static final double[] SPRING_PENDING_RIGHT = new double[3];
+    private static boolean pendingRightValid = false;
+
     /** Called by the model once per frame per side while a trace is running. */
     public static void noteSpring(int side, double[] angles, double[] velocities,
                                   double effectiveStiffness) {
@@ -109,6 +122,15 @@ public final class BoneTrace {
             SPRING_VEL_MAX[side][i] = Math.max(SPRING_VEL_MAX[side][i], velocities[i]);
         }
         SPRING_SEEN[side] = true;
+        if (side == 0) {
+            System.arraycopy(angles, 0, SPRING_PENDING_RIGHT, 0, 3);
+            pendingRightValid = true;
+        } else if (pendingRightValid) {
+            for (int i = 0; i < 3; i++) {
+                SPRING_SPLIT_MAX[i] = Math.max(SPRING_SPLIT_MAX[i],
+                        Math.abs(SPRING_PENDING_RIGHT[i] - angles[i]));
+            }
+        }
         // The clamp is evaluated on the raw pre-clamp value, which is why the head target has to be
         // re-derived here rather than read back off the bone: the bone only ever shows the clamped
         // result and could not distinguish "reached the limit" from "was held at the limit".
@@ -129,6 +151,8 @@ public final class BoneTrace {
         sampleCount = 0;
         java.util.Arrays.fill(SPRING_SEEN, false);
         java.util.Arrays.fill(SPRING_SAMPLES, 0);
+        java.util.Arrays.fill(SPRING_SPLIT_MAX, 0.0D);
+        pendingRightValid = false;
         for (int side = 0; side < SIDES; side++) {
             java.util.Arrays.fill(CLAMP_HITS[side], 0);
         }
@@ -589,13 +613,12 @@ public final class BoneTrace {
         // The whole point of splitting the bone: identical springs would produce identical output
         // and the two tendrils would move as one rigid piece.
         if (SPRING_SEEN[0] && SPRING_SEEN[1]) {
-            double diff = 0;
-            for (int i = 0; i < 3; i++) {
-                diff = Math.max(diff, Math.abs(SPRING_ANGLE_MAX[0][i] - SPRING_ANGLE_MAX[1][i]));
-            }
+            double diff = Math.max(SPRING_SPLIT_MAX[0],
+                    Math.max(SPRING_SPLIT_MAX[1], SPRING_SPLIT_MAX[2]));
             WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                    "[trace] 좌우 비대칭 확인: k 오른쪽 %.4f / 왼쪽 %.4f, 각도 최대치 차 %.4f도  %s",
-                    SPRING_STIFFNESS[0], SPRING_STIFFNESS[1], diff,
+                    "[trace] 좌우 비대칭: k 오른쪽 %.4f / 왼쪽 %.4f | 동시각 차 최대 x %.3f y %.3f z %.3f 도  %s",
+                    SPRING_STIFFNESS[0], SPRING_STIFFNESS[1],
+                    SPRING_SPLIT_MAX[0], SPRING_SPLIT_MAX[1], SPRING_SPLIT_MAX[2],
                     diff > 1e-6 ? "OK 좌우가 다르게 움직인다" : "주의: 좌우가 완전히 동일하다"));
         }
         return fails;
