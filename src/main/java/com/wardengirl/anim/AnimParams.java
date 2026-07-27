@@ -32,8 +32,9 @@ import java.util.Map;
  * of magnitude is right", and equal ratios are what the eye actually compares. Nudging a default
  * by ±10% cannot answer that; seeing 0.1 next to 1.6 can.
  *
- * <p>Units are degrees for rotations and pixels for positions, per Part 4.0.3. Speeds are
- * degrees of phase per tick, so {@code 12} is a 30-tick period (360/30).
+ * <p>Units are degrees for rotations, pixels for positions, and ticks for periods and phase
+ * delays, per Part 4.0.3. Nothing here is "degrees of phase per tick" — the json divides 360 by
+ * the period, so the tunable number is the one a human reasons about.
  */
 public final class AnimParams {
 
@@ -131,17 +132,18 @@ public final class AnimParams {
     // a human actually reasons about: "how many ticks per breath". Amplitude alone cannot fix an
     // impression of "too fast", so the period has to be reachable from the command too.
 
-    public static final Param BREATH_PERIOD = add("breath_period", "wg_breath_period", 44.0D,
-            "tick", "T2", "호흡 주기. 44틱 ≈ 분당 27회 (30틱은 분당 40회로 사람의 3배 가까이 빨랐다)",
+    public static final Param BREATH_PERIOD = add("breath_period", "wg_breath_period", 60.0D,
+            "tick", "T2", "호흡 주기. 60틱 = 3초 = 분당 20회, 사람 안정 시 호흡에 가깝다 (30 → 44 → 60 확정)",
             "body", "head", "arm_right", "arm_left");
     public static final Param BREATH_BODY_X = add("breath_body_x", "wg_breath_body_x", 0.5D,
             "deg", "T2", "들숨에 상체를 뒤로 젖히는 진폭", "body");
     public static final Param BREATH_BODY_Y = add("breath_body_y", "wg_breath_body_y", 0.12D,
             "px", "T2", "흉곽 상승", "body");
     public static final Param BREATH_HEAD_X = add("breath_head_x", "wg_breath_head_x", 0.25D,
-            "deg", "T2", "머리 수평 유지 보정 (위상 -16°)", "head");
+            "deg", "T2", "머리 수평 유지 보정 (2.0틱 지연 = 60틱에서 -12°. 구판 44틱 -16° 환산)", "head");
     public static final Param BREATH_ARM_Z = add("breath_arm_z", "wg_breath_arm_z", 0.35D,
-            "deg", "T2", "들숨에 어깨가 바깥으로. 바깥 방향 바이어스 (관통 방지)", "arm_right", "arm_left");
+            "deg", "T2", "들숨에 어깨가 바깥으로. 바깥 방향 바이어스 (관통 방지). 1.5틱 지연 = 60틱에서 -9°",
+            "arm_right", "arm_left");
 
     // ---- 4.3.2 바운스 ------------------------------------------------------------------------
 
@@ -158,25 +160,32 @@ public final class AnimParams {
     // ---- 4.3.3 미세 흔들림 --------------------------------------------------------------------
 
     public static final Param SWAY_PERIOD = add("sway_period", "wg_sway_period", 53.0D,
-            "tick", "T2", "미세 흔들림 주기", "body", "head", "hip");
+            "tick", "T2", "미세 흔들림 주기", "body", "head");
     public static final Param SWAY_BODY_Z = add("sway_body_z", "wg_sway_body_z", 1.2D,
             "deg", "T2", "상체 좌우", "body");
     public static final Param SWAY_HEAD_Z = add("sway_head_z", "wg_sway_head_z", 0.7D,
-            "deg", "T2", "머리 반대 보정 (위상 -14°)", "head");
-    public static final Param SWAY_HIP_Y = add("sway_hip_y", "wg_sway_hip_y", 0.5D,
-            "deg", "T2", "전신 미세 비틀기 (위상 -20°)", "hip");
+            "deg", "T2", "머리 반대 보정 (2.06틱 지연 = 53틱에서 -14°)", "head");
+    /**
+     * Body, not hip. Rotating the hip swings the feet along a 12px arc, which reads as sliding —
+     * see Part 11. Body pivots at the hip too, but the legs hang off hip, so body rotation leaves
+     * them untouched.
+     */
+    public static final Param SWAY_BODY_Y = add("sway_body_y", "wg_sway_body_y", 0.5D,
+            "deg", "T2", "상체 미세 비틀기 (2.94틱 지연 = 53틱에서 -20°). 구판 hip.yRot 에서 이관 — hip 회전은 발을 미끄러뜨린다",
+            "body");
 
     // ---- 4.3.5 체중 이동 ---------------------------------------------------------------------
     //
-    // The third axis, and the slowest. 44 / 53 / 79 share no common multiple, so the three layers
-    // never realign — that non-repetition is the entire point of this layer, not its amplitude.
+    // The third axis, and the slowest. 60 / 53 / 79 share no practical common multiple (LCM
+    // 251,220 ticks ~ 209 min), so the three layers never realign — that non-repetition is the
+    // entire point of this layer, not its amplitude.
 
     public static final Param WEIGHT_SHIFT_PERIOD = add("weight_shift_period", "wg_weight_period", 79.0D,
-            "tick", "T2", "체중 이동 주기. 44/53 과 공배수가 없어 위상이 계속 어긋난다", "hip", "head");
+            "tick", "T2", "체중 이동 주기. 60/53 과 공배수가 없다 (LCM 251,220틱 ≈ 209분)", "body", "head");
     public static final Param WEIGHT_SHIFT_AMP = add("weight_shift_amp", "wg_weight_amp", 0.8D,
-            "deg", "T2", "아주 느린 좌우 체중 이동 (hip zRot)", "hip");
+            "deg", "T2", "아주 느린 좌우 체중 이동 (body zRot 에 가산). 구판 hip.zRot 에서 이관", "body");
     public static final Param WEIGHT_SHIFT_HEAD_Z = add("weight_shift_head_z", "wg_weight_head_z", 0.4D,
-            "deg", "T2", "체중 이동에 대한 머리 반대 보정 (위상 -24°)", "head");
+            "deg", "T2", "체중 이동에 대한 머리 반대 보정 (5.27틱 지연 = 79틱에서 -24°)", "head");
 
     // ---- 4.3.4 기본 자세 오프셋 (정적, C1 과 별개로 상시 가산) --------------------------------------
 

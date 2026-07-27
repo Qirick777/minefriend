@@ -60,7 +60,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      *
      * <p>{@code query.wg_time} is <b>ticks, and it does not rewind.</b> GeckoLib's own
      * {@code query.anim_time} is seconds and resets at each loop boundary; C1 layers three periods
-     * that do not share a common multiple (30 / 25 / 53 ticks), so a resetting clock would snap all
+     * that do not share a common multiple (60 / 53 / 79 ticks), so a resetting clock would snap all
      * three back into phase on every loop — the exact repetition 4.3.3 is designed to avoid.
      * Feeding a monotonic tick count sidesteps that, and has the side benefit that the json
      * formulas read identically to the tables in Part 4.3.
@@ -95,7 +95,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         applyStaticOffsets();
         reportParamChange();
         if (BoneTrace.isRunning()) {
-            BoneTrace.sample(readAllBones(), readMovedPositions());
+            BoneTrace.sample(readAllBones(), readAllPositions());
         }
     }
 
@@ -119,7 +119,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         if (first) {
             return;
         }
-        ParamChangeReporter.report(readAllBones(), readMovedPositions());
+        ParamChangeReporter.report(readAllBones(), readAllPositions());
     }
 
     /**
@@ -199,10 +199,17 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         return true;
     }
 
-    /** The bones that 4.3 drives by position rather than rotation: root (bounce) and body (chest). */
-    private LinkedHashMap<String, double[]> readMovedPositions() {
+    /**
+     * Every bone's current position offset, in model pixels.
+     *
+     * <p>This used to list only root and body — "those are the two bones 4.3 drives by position".
+     * That is the same narrowing that let the legs spin for a whole task cycle: a dump restricted
+     * to the bones believed to move cannot report a bone that moves unexpectedly. All nine, always,
+     * on positions as well as rotations.
+     */
+    private LinkedHashMap<String, double[]> readAllPositions() {
         LinkedHashMap<String, double[]> out = new LinkedHashMap<>();
-        for (String name : new String[]{Bones.ROOT, Bones.BODY}) {
+        for (String name : Bones.ALL) {
             getBone(name).ifPresent(b -> out.put(name, AxisConvention.readPositionPx(b)));
         }
         return out;

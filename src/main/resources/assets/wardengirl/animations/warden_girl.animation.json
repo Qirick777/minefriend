@@ -9,14 +9,21 @@
         "C1 상시 레이어. 설계서 4.3. 키프레임 없음 — 전부 Molang 이다.",
         "",
         "query.wg_time 은 틱 단위 연속 시간이다 (Java 가 공급). GeckoLib 의 query.anim_time 은",
-        "초 단위인데다 루프 지점에서 되감기므로, 주기가 서로 다른 세 레이어(44 / 53 / 79틱)를",
+        "초 단위인데다 루프 지점에서 되감기므로, 주기가 서로 다른 세 레이어(60 / 53 / 79틱)를",
         "겹치면 루프마다 위상이 튄다. wg_time 은 되감기지 않으므로 그 문제가 없다.",
         "",
         "위상 속도는 360/주기 로 계산한다. 튜닝 대상이 '틱당 몇 도' 가 아니라",
         "'한 번에 몇 틱' 이어야 사람이 판단할 수 있기 때문이다.",
         "",
-        "세 주기 44 / 53 / 79 는 공배수가 없다. 앞뒤(호흡) · 좌우(흔들림) · 체중이동이",
-        "각각 다른 주기로 돌아 어느 순간에도 같은 조합이 반복되지 않는다.",
+        "위상 지연도 같은 이유로 도가 아니라 틱으로 쓴다: (query.wg_time - D) * 360 / 주기.",
+        "지연을 도로 박아두면 /wardengirl param set breath_period 로 주기를 바꾸는 순간",
+        "지연의 실제 길이가 같이 늘거나 줄어 버린다. 틱으로 쓰면 주기와 무관하게 D틱이다.",
+        "(구판은 44틱 기준 -16° / -12° 였다. 60틱으로 바꾸면서 각각 2.0틱 / 1.5틱으로 환산했다.",
+        " 60틱에서는 -12° / -9° 에 해당한다.)",
+        "",
+        "세 주기 60 / 53 / 79 는 공배수가 사실상 없다 (LCM 251,220틱 ≈ 209분).",
+        "앞뒤(호흡) · 좌우(흔들림) · 체중이동이 각각 다른 주기로 돌아",
+        "어느 순간에도 같은 조합이 반복되지 않는다.",
         "이것이 '인위적으로 보임' 에 대한 대응이며, 진폭 문제가 아니었다.",
         "",
         "진폭과 주기는 query.wg_* 로 Java 에서 들어온다 (AnimParams).",
@@ -36,20 +43,32 @@
         },
 
         "hip": {
-          "//": "4.3.3 전신 미세 비틀기(yRot) + 4.3.5 체중 이동(zRot). 서로 다른 주기다",
-          "rotation": [
-            0,
-            "query.wg_sway_hip_y * math.sin(query.wg_time * 360 / query.wg_sway_period - 20)",
-            "query.wg_weight_amp * math.sin(query.wg_time * 360 / query.wg_weight_period)"
-          ]
+          "//": [
+            "4.0.5 — 정지 상태에서 hip 은 회전하지 않는다. 세 축 모두 상수 0 이다.",
+            "",
+            "hip 은 다리의 부모다. hip 을 1도라도 돌리면 발 밑면이 12px 레버 끝에서 호를 그린다.",
+            "0.8° 면 0.17px 이고, 각도 덤프로는 '규격 안' 으로 보이지만 화면에서는 발이 미끄러진다.",
+            "그래서 구판의 hip.yRot(4.3.3) 과 hip.zRot(4.3.5) 을 전부 body 로 이관했다.",
+            "body 도 hip 과 같은 (0,12,0) 에서 피벗하지만 다리는 hip 에 매달려 있으므로",
+            "body 가 아무리 돌아도 발은 그 자리에 있다. (근거: HIP3_body_Z 캡처)",
+            "",
+            "명시적 0 이 필요한 이유는 leg 와 같다 — 아래 leg_right 주석 참조.",
+            "hip 에 키프레임이 들어가는 첫 동작은 T9 대시다."
+          ],
+          "rotation": [0, 0, 0]
         },
 
         "body": {
-          "//": "4.3.1 호흡(xRot, y) + 4.3.3 상체 좌우(zRot)",
+          "//": [
+            "4.3.1 호흡(xRot, y 위치)",
+            "4.3.3 상체 좌우(zRot) + 상체 미세 비틀기(yRot ← 구판 hip.yRot)",
+            "4.3.5 체중 이동(zRot 에 가산 ← 구판 hip.zRot)",
+            "zRot 은 주기가 다른 두 항의 합이다. 합산 최대치는 1.2 + 0.8 = 2.0°."
+          ],
           "rotation": [
             "query.wg_breath_body_x * math.sin(query.wg_time * 360 / query.wg_breath_period)",
-            0,
-            "query.wg_sway_body_z * math.sin(query.wg_time * 360 / query.wg_sway_period)"
+            "query.wg_sway_body_y * math.sin((query.wg_time - 2.9444) * 360 / query.wg_sway_period)",
+            "query.wg_sway_body_z * math.sin(query.wg_time * 360 / query.wg_sway_period) + query.wg_weight_amp * math.sin(query.wg_time * 360 / query.wg_weight_period)"
           ],
           "position": [
             0,
@@ -61,9 +80,9 @@
         "head": {
           "//": "4.3.1 수평 유지 보정 + 4.3.3 흔들림 반대 보정 + 4.3.5 체중이동 반대 보정. zRot 은 두 항의 합",
           "rotation": [
-            "-query.wg_breath_head_x * math.sin(query.wg_time * 360 / query.wg_breath_period - 16)",
+            "-query.wg_breath_head_x * math.sin((query.wg_time - 2.0) * 360 / query.wg_breath_period)",
             0,
-            "-query.wg_sway_head_z * math.sin(query.wg_time * 360 / query.wg_sway_period - 14) - query.wg_weight_head_z * math.sin(query.wg_time * 360 / query.wg_weight_period - 24)"
+            "-query.wg_sway_head_z * math.sin((query.wg_time - 2.0611) * 360 / query.wg_sway_period) - query.wg_weight_head_z * math.sin((query.wg_time - 5.2667) * 360 / query.wg_weight_period)"
           ]
         },
 
@@ -77,7 +96,7 @@
           "rotation": [
             0,
             0,
-            "query.wg_breath_arm_z * (1 + math.sin(query.wg_time * 360 / query.wg_breath_period - 12))"
+            "query.wg_breath_arm_z * (1 + math.sin((query.wg_time - 1.5) * 360 / query.wg_breath_period))"
           ]
         },
 
@@ -86,7 +105,7 @@
           "rotation": [
             0,
             0,
-            "-query.wg_breath_arm_z * (1 + math.sin(query.wg_time * 360 / query.wg_breath_period - 12))"
+            "-query.wg_breath_arm_z * (1 + math.sin((query.wg_time - 1.5) * 360 / query.wg_breath_period))"
           ]
         },
 
