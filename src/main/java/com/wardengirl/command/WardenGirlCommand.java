@@ -81,6 +81,11 @@ public final class WardenGirlCommand {
                                                         StringArgumentType.getString(ctx, "bone"),
                                                         StringArgumentType.getString(ctx, "axis"),
                                                         DoubleArgumentType.getDouble(ctx, "degrees")))))))
+                .then(Commands.literal("ai")
+                        .then(Commands.literal("on")
+                                .executes(ctx -> setAi(ctx.getSource(), true)))
+                        .then(Commands.literal("off")
+                                .executes(ctx -> setAi(ctx.getSource(), false))))
                 .then(Commands.literal("trace")
                         .executes(ctx -> trace(ctx.getSource(), 200))
                         .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
@@ -103,6 +108,34 @@ public final class WardenGirlCommand {
                                                 .executes(ctx -> paramSet(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "key"),
                                                         DoubleArgumentType.getDouble(ctx, "value"))))))));
+    }
+
+    // ---- /wardengirl ai <on|off> --------------------------------------------------------------
+
+    /**
+     * P1-T5 임시 이동 AI 토글. Default off.
+     *
+     * <p>Applies to every loaded WardenGirl rather than a targeted one: the point is to look at the
+     * walk cycle, and having to aim at the mob first is friction in the one loop this command
+     * exists to serve. The look goals are untouched — only the stroll goal moves.
+     */
+    private static int setAi(CommandSourceStack source, boolean on) {
+        int count = 0;
+        for (net.minecraft.server.level.ServerLevel level : source.getServer().getAllLevels()) {
+            for (WardenGirlEntity e : level.getEntities(
+                    com.wardengirl.registry.ModEntities.WARDEN_GIRL.get(), x -> true)) {
+                e.setMovementAi(on);
+                count++;
+            }
+        }
+        final int n = count;
+        source.sendSuccess(() -> Component.literal("[ai] ").withStyle(ChatFormatting.GOLD)
+                .append(Component.literal(String.format(Locale.ROOT,
+                                "이동 AI %s — 대상 %d마리 (WaterAvoidingRandomStrollGoal)%n"
+                                        + "         시선 Goal 2종은 그대로다. T5 걷기 확인용이며 기본값은 off 다.",
+                                on ? "ON" : "OFF", n))
+                        .withStyle(ChatFormatting.WHITE)), true);
+        return 1;
     }
 
     // ---- /wardengirl trace <ticks> ----------------------------------------------------------

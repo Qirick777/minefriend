@@ -129,6 +129,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         }
         applyStaticOffsets();
         applyLook(animatable, animationState);
+        applyTurnLean(animatable);
         applyHeadgearSpring(animatable);
         applyOverlayVisibility();
         reportParamChange();
@@ -202,6 +203,38 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
                 animatable.tickCount);
         addRotY(Bones.HEAD, yaw);
         addRotX(Bones.HEAD, pitch);
+    }
+
+    // ---- 4.4.3 방향 전환 기울임 --------------------------------------------------------------
+
+    /** Per-entity turn state, keyed like the springs and the damper. */
+    private final Map<Integer, TurnLean> turnLeans = new HashMap<>();
+
+    /**
+     * Leans {@code hip} into the turn. Design doc 4.4.3.
+     *
+     * <p>On {@code hip}, not {@code body}, and that is a deliberate exception to 4.0.5's "hip must
+     * not rotate". 4.0.5 forbids hip rotation <em>in the idle pose</em>, because a degree of hip
+     * roll swings the sole through a visible arc at the end of a 12px lever while the feet are
+     * supposed to be planted. During a turn the feet are already travelling, and leaning the whole
+     * lower body — legs included — is exactly what the centrifugal compensation is meant to look
+     * like. Leaning {@code body} instead would tilt the torso off a stationary pelvis, which reads
+     * as the mob folding at the waist rather than banking.
+     *
+     * <p>Sign: 4.4.3 says 좌회전 +3, 우회전 −3. A left turn is yaw <em>decreasing</em> in
+     * Minecraft's convention (yaw 0 = +Z, 90 = −X), so the raw per-tick yaw delta is negated to get
+     * the lean direction.
+     */
+    private void applyTurnLean(WardenGirlEntity animatable) {
+        TurnLean lean = this.turnLeans.computeIfAbsent(animatable.getId(), k -> new TurnLean());
+        if (this.turnLeans.size() > MAX_TRACKED_ENTITIES) {
+            this.turnLeans.clear();
+        }
+        float partialTick = Minecraft.getInstance().getPartialTick();
+        double deg = lean.advanceTo(animatable.tickCount, animatable.yBodyRot,
+                animatable.getDeltaMovement().horizontalDistanceSqr() > 1.0E-6D, partialTick);
+        BoneTrace.noteTurnLean(deg, lean.rawRate());
+        addRotZ(Bones.HIP, deg);
     }
 
     /**

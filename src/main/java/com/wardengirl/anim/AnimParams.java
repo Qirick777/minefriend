@@ -381,9 +381,11 @@ public final class AnimParams {
      * TOML 로는 표현되지만 발산 구간(>1)도 같이 열린다. 음수는 목표에서 <em>멀어지는</em> 방향이라
      * 의미가 없고, 1 초과는 매 틱 지나쳐 진동한다.
      */
-    public static final Param LOOK_DAMPING = addShape("look_damping", 0.13D, 0.0D, 1.0D,
+    public static final Param LOOK_DAMPING = addShape("look_damping", 0.5D, 0.0D, 1.0D,
             "계수/틱", "T4",
-            "시선 감쇠. current += (target-current)*이 값. 1.0 이면 감쇠 없음(T3 동작)", "head");
+            "시선 감쇠. current += (target-current)*이 값. 1.0 이면 감쇠 없음(T3 동작). "
+                    + "T4 확정 0.5 — 지연 1.69틱으로 스냅은 사라지되 굼뜨지 않고, "
+                    + "head yRot 이 ±75 를 온전히 채우며, 촉수 오버슈트가 T3 대비 12%만 준다", "head");
 
     /**
      * 근거리에서 쓰는 감쇠 계수. 작을수록 더 느리고 부드럽게 따라온다.
@@ -405,6 +407,18 @@ public final class AnimParams {
     public static final Param LOOK_NEAR_DISTANCE = addShape("look_near_distance", 3.0D, 0.5D, 16.0D,
             "블록", "T4", "근거리 판정 거리. 이 안에서 look_damping -> look_damping_near 로 선형 보간",
             "head");
+
+    // ---- 4.4.3 방향 전환 기울임 (T5) -------------------------------------------------------
+
+    /**
+     * Scale on the 4.4.3 hip bank. 1.0 = the doc's ±3°.
+     *
+     * <p>The 3° itself is a Part 4 fixed value and is not exposed; this is the on/off-and-magnitude
+     * knob the human needs to judge it, in the same way {@code headgear_scale} sits over a fixed
+     * shape. Setting it to 0 disables the bank entirely without touching the spec number.
+     */
+    public static final Param TURN_LEAN_SCALE = addShape("turn_lean_scale", 1.0D, 0.0D, 3.0D,
+            "배율", "T5", "4.4.3 방향 전환 hip 기울임 배율. 1.0 = 사양의 ±3도, 0 = 끔", "hip");
 
     // ------------------------------------------------------------------------------------------
 

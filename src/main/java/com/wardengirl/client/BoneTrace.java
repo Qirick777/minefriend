@@ -100,6 +100,22 @@ public final class BoneTrace {
     private static final double[] SPRING_PENDING_RIGHT = new double[3];
     private static boolean pendingRightValid = false;
 
+    /** 4.4.3 방향 전환 기울임: hip zRot 과 그것을 만든 yaw 변화율. */
+    private static double turnLeanMin = Double.POSITIVE_INFINITY;
+    private static double turnLeanMax = Double.NEGATIVE_INFINITY;
+    private static double turnRateMin = Double.POSITIVE_INFINITY;
+    private static double turnRateMax = Double.NEGATIVE_INFINITY;
+
+    public static void noteTurnLean(double leanDeg, double rateDegPerTick) {
+        if (remainingTicks <= 0) {
+            return;
+        }
+        turnLeanMin = Math.min(turnLeanMin, leanDeg);
+        turnLeanMax = Math.max(turnLeanMax, leanDeg);
+        turnRateMin = Math.min(turnRateMin, rateDegPerTick);
+        turnRateMax = Math.max(turnRateMax, rateDegPerTick);
+    }
+
     /** Called by the model once per frame per side while a trace is running. */
     public static void noteSpring(int side, double[] angles, double[] velocities,
                                   double effectiveStiffness) {
@@ -266,6 +282,10 @@ public final class BoneTrace {
         lookPendingValid = false;
         lookFirstTick = Integer.MIN_VALUE;
         lookLastTick = Integer.MIN_VALUE;
+        turnLeanMin = Double.POSITIVE_INFINITY;
+        turnLeanMax = Double.NEGATIVE_INFINITY;
+        turnRateMin = Double.POSITIVE_INFINITY;
+        turnRateMax = Double.NEGATIVE_INFINITY;
         java.util.Arrays.fill(LOOK_ERR_MAX, 0.0D);
         java.util.Arrays.fill(LOOK_DAMPING_MIN, Double.POSITIVE_INFINITY);
         java.util.Arrays.fill(LOOK_DAMPING_MAX, Double.NEGATIVE_INFINITY);
@@ -654,6 +674,7 @@ public final class BoneTrace {
         positions.forEach((bone, v) -> WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
                 "[trace] %-10s 위치(px) 마지막 = (%+.4f, %+.4f, %+.4f)", bone, v[0], v[1], v[2])));
 
+        reportTurnLean();
         fails += reportLook();
         fails += reportSpring();
         fails += reportFeet();
@@ -663,6 +684,17 @@ public final class BoneTrace {
         } else {
             WardenGirlMod.LOGGER.error("[trace] === 판정: 실패 {}개 ===", fails);
         }
+    }
+
+    private static void reportTurnLean() {
+        if (Double.isInfinite(turnLeanMin)) {
+            return;
+        }
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace] --- 4.4.3 방향 전환: hip zRot %+.4f ~ %+.4f 도 (사양 ±3 x scale %.2f), "
+                        + "몸통 yaw 변화율 %+.3f ~ %+.3f 도/틱 ---",
+                turnLeanMin, turnLeanMax, AnimParams.TURN_LEAN_SCALE.get(),
+                turnRateMin, turnRateMax));
     }
 
     /**

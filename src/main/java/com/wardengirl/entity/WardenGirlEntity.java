@@ -11,6 +11,7 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
+import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import com.wardengirl.anim.AnimRegistry;
@@ -18,6 +19,7 @@ import software.bernie.geckolib.animatable.GeoEntity;
 import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
 import software.bernie.geckolib.core.animation.AnimatableManager;
 import software.bernie.geckolib.core.animation.AnimationController;
+import software.bernie.geckolib.core.animation.AnimationState;
 import software.bernie.geckolib.core.object.PlayState;
 import software.bernie.geckolib.util.GeckoLibUtil;
 
@@ -85,6 +87,41 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
     }
 
+    // ---- T5 임시 이동 AI 토글 -----------------------------------------------------------------
+
+    /**
+     * The stroll goal, held so it can be added and removed. Default <b>off</b>.
+     *
+     * <p>P1-T5 grants this purely so the walk cycle can be looked at; it is not the phase-2
+     * movement AI. Kept as one instance rather than reconstructed on each toggle so that removing
+     * it removes the same object that was added — {@code GoalSelector.removeGoal} matches by
+     * identity.
+     */
+    private WaterAvoidingRandomStrollGoal strollGoal;
+    private boolean movementAiEnabled = false;
+
+    /** @return the new state */
+    public boolean setMovementAi(boolean enabled) {
+        if (enabled == this.movementAiEnabled) {
+            return this.movementAiEnabled;
+        }
+        if (this.strollGoal == null) {
+            this.strollGoal = new WaterAvoidingRandomStrollGoal(this, 1.0D);
+        }
+        if (enabled) {
+            this.goalSelector.addGoal(6, this.strollGoal);
+        } else {
+            this.goalSelector.removeGoal(this.strollGoal);
+            this.getNavigation().stop();
+        }
+        this.movementAiEnabled = enabled;
+        return enabled;
+    }
+
+    public boolean isMovementAiEnabled() {
+        return this.movementAiEnabled;
+    }
+
     @Override
     protected void defineSynchedData() {
         super.defineSynchedData();
@@ -116,6 +153,27 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     public void registerControllers(AnimatableManager.ControllerRegistrar registrar) {
         registrar.add(new AnimationController<>(this, AnimRegistry.CONTROLLER_VITAL, 0,
                 state -> state.setAndContinue(AnimRegistry.VITAL)));
+        registrar.add(new AnimationController<>(this, AnimRegistry.CONTROLLER_LOCOMOTION,
+                AnimRegistry.TRANSITION_TICKS, this::locomotionPredicate));
+    }
+
+    /**
+     * C2 — walk while moving, nothing while standing. Design doc 4.4.1 / 4.4.2.
+     *
+     * <p>{@code isMoving()} is GeckoLib's own limb-swing test, not a velocity threshold of our own:
+     * it reads {@code limbSwingAmount}, which vanilla already computes from the entity's actual
+     * horizontal travel and already smooths. Writing a {@code getDeltaMovement().horizontalDistance()
+     * > eps} test instead would flicker at the threshold every time the pathfinder eased off, and
+     * would also fire while the mob was being pushed rather than walking.
+     *
+     * <p>Returning {@link PlayState#STOP} for idle rather than playing an idle clip is 4.4.1's
+     * "C1만 재생" — see {@link AnimRegistry#TRANSITION_TICKS}.
+     */
+    private PlayState locomotionPredicate(AnimationState<WardenGirlEntity> state) {
+        if (state.isMoving()) {
+            return state.setAndContinue(AnimRegistry.WALK_LOOP);
+        }
+        return PlayState.STOP;
     }
 
     @Override

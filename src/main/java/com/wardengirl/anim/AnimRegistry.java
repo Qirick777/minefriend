@@ -23,4 +23,22 @@ public final class AnimRegistry {
 
     /** Guards against a typo in the name above silently producing a still model. */
     public static final Animation.LoopType VITAL_LOOP = Animation.LoopType.LOOP;
+
+    /** C2 controller name. Design doc Part 4.2 / 4.4. */
+    public static final String CONTROLLER_LOCOMOTION = "locomotion";
+
+    /** C2 walk cycle, 26 ticks. Design doc 4.4.2. */
+    public static final String WALK = "walk";
+
+    public static final RawAnimation WALK_LOOP = RawAnimation.begin().thenLoop(WALK);
+
+    /**
+     * idle 정지 is the <em>absence</em> of a C2 animation, not an animation of its own.
+     *
+     * <p>4.4.1 says "C1만 재생". Registering an empty idle clip here would be a second thing writing
+     * the same bones as C1 every tick; returning {@code STOP} instead lets the controller unwind to
+     * nothing and leaves C1 alone. The 6-tick transition still applies, because GeckoLib blends
+     * from the last posed state back toward the snapshot when a controller stops.
+     */
+    public static final int TRANSITION_TICKS = 6;
 }
