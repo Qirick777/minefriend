@@ -82,6 +82,24 @@ public class TendrilRenderLayer extends GeoRenderLayer<WardenGirlEntity> {
         return tendrilPass;
     }
 
+    /** 진단용 로그. 촉수가 왜 안 그려지는지 값으로 특정하기 위한 임시 계측. */
+    private static final boolean DIAG = true;
+    private static int diagTick = 0;
+
+    private static void describe(GeoBone b, StringBuilder sb) {
+        if (Bones.HEADGEAR.contains(b.getName())) {
+            sb.append(String.format(java.util.Locale.ROOT,
+                    "%s{hidden=%s childHidden=%s cubes=%d rot=(%.2f,%.2f,%.2f) pos=(%.2f,%.2f,%.2f)} ",
+                    b.getName(), b.isHidden(), b.isHidingChildren(), b.getCubes().size(),
+                    b.getRotX(), b.getRotY(), b.getRotZ(), b.getPosX(), b.getPosY(), b.getPosZ()));
+        } else {
+            sb.append(b.getName()).append("{h=").append(b.isHidden()).append("} ");
+        }
+        for (GeoBone c : b.getChildBones()) {
+            describe(c, sb);
+        }
+    }
+
     /**
      * Hides the tendrils for the body pass.
      *
@@ -138,6 +156,13 @@ public class TendrilRenderLayer extends GeoRenderLayer<WardenGirlEntity> {
         RenderType tendrilType = RenderType.entityCutoutNoCull(TEXTURE);
         tendrilPass = true;
         applyVisibility(bakedModel, true);
+        if (DIAG && diagTick++ % 120 == 0) {
+            StringBuilder sb = new StringBuilder("[tendril] render() 진입. 가시성 세팅 후: ");
+            for (GeoBone b : bakedModel.topLevelBones()) {
+                describe(b, sb);
+            }
+            WardenGirlMod.LOGGER.info(sb.toString());
+        }
         try {
             getRenderer().reRender(bakedModel, poseStack, bufferSource, animatable, tendrilType,
                     bufferSource.getBuffer(tendrilType), partialTick, packedLight, packedOverlay,
