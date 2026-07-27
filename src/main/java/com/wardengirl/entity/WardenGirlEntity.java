@@ -267,6 +267,18 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         return this.walkingForAnimation;
     }
 
+    /** The raw per-tick threshold decision, before the hysteresis. Diagnostic only. */
+    public boolean rawMovingForReport() {
+        return this.rawMoving;
+    }
+
+    /** Last tick the raw decision was true. Diagnostic only. */
+    public int lastMovingTickForReport() {
+        return this.lastMovingTick;
+    }
+
+    private boolean rawMoving = false;
+
     public boolean isWalkingForAnimation() {
         // Verification stimulus. Placed before the hysteresis so that clearing it hands control
         // straight back to the real test - which is what makes walk_force 1 -> 0 a clean,
@@ -274,11 +286,13 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         if (AnimParams.WALK_FORCE.get() >= 0.5D) {
             this.lastMovingTick = this.tickCount;
             this.walkingForAnimation = true;
+            this.rawMoving = true;
             return true;
         }
         double vx = Math.abs(getDeltaMovement().x);
         double vz = Math.abs(getDeltaMovement().z);
         double avg = (vx + vz) / 2.0D;
+        this.rawMoving = avg >= AnimParams.WALK_MOVE_THRESHOLD.get();
         if (avg >= AnimParams.WALK_MOVE_THRESHOLD.get()) {
             this.lastMovingTick = this.tickCount;
             this.walkingForAnimation = true;

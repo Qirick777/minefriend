@@ -65,13 +65,25 @@ public final class AnimRegistry {
     /**
      * C2 transition length, ticks. Design doc 4.4.1.
      *
-     * <p>It only takes effect because idle is an <em>empty clip</em> rather than
-     * {@code PlayState.STOP}. Measured in the 4.8.4 bytecode: {@code AnimationController.process}
-     * checks {@code playState == STOP} and, if so, sets {@code State.STOPPED}, sets
-     * {@code justStopped} and returns immediately — the {@code TRANSITIONING} branch sits above
-     * that check and is never reached. The bone therefore loses the walk's contribution in a
-     * single frame, and {@code justStopped} makes the next start call {@code adjustTick} so the
-     * clip restarts from tick 0.
+     * <h2>It does not currently take effect. Measured.</h2>
+     *
+     * <p>The earlier note here claimed that playing an empty {@code idle} clip instead of returning
+     * {@code PlayState.STOP} made the 6-tick transition "actually work". <b>That is wrong, and the
+     * measurement is unambiguous:</b> {@code leg_right.xRot} goes {@code +15.6800 → +0.0000} in a
+     * single frame and then holds exactly {@code 0.0000}, and {@code arm_right.xRot} lands on
+     * exactly {@code +4.0000}, which is {@code offset_arm_right_x} alone. The walk's contribution
+     * does not decay over six ticks — it disappears in one.
+     *
+     * <p>The empty clip does avoid the {@code STOP} branch, and the controller does enter
+     * {@code TRANSITIONING}. The problem is one level down: the transition body iterates
+     * <b>the target animation's</b> {@code boneAnimations()} (4.8.4 {@code process}, offset 352)
+     * and only calls {@code addNextRotation} for bones found there. {@code saveSnapshotsForAnimation}
+     * iterates the same array. An empty clip has none, so no snapshot is saved, no queue is filled,
+     * {@code AnimationProcessor} polls {@code null} and skips the write entirely — and the bone is
+     * left holding whatever {@link #BASE} wrote, which is 0.
+     *
+     * <p>So the transition length has nothing to interpolate. It is not a tuning problem.
+     * <b>Investigation only so far; the fix is not implemented.</b> See Part 11.
      */
     public static final int TRANSITION_TICKS = 6;
 

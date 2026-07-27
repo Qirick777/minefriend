@@ -297,6 +297,9 @@ public final class BoneTrace {
         walkFrames = 0;
         walkTransitions = 0;
         lastWalkState = null;
+        lastRawMoving = null;
+        graceCount = 0;
+        rawFallingEdges = 0;
         lookPendingValid = false;
         lookFirstTick = Integer.MIN_VALUE;
         lookLastTick = Integer.MIN_VALUE;
@@ -654,7 +657,8 @@ public final class BoneTrace {
      * nothing. Measured instance — a C1 walking window with 0 walking frames printed "6채널 전부
      * 잔차 0", which reads as a pass and was in fact a mob standing still.
      */
-    public static void noteWalkState(boolean walking) {
+    public static void noteWalkState(boolean walking, boolean rawMoving, int lastMovingTick,
+                                     int tickCount) {
         if (remainingTicks <= 0) {
             return;
         }
@@ -663,9 +667,28 @@ public final class BoneTrace {
         }
         if (lastWalkState != null && lastWalkState != walking) {
             walkTransitions++;
+            if (!walking && graceCount < GRACE_CAP) {
+                // The grace the hysteresis actually applied: how many ticks passed between the
+                // last tick the raw threshold said "moving" and the tick the walk animation was
+                // switched off. Spec is walk_stop_grace. Never measured until now.
+                GRACE_OFF_TICK[graceCount] = tickCount;
+                GRACE_LAST_MOVING[graceCount] = lastMovingTick;
+                graceCount++;
+            }
         }
+        if (lastRawMoving != null && lastRawMoving != rawMoving && !rawMoving) {
+            rawFallingEdges++;
+        }
+        lastRawMoving = rawMoving;
         lastWalkState = walking;
     }
+
+    private static final int GRACE_CAP = 32;
+    private static final int[] GRACE_OFF_TICK = new int[GRACE_CAP];
+    private static final int[] GRACE_LAST_MOVING = new int[GRACE_CAP];
+    private static int graceCount = 0;
+    private static int rawFallingEdges = 0;
+    private static Boolean lastRawMoving = null;
 
     /**
      * Prints what the window actually contained, before any verdict.
@@ -692,6 +715,20 @@ public final class BoneTrace {
                 Math.max(yawSpan, pitchSpan) < 1.0D
                         ? "시선이 거의 움직이지 않았다 — 4.6 감쇠 판정은 측정 불가"
                         : "시선 관측됨"));
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   원시 이동판정 하강 : %d회   (히스테리시스 이전. 이것이 %d회 걷기 종료로 걸러졌다)",
+                rawFallingEdges, graceCount));
+        if (graceCount > 0) {
+            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                    "[trace]   --- A(히스테리시스) 실효 유예. 사양 walk_stop_grace = %.1f틱 ---",
+                    AnimParams.WALK_STOP_GRACE.get()));
+            for (int i = 0; i < graceCount; i++) {
+                WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                        "[trace]     걷기 종료 t=%d, 마지막 이동판정 t=%d, 실효 유예 %d틱",
+                        GRACE_OFF_TICK[i], GRACE_LAST_MOVING[i],
+                        GRACE_OFF_TICK[i] - GRACE_LAST_MOVING[i]));
+            }
+        }
     }
 
     private static void report(Map<String, double[]> positions) {
@@ -798,6 +835,29 @@ public final class BoneTrace {
             WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
                     "[trace] --- 시계열 %s: 표본 %d, 1차차분 평균 %.5f 최대 %.5f (최대/평균 %.2f) ---",
                     label[i], seriesCount, mean, maxAbs, mean > 1e-9 ? maxAbs / mean : 0.0D));
+        }
+        // The one row that settled the previous investigation was the row either side of the
+        // jump. Print the neighbourhood of the argmax explicitly instead of hoping the sampled
+        // rows happen to land on it.
+        for (int i = 0; i < SERIES_BONES.length; i++) {
+            int arg = 1;
+            double best = -1;
+            for (int j = 1; j < seriesCount; j++) {
+                double d = Math.abs(SERIES[i][j] - SERIES[i][j - 1]);
+                if (d > best) {
+                    best = d;
+                    arg = j;
+                }
+            }
+            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                    "[trace] --- %s 최대 차분 근방 (표본 %d, t=%d, 차분 %+.4f) ---",
+                    label[i], arg, SERIES_TICK[arg], SERIES[i][arg] - SERIES[i][arg - 1]));
+            for (int j = Math.max(0, arg - 5); j < Math.min(seriesCount, arg + 6); j++) {
+                double d = j > 0 ? SERIES[i][j] - SERIES[i][j - 1] : 0.0D;
+                WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                        "[trace]     %s S %5d t=%6d  %+10.4f  d%+9.4f%s",
+                        label[i], j, SERIES_TICK[j], SERIES[i][j], d, j == arg ? "   <== 최대" : ""));
+            }
         }
         int step = Math.max(1, seriesCount / 260);
         WardenGirlMod.LOGGER.info("[trace] 시계열 행 (t=엔티티틱, d=직전 표본 대비 차분):");
