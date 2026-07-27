@@ -1,6 +1,7 @@
 package com.wardengirl.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.wardengirl.anim.Bones;
@@ -59,7 +60,14 @@ public final class WardenGirlCommand {
                                         .suggests(AXIS_SUGGESTIONS)
                                         .executes(ctx -> axisTest(ctx.getSource(),
                                                 StringArgumentType.getString(ctx, "bone"),
-                                                StringArgumentType.getString(ctx, "axis")))))));
+                                                StringArgumentType.getString(ctx, "axis"),
+                                                Bones.AXIS_TEST_ANGLE_DEGREES))
+                                        .then(Commands.argument("degrees",
+                                                        DoubleArgumentType.doubleArg(-180.0D, 180.0D))
+                                                .executes(ctx -> axisTest(ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "bone"),
+                                                        StringArgumentType.getString(ctx, "axis"),
+                                                        DoubleArgumentType.getDouble(ctx, "degrees"))))))));
     }
 
     // ---- /wardengirl summon [pos] ------------------------------------------------------------
@@ -94,7 +102,8 @@ public final class WardenGirlCommand {
 
     // ---- /wardengirl axistest <bone> <x|y|z|clear> -------------------------------------------
 
-    private static int axisTest(CommandSourceStack source, String boneName, String axisRaw) {
+    private static int axisTest(CommandSourceStack source, String boneName, String axisRaw,
+                                double degrees) {
         if (!Bones.ALL.contains(boneName)) {
             source.sendFailure(Component.literal(
                     "[axistest] 알 수 없는 본: " + boneName + "  (사용 가능: " + String.join(", ", Bones.ALL) + ")"));
@@ -132,10 +141,10 @@ public final class WardenGirlCommand {
             return 0;
         }
 
-        target.setAxisTest(boneName + ":" + axis.name().toLowerCase(Locale.ROOT));
+        target.setAxisTest(boneName + ":" + axis.name().toLowerCase(Locale.ROOT) + ":" + degrees);
         String after = target.getAxisTest();
 
-        double angle = Bones.AXIS_TEST_ANGLE_DEGREES;
+        double angle = degrees;
         double rx = axis == Bones.Axis.X ? angle : 0.0D;
         double ry = axis == Bones.Axis.Y ? angle : 0.0D;
         double rz = axis == Bones.Axis.Z ? angle : 0.0D;

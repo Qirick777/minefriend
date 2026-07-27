@@ -18,9 +18,9 @@ import java.util.Map;
  * more — and design doc Part 6.2 principle 2 is explicit that a command which reports its own
  * request has verified nothing.
  *
- * <p>This closes that gap: once the client has actually posed the bone, it prints the rotation
- * values read back off the {@code GeoBone} itself, in chat, where they can be screenshotted next
- * to the model they describe.
+ * <p>This closes that gap: once the client has actually posed the rig, it prints the rotations read
+ * back off the {@code GeoBone}s themselves — all eight of them, so that "only the target bone
+ * moved" is a shown fact rather than an assumption.
  *
  * <p>Printed once per change of selection, not once per frame.
  */
@@ -32,36 +32,37 @@ public final class AxisTestReporter {
     /** entity id -> last selection we announced, so we announce transitions only. */
     private static final Map<Integer, String> ANNOUNCED = new HashMap<>();
 
-    public static void report(int entityId, String boneName, Bones.Axis axis,
-                              float rotXRadians, float rotYRadians, float rotZRadians) {
-        String key = boneName + ":" + axis;
+    public static void report(int entityId, String boneName, Bones.Axis axis, double degrees,
+                              Map<String, double[]> allBones) {
+        String key = boneName + ":" + axis + ":" + degrees;
         if (key.equals(ANNOUNCED.get(entityId))) {
             return;
         }
         ANNOUNCED.put(entityId, key);
 
-        double degX = Math.toDegrees(rotXRadians);
-        double degY = Math.toDegrees(rotYRadians);
-        double degZ = Math.toDegrees(rotZRadians);
-
-        // Also to the log: chat is for the human looking at the model, the log is the record that
-        // survives the session and can be diffed.
-        WardenGirlMod.LOGGER.info(
-                "[axistest/client] entity={} bone={} axis={} measured_deg=({}, {}, {}) measured_rad=({}, {}, {})",
-                entityId, boneName, axis, degX, degY, degZ, rotXRadians, rotYRadians, rotZRadians);
+        double[] target = allBones.get(boneName);
+        if (target == null) {
+            return;
+        }
 
         send(Component.literal("[axistest/client] ").withStyle(ChatFormatting.AQUA)
-                .append(Component.literal(
-                                String.format(Locale.ROOT,
-                                        "bone=%s  축=%s  실측 GeoBone 회전 = (x %.3f°, y %.3f°, z %.3f°)",
-                                        boneName, axis, degX, degY, degZ))
+                .append(Component.literal(String.format(Locale.ROOT,
+                                "bone=%s  축=%s  요청=%+.1f°  실측=(x %+.3f°, y %+.3f°, z %+.3f°)",
+                                boneName, axis, degrees, target[0], target[1], target[2]))
                         .withStyle(ChatFormatting.WHITE)));
-        send(Component.literal(String.format(Locale.ROOT,
-                        "                 라디안 원값 = (%.5f, %.5f, %.5f)",
-                        rotXRadians, rotYRadians, rotZRadians))
-                .withStyle(ChatFormatting.DARK_AQUA));
         send(Component.literal("                 기대: " + Bones.expectation(boneName, axis))
                 .withStyle(ChatFormatting.YELLOW));
+
+        // The full dump goes to the log rather than chat — eight lines of chat per test would bury
+        // the model behind the chat overlay, which is the thing being looked at.
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, double[]> e : allBones.entrySet()) {
+            double[] r = e.getValue();
+            sb.append(String.format(Locale.ROOT, " %s=(%+.3f,%+.3f,%+.3f)",
+                    e.getKey(), r[0], r[1], r[2]));
+        }
+        WardenGirlMod.LOGGER.info("[axistest/client] entity={} target={}:{} requested={}deg allBones:{}",
+                entityId, boneName, axis, degrees, sb);
     }
 
     /** Called when the harness is switched off, so the next activation announces again. */

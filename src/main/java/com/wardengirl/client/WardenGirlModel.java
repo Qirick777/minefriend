@@ -66,14 +66,20 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             return;
         }
 
-        String[] parts = request.split(":", 2);
-        if (parts.length != 2) {
+        String[] parts = request.split(":", 3);
+        if (parts.length != 3) {
             return;
         }
 
         String boneName = parts[0];
         Bones.Axis axis = Bones.Axis.parse(parts[1]);
         if (axis == null) {
+            return;
+        }
+        double degrees;
+        try {
+            degrees = Double.parseDouble(parts[2]);
+        } catch (NumberFormatException e) {
             return;
         }
 
@@ -85,17 +91,33 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         }
         GeoBone bone = maybeBone.get();
 
-        float radians = (float) Math.toRadians(Bones.AXIS_TEST_ANGLE_DEGREES);
+        float radians = (float) Math.toRadians(degrees);
         switch (axis) {
             case X -> bone.setRotX(radians);
             case Y -> bone.setRotY(radians);
             case Z -> bone.setRotZ(radians);
         }
 
-        // Read the value back off the bone rather than echoing what we intended to write.
+        // Read the values back off the bones rather than echoing what we intended to write.
         // Part 6.2 principle 2: the report has to be an observation, not a restatement.
-        AxisTestReporter.report(animatable.getId(), boneName, axis,
-                bone.getRotX(), bone.getRotY(), bone.getRotZ());
+        //
+        // All eight are dumped, not just the target. Rotating body or root visibly tilts the whole
+        // model because everything hangs off them (Part 4.0 tree), and that is indistinguishable
+        // by eye from "some other bone also rotated". The only way to tell those apart is to show
+        // that the other seven are still zero.
+        AxisTestReporter.report(animatable.getId(), boneName, axis, degrees, readAllBones());
+    }
+
+    /** Every bone's current rotation, in degrees, in the Part 4.0 hierarchy order. */
+    private java.util.LinkedHashMap<String, double[]> readAllBones() {
+        java.util.LinkedHashMap<String, double[]> out = new java.util.LinkedHashMap<>();
+        for (String name : Bones.ALL) {
+            getBone(name).ifPresent(b -> out.put(name, new double[]{
+                    Math.toDegrees(b.getRotX()),
+                    Math.toDegrees(b.getRotY()),
+                    Math.toDegrees(b.getRotZ())}));
+        }
+        return out;
     }
 
     /**

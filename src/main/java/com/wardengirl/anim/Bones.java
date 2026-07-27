@@ -30,12 +30,16 @@ public final class Bones {
             ROOT, BODY, HEAD, HEADGEAR, ARM_RIGHT, ARM_LEFT, LEG_RIGHT, LEG_LEFT);
 
     /**
-     * Design doc P1-T1: "지정 본을 각 축 +10° 회전시켜 정지".
+     * Default axis-test angle.
+     *
+     * <p>The design doc says +10°, but 10° proved too small to judge from a screenshot — over half
+     * the poses were indistinguishable from neutral by eye. Raised to 45° by explicit instruction;
+     * the angle is now an argument, so 10° is still reachable when wanted.
      *
      * <p>Lives here, in common code, rather than next to the client-side reporter — the command
      * runs on the server and must not touch client-only classes.
      */
-    public static final double AXIS_TEST_ANGLE_DEGREES = 10.0D;
+    public static final double AXIS_TEST_ANGLE_DEGREES = 45.0D;
 
     public enum Axis {
         X, Y, Z;
