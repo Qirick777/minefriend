@@ -117,6 +117,13 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             }
             return;
         }
+        // The tendril layer's re-render comes back through here. Everything below either ADDS to a
+        // bone or advances state, so running it twice in one frame would pose the two passes
+        // differently — the tendrils would be drawn against a head that had the offsets applied
+        // twice. The first pass already left the bones in their final state; reuse it.
+        if (TendrilRenderLayer.isTendrilPass()) {
+            return;
+        }
         applyStaticOffsets();
         applyLook(animationState);
         applyHeadgearSpring(animatable);
