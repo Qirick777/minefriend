@@ -61,6 +61,9 @@ public final class HeadgearSpring {
      * @return true if at least one step ran
      */
     public boolean advanceTo(int tickCount, double[] targetDeg) {
+        if (needsReseed()) {
+            this.lastTick = Integer.MIN_VALUE;
+        }
         if (this.lastTick == Integer.MIN_VALUE) {
             // First sight of this entity: start settled on the target so a freshly summoned mob
             // does not fling its decoration through a full swing on frame one.
@@ -115,6 +118,43 @@ public final class HeadgearSpring {
     /** Spring velocity, x/y/z degrees per tick — for the trace readback. */
     public double[] velocities() {
         return new double[]{this.velocity[0], this.velocity[1], this.velocity[2]};
+    }
+
+    /**
+     * Sanity bound on the integrated angle, in degrees.
+     *
+     * <p>The head can reach {@code LOOK_YAW_MAX + 그 밖의 항} ≈ 105°, and a healthy underdamped
+     * spring overshoots that by roughly a quarter. 1000° is therefore about eight times any value
+     * this can legitimately hold — but it is a decisive distance from any value a <em>diverging</em>
+     * one holds.
+     */
+    private static final double SANITY_LIMIT_DEG = 1000.0D;
+
+    /**
+     * Whether the state has to be thrown away and re-seeded.
+     *
+     * <p>Found by verification, not by reasoning: setting {@code headgear_damping} to 2.5 violates
+     * the Jury condition and the integrated angle reached ~1e83 within a couple of hundred ticks.
+     * Setting the parameter back to 0.35 makes the recurrence stable again — but stable means
+     * {@code |λ| = 0.806 per tick}, so decaying from 1e83 back to a visible range takes about
+     * <b>885 ticks, 45 seconds</b>. For all of that time the decoration sits pinned at the
+     * ±MAX_ANGLE clamp.
+     *
+     * <p>That matters because tuning STIFFNESS/DAMPING by eye is exactly what this parameter exists
+     * for. Without this guard the tuning loop is: try a bad value, see it break, put it back, and
+     * conclude that putting it back did not help. The state is re-seeded instead, so a corrected
+     * value takes effect on the next frame.
+     *
+     * <p>It also catches NaN and infinity, which no amount of waiting recovers from at all.
+     */
+    private boolean needsReseed() {
+        for (int i = 0; i < 3; i++) {
+            if (!Double.isFinite(this.angle[i]) || !Double.isFinite(this.velocity[i])
+                    || Math.abs(this.angle[i]) > SANITY_LIMIT_DEG) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Drops all state, so the next {@link #advanceTo} re-seeds on the target. */
