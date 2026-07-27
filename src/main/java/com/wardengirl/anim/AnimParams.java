@@ -329,6 +329,29 @@ public final class AnimParams {
             "px", "T3", "촉수 앞뒤 이동. 양수 = 앞(+Z)", "headgear_right", "headgear_left");
 
     /**
+     * Uniform scale on both tendrils, about their pivot.
+     *
+     * <p>Applied with {@code GeoBone.setScaleX/Y/Z}. {@code RenderUtils.scaleMatrixForBone} runs
+     * between {@code translateToPivotPoint} and {@code translateAwayFromPivotPoint}, so the scale
+     * is centred on the <b>pivot</b> — the root stays welded to the side of the head however small
+     * the tendril gets. UVs are untouched: the same picture is drawn on a smaller quad, not a
+     * smaller crop of the picture.
+     */
+    public static final Param HEADGEAR_SCALE = addShape("headgear_scale", 1.0D, 0.3D, 2.0D,
+            "배율", "T3", "촉수 크기. 피벗 기준이라 줄여도 뿌리는 머리 옆에 붙어 있다",
+            "headgear_right", "headgear_left");
+
+    /**
+     * Debug isolation: 1 hides every outer-layer cube (hat, jacket, sleeves, pants).
+     *
+     * <p>Same reason {@code headgear_solo} existed: with the base and the overlay drawn on top of
+     * each other, a capture cannot say which of the two is wrong.
+     */
+    public static final Param OVERLAY_HIDDEN = addShape("overlay_hidden", 0.0D, 0.0D, 1.0D,
+            "0/1", "T3", "진단용. 1 이면 바깥 레이어(모자·재킷·소매·바지)를 전부 숨긴다",
+            "head", "body", "arm_right", "arm_left", "leg_right", "leg_left");
+
+    /**
      * Debug isolation: 0 = both tendrils, 1 = right only, 2 = left only.
      *
      * <p>Exists because "is one bone drawing one image, or two overlapping ones?" turned out to be

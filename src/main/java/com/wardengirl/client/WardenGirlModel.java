@@ -127,6 +127,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         applyStaticOffsets();
         applyLook(animationState);
         applyHeadgearSpring(animatable);
+        applyOverlayVisibility();
         reportParamChange();
         if (BoneTrace.isRunning()) {
             BoneTrace.sample(readAllBones(), readAllPositions());
@@ -253,6 +254,13 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             // T(pos)·T(pivot)·R·T(-pivot), so a root vertex sitting on the pivot lands at
             // pivot + pos whatever the rotation — moving the bone is exactly equivalent to moving
             // the pivot, and unlike the pivot it is settable at runtime.
+            // Scale is applied between translateToPivotPoint and translateAwayFromPivotPoint, so
+            // it is centred on the pivot and the root stays attached to the head.
+            float scale = (float) AnimParams.HEADGEAR_SCALE.get();
+            bone.setScaleX(scale);
+            bone.setScaleY(scale);
+            bone.setScaleZ(scale);
+
             AxisConvention.setPositionPx(bone,
                     AnimParams.HEADGEAR_POS_X.get() * outward,
                     AnimParams.HEADGEAR_POS_Y.get(),
@@ -309,6 +317,44 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         addRotX(Bones.HEAD, AnimParams.OFFSET_HEAD_X.get());
         addRotX(Bones.BODY, AnimParams.OFFSET_BODY_X.get());
     }
+
+    /**
+     * 4.3.x 진단 — {@code overlay_hidden} hides every outer-layer cube.
+     *
+     * <p>GeckoLib can hide a bone but not one cube of a bone, and the overlay is the second cube of
+     * six bones. So the cube is removed from the bone's list and kept aside, then put back. Only
+     * done when the switch actually changes, so the normal path costs nothing.
+     */
+    private void applyOverlayVisibility() {
+        boolean hide = AnimParams.OVERLAY_HIDDEN.get() >= 0.5D;
+        if (hide == this.overlayHidden) {
+            return;
+        }
+        this.overlayHidden = hide;
+        for (String name : OVERLAY_BONES) {
+            getBone(name).ifPresent(bone -> {
+                java.util.List<software.bernie.geckolib.cache.object.GeoCube> cubes = bone.getCubes();
+                if (hide) {
+                    if (cubes.size() > 1) {
+                        this.stashedOverlay.put(name, cubes.remove(1));
+                    }
+                } else {
+                    software.bernie.geckolib.cache.object.GeoCube cube =
+                            this.stashedOverlay.remove(name);
+                    if (cube != null) {
+                        cubes.add(cube);
+                    }
+                }
+            });
+        }
+    }
+
+    private static final String[] OVERLAY_BONES = {
+            Bones.HEAD, Bones.BODY, Bones.ARM_RIGHT, Bones.ARM_LEFT,
+            Bones.LEG_RIGHT, Bones.LEG_LEFT};
+    private boolean overlayHidden = false;
+    private final Map<String, software.bernie.geckolib.cache.object.GeoCube> stashedOverlay =
+            new HashMap<>();
 
     private void addRotX(String bone, double degrees) {
         getBone(bone).ifPresent(b -> b.setRotX(b.getRotX() + AxisConvention.toRad(degrees)));

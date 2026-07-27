@@ -83,7 +83,7 @@ public class TendrilRenderLayer extends GeoRenderLayer<WardenGirlEntity> {
     }
 
     /** 진단용 로그. 촉수가 왜 안 그려지는지 값으로 특정하기 위한 임시 계측. */
-    private static final boolean DIAG = true;
+    private static final boolean DIAG = false;
     private static int diagTick = 0;
 
     private static void describe(GeoBone b, StringBuilder sb) {
