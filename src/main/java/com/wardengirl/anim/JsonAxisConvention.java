@@ -3,6 +3,7 @@ package com.wardengirl.anim;
 import com.eliotlash.mclib.math.Constant;
 import com.eliotlash.mclib.math.IValue;
 import software.bernie.geckolib.core.animation.Animation;
+import software.bernie.geckolib.core.animation.EasingType;
 import software.bernie.geckolib.core.keyframe.BoneAnimation;
 import software.bernie.geckolib.core.keyframe.Keyframe;
 import software.bernie.geckolib.core.keyframe.KeyframeStack;
@@ -118,8 +119,69 @@ public final class JsonAxisConvention {
     }
 
     private static KeyframeStack<Keyframe<IValue>> flipXY(KeyframeStack<Keyframe<IValue>> stack) {
-        return new KeyframeStack<>(negate(stack.xKeyframes()), negate(stack.yKeyframes()),
-                stack.zKeyframes());
+        return new KeyframeStack<>(spline(negate(stack.xKeyframes())),
+                spline(negate(stack.yKeyframes())),
+                spline(copy(stack.zKeyframes())));
+    }
+
+    /** z is not negated, but it still needs the spline control points. */
+    private static List<Keyframe<IValue>> copy(List<Keyframe<IValue>> frames) {
+        return new ArrayList<>(frames);
+    }
+
+    /**
+     * Fills in the two outer control points on every {@code catmullrom} keyframe of one axis.
+     *
+     * <h2>Why this makes the library's spline usable after all</h2>
+     *
+     * {@code CatmullRomEasing.apply} has two branches. With fewer than two {@code easingArgs} it
+     * takes the broken one — arguments to {@code Interpolations.lerp} in the wrong order, eased by
+     * a helper that expands to the constant {@code n + 2}; measured, a −18 → +18 segment runs
+     * through −341. With two args it takes {@code getPointOnSpline(t, p0, p1, p2, p3)}, which is a
+     * correct uniform Catmull–Rom.
+     *
+     * <p>The reason that branch looked unusable is that {@code BakedAnimationsAdapter} parses one
+     * {@code easingArgs} list per keyframe and hands the same list to the x, y and z
+     * {@code Keyframe}s — so a constant axis would be bent by control points chosen for a moving
+     * one. That constraint belongs to the <em>loader</em>, not to the data structure: the three
+     * axes are separate {@code Keyframe} objects, and this runs while they are being rebuilt. Each
+     * axis therefore gets its own control points, computed from its own values.
+     *
+     * <h2>Per-segment easing still works</h2>
+     *
+     * Only keyframes whose easing is {@code CATMULLROM} are touched. Anything else — the
+     * {@code easeOutBack} and friends that T6's actions will use — passes through untouched, so
+     * {@code catmullrom} is never forced globally.
+     *
+     * <h2>Loop seam</h2>
+     *
+     * A GeckoLib keyframe is a <em>segment</em>: {@code startValue} is knot i, {@code endValue} is
+     * knot i+1. So the outer points are the previous keyframe's start and the next keyframe's end.
+     * At the ends of the track those wrap to the opposite end, which is what keeps the cycle
+     * smooth across 0/26 instead of flattening into the seam from both sides.
+     *
+     * <p>Units match by construction: {@code getPointOnSpline} reads {@code easingArgs} raw and
+     * mixes them with {@code animationStartValue}/{@code animationEndValue}, and the values used
+     * here are those same already-converted keyframe values.
+     */
+    private static List<Keyframe<IValue>> spline(List<Keyframe<IValue>> frames) {
+        int n = frames.size();
+        if (n < 2) {
+            return frames;
+        }
+        List<Keyframe<IValue>> out = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            Keyframe<IValue> k = frames.get(i);
+            if (k.easingType() != EasingType.CATMULLROM || !k.easingArgs().isEmpty()) {
+                out.add(k);
+                continue;
+            }
+            IValue p0 = frames.get(Math.floorMod(i - 1, n)).startValue();
+            IValue p3 = frames.get(Math.floorMod(i + 1, n)).endValue();
+            out.add(new Keyframe<>(k.length(), k.startValue(), k.endValue(), k.easingType(),
+                    List.of(p0, p3)));
+        }
+        return out;
     }
 
     private static List<Keyframe<IValue>> negate(List<Keyframe<IValue>> frames) {
