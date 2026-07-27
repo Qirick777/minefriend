@@ -48,6 +48,17 @@ public class TendrilRenderLayer extends GeoRenderLayer<WardenGirlEntity> {
     public static final ResourceLocation TEXTURE =
             new ResourceLocation(WardenGirlMod.MOD_ID, "textures/entity/tendril.png");
 
+    /** Bones the diagnostic {@code headgear_solo} switch is currently hiding. */
+    private static final java.util.Set<String> SUPPRESSED = new java.util.HashSet<>();
+
+    public static void setSuppressed(String boneName, boolean suppressed) {
+        if (suppressed) {
+            SUPPRESSED.add(boneName);
+        } else {
+            SUPPRESSED.remove(boneName);
+        }
+    }
+
     public TendrilRenderLayer(GeoRenderer<WardenGirlEntity> renderer) {
         super(renderer);
     }
@@ -63,7 +74,7 @@ public class TendrilRenderLayer extends GeoRenderLayer<WardenGirlEntity> {
                               MultiBufferSource bufferSource,
                               com.mojang.blaze3d.vertex.VertexConsumer buffer, float partialTick,
                               int packedLight, int packedOverlay) {
-        if (!Bones.HEADGEAR.contains(bone.getName())) {
+        if (!Bones.HEADGEAR.contains(bone.getName()) || SUPPRESSED.contains(bone.getName())) {
             return;
         }
         // entityCutoutNoCull: alpha cutout for the transparent margin, and no back-face culling so
