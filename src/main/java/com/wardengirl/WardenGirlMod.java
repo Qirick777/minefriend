@@ -2,13 +2,17 @@ package com.wardengirl;
 
 import com.mojang.logging.LogUtils;
 import com.wardengirl.command.WardenGirlCommand;
+import com.wardengirl.config.ClientConfig;
+import com.wardengirl.network.ModNetwork;
 import com.wardengirl.registry.ModEntities;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModList;
+import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.slf4j.Logger;
@@ -31,6 +35,11 @@ public class WardenGirlMod {
 
         ModEntities.register(modEventBus);
 
+        // Part 3.6: config/wardengirl-client.toml. Client type because every value in it feeds the
+        // renderer and nothing else.
+        ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC,
+                "wardengirl-client.toml");
+
         modEventBus.addListener(this::commonSetup);
 
         MinecraftForge.EVENT_BUS.register(this);
@@ -44,6 +53,7 @@ public class WardenGirlMod {
 
     private void commonSetup(final FMLCommonSetupEvent event) {
         LOGGER.info("[wardengirl] T0 boot: mod class loaded, entity registry attached.");
+        event.enqueueWork(ModNetwork::register);
         logGeckoLibBinding();
     }
 

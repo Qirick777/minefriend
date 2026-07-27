@@ -81,4 +81,15 @@ public final class AxisConvention {
     public static double[] readDegrees(GeoBone bone) {
         return new double[]{toDeg(bone.getRotX()), toDeg(bone.getRotY()), toDeg(bone.getRotZ())};
     }
+
+    /**
+     * This bone's current position offset in pixels, x/y/z.
+     *
+     * <p>Positions are never converted — they are model pixels on both sides. Needed because the
+     * bounce (4.3.2) and the chest rise (4.3.1) are positions, not rotations, so a rotation-only
+     * readback would report a rig that looks correct while the bounce silently does nothing.
+     */
+    public static double[] readPositionPx(GeoBone bone) {
+        return new double[]{bone.getPosX(), bone.getPosY(), bone.getPosZ()};
+    }
 }

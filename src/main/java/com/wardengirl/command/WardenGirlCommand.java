@@ -4,7 +4,10 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
+import com.wardengirl.anim.AnimParams;
 import com.wardengirl.anim.Bones;
+import com.wardengirl.config.ClientConfig;
+import com.wardengirl.network.ModNetwork;
 import com.wardengirl.entity.WardenGirlEntity;
 import com.wardengirl.registry.ModEntities;
 import net.minecraft.ChatFormatting;
@@ -19,6 +22,7 @@ import net.minecraft.world.phys.Vec3;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 
 /**
@@ -40,6 +44,14 @@ public final class WardenGirlCommand {
 
     private static final SuggestionProvider<CommandSourceStack> BONE_SUGGESTIONS =
             (ctx, builder) -> SharedSuggestionProvider.suggest(Bones.ALL, builder);
+
+    private static final SuggestionProvider<CommandSourceStack> PARAM_SUGGESTIONS =
+            (ctx, builder) -> SharedSuggestionProvider.suggest(AnimParams.all().keySet(), builder);
+
+    private static final SuggestionProvider<CommandSourceStack> PRESET_SUGGESTIONS =
+            (ctx, builder) -> SharedSuggestionProvider.suggest(
+                    java.util.Arrays.stream(AnimParams.Preset.values())
+                            .map(pr -> pr.name().toLowerCase(Locale.ROOT)).toList(), builder);
 
     private static final SuggestionProvider<CommandSourceStack> AXIS_SUGGESTIONS =
             (ctx, builder) -> SharedSuggestionProvider.suggest(
@@ -67,7 +79,120 @@ public final class WardenGirlCommand {
                                                 .executes(ctx -> axisTest(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "bone"),
                                                         StringArgumentType.getString(ctx, "axis"),
-                                                        DoubleArgumentType.getDouble(ctx, "degrees"))))))));
+                                                        DoubleArgumentType.getDouble(ctx, "degrees")))))))
+                .then(Commands.literal("param")
+                        .then(Commands.literal("list")
+                                .executes(ctx -> paramList(ctx.getSource())))
+                        .then(Commands.literal("reload")
+                                .executes(ctx -> paramReload(ctx.getSource())))
+                        .then(Commands.literal("preset")
+                                .then(Commands.argument("level", StringArgumentType.word())
+                                        .suggests(PRESET_SUGGESTIONS)
+                                        .executes(ctx -> paramPreset(ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "level")))))
+                        .then(Commands.literal("set")
+                                .then(Commands.argument("key", StringArgumentType.word())
+                                        .suggests(PARAM_SUGGESTIONS)
+                                        .then(Commands.argument("value", DoubleArgumentType.doubleArg())
+                                                .executes(ctx -> paramSet(ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "key"),
+                                                        DoubleArgumentType.getDouble(ctx, "value"))))))));
+    }
+
+    // ---- /wardengirl param ------------------------------------------------------------------
+
+    private static int paramList(CommandSourceStack source) {
+        source.sendSuccess(() -> Component.literal(
+                        "[param] " + AnimParams.all().size() + "개.  key = 현재값 (기본값) [단위, 태스크]")
+                .withStyle(ChatFormatting.GOLD), false);
+        for (AnimParams.Param p : AnimParams.all().values()) {
+            boolean changed = p.get() != p.defaultValue;
+            source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                            "  %-22s = %-9s (%s) [%s, %s]  %s",
+                            p.key, trim(p.get()), trim(p.defaultValue), p.unit, p.task, p.description))
+                    .withStyle(changed ? ChatFormatting.YELLOW : ChatFormatting.GRAY), false);
+        }
+        return 1;
+    }
+
+    private static int paramSet(CommandSourceStack source, String key, double value) {
+        AnimParams.Param p = AnimParams.get(key);
+        if (p == null) {
+            source.sendFailure(Component.literal("[param] 알 수 없는 key: " + key
+                    + "  (/wardengirl param list 로 확인)"));
+            return 0;
+        }
+        double before = p.get();
+        p.set(value);
+        ModNetwork.broadcast(Map.of(key, value));
+
+        source.sendSuccess(() -> Component.literal("[param] ").withStyle(ChatFormatting.GOLD)
+                .append(Component.literal(String.format(Locale.ROOT,
+                                "%s : %s -> %s  [%s]%n         %s%n         영향 본: %s",
+                                key, trim(before), trim(value), p.unit, p.description,
+                                p.affects.isEmpty() ? "(없음)" : String.join(", ", p.affects)))
+                        .withStyle(ChatFormatting.WHITE)), true);
+        source.sendSuccess(() -> Component.literal(
+                        "         ※ 다음 프레임의 실측 본 회전값은 클라이언트가 [param/client] 로 출력한다.")
+                .withStyle(ChatFormatting.GRAY), false);
+        return 1;
+    }
+
+    private static int paramPreset(CommandSourceStack source, String levelRaw) {
+        AnimParams.Preset preset = AnimParams.Preset.parse(levelRaw);
+        if (preset == null) {
+            source.sendFailure(Component.literal(
+                    "[param] preset 은 min / low / default / high / max 중 하나여야 한다. 받은 값: " + levelRaw));
+            return 0;
+        }
+        Map<String, double[]> changed = AnimParams.applyPreset(preset);
+        Map<String, Double> sync = new java.util.LinkedHashMap<>();
+        changed.forEach((k, v) -> sync.put(k, v[1]));
+        if (!sync.isEmpty()) {
+            ModNetwork.broadcast(sync);
+        }
+
+        source.sendSuccess(() -> Component.literal("[param] ").withStyle(ChatFormatting.GOLD)
+                .append(Component.literal(String.format(Locale.ROOT,
+                                "preset %s (기본값 x%s) 적용.  %d개 변경 / 전체 %d개",
+                                preset.name().toLowerCase(Locale.ROOT), trim(preset.factor),
+                                changed.size(), AnimParams.all().size()))
+                        .withStyle(ChatFormatting.WHITE)), true);
+        changed.forEach((k, v) -> source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "  %-22s %s -> %s", k, trim(v[0]), trim(v[1]))).withStyle(ChatFormatting.GRAY), false));
+        if (changed.isEmpty()) {
+            source.sendSuccess(() -> Component.literal("  (이미 그 값이다 — 변경 없음)")
+                    .withStyle(ChatFormatting.GRAY), false);
+        }
+        return 1;
+    }
+
+    private static int paramReload(CommandSourceStack source) {
+        Map<String, double[]> changed = ClientConfig.load();
+        Map<String, Double> sync = new java.util.LinkedHashMap<>();
+        changed.forEach((k, v) -> sync.put(k, v[1]));
+        if (!sync.isEmpty()) {
+            ModNetwork.broadcast(sync);
+        }
+        source.sendSuccess(() -> Component.literal("[param] ").withStyle(ChatFormatting.GOLD)
+                .append(Component.literal("TOML 재로드. 변경된 key " + changed.size() + "개")
+                        .withStyle(ChatFormatting.WHITE)), true);
+        if (changed.isEmpty()) {
+            source.sendSuccess(() -> Component.literal(
+                            "  (파일 값과 현재 값이 같다. 전용 서버에서는 클라이언트 TOML 을 읽을 수 없다는 점에 주의)")
+                    .withStyle(ChatFormatting.GRAY), false);
+        }
+        changed.forEach((k, v) -> source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "  %-22s %s -> %s", k, trim(v[0]), trim(v[1]))).withStyle(ChatFormatting.GRAY), false));
+        return 1;
+    }
+
+    /** Drops trailing zeros so the tables stay readable. */
+    private static String trim(double v) {
+        if (v == Math.rint(v)) {
+            return String.valueOf((long) v);
+        }
+        return String.valueOf(Math.round(v * 10000.0D) / 10000.0D);
     }
 
     // ---- /wardengirl summon [pos] ------------------------------------------------------------

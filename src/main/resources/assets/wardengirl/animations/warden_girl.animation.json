@@ -1,4 +1,103 @@
 {
   "format_version": "1.8.0",
-  "animations": {}
+  "animations": {
+    "vital": {
+      "loop": true,
+      "animation_length": 20,
+
+      "//": [
+        "C1 상시 레이어. 설계서 4.3. 키프레임 없음 — 전부 Molang 이다.",
+        "",
+        "query.wg_time 은 틱 단위 연속 시간이다 (Java 가 공급). GeckoLib 의 query.anim_time 은",
+        "초 단위인데다 루프 지점에서 되감기므로, 주기가 서로 다른 세 레이어(30 / 25 / 53틱)를",
+        "겹치면 루프마다 위상이 튄다. wg_time 은 되감기지 않으므로 그 문제가 없고,",
+        "덤으로 아래 수식이 설계서 표기와 1:1 로 같아진다 — 문서의 sin(t*12) 가 그대로 여기 있다.",
+        "",
+        "진폭과 속도는 query.wg_* 로 Java 에서 들어온다 (AnimParams).",
+        "따라서 이 파일은 F3+T 로, 크기는 /wardengirl param 으로 각각 조정된다.",
+        "math.sin 은 도(degree) 입력이다 — 설계서 4.0.3 / 4.9.3.",
+        "",
+        "부호는 설계서 4.0.1 규약 그대로다. 어디에서도 뒤집지 않는다."
+      ],
+
+      "bones": {
+        "root": {
+          "//": "4.3.2 바운스. abs(sin) 이 바닥에서 튕기는 리듬을 만든다",
+          "position": [
+            0,
+            "query.wg_bounce_amp * math.abs(math.sin(query.wg_time * query.wg_bounce_speed))",
+            0
+          ]
+        },
+
+        "hip": {
+          "//": "4.3.3 전신 미세 비틀기",
+          "rotation": [
+            0,
+            "query.wg_sway_hip_y * math.sin(query.wg_time * query.wg_sway_speed - 20)",
+            0
+          ]
+        },
+
+        "body": {
+          "//": "4.3.1 호흡(xRot, y) + 4.3.3 상체 좌우(zRot)",
+          "rotation": [
+            "query.wg_breath_body_x * math.sin(query.wg_time * query.wg_breath_speed)",
+            0,
+            "query.wg_sway_body_z * math.sin(query.wg_time * query.wg_sway_speed)"
+          ],
+          "position": [
+            0,
+            "query.wg_breath_body_y * math.sin(query.wg_time * query.wg_breath_speed)",
+            0
+          ]
+        },
+
+        "head": {
+          "//": "4.3.1 수평 유지 보정(2틱 지연) + 4.3.3 반대 보정",
+          "rotation": [
+            "-query.wg_breath_head_x * math.sin(query.wg_time * query.wg_breath_speed - 24)",
+            0,
+            "-query.wg_sway_head_z * math.sin(query.wg_time * query.wg_sway_speed - 14)"
+          ]
+        },
+
+        "arm_right": {
+          "//": "4.3.1 들숨에 바깥으로. 오른팔 바깥 = +z",
+          "rotation": [
+            0,
+            0,
+            "query.wg_breath_arm_z * math.sin(query.wg_time * query.wg_breath_speed - 18)"
+          ]
+        },
+
+        "arm_left": {
+          "//": "4.3.1 좌우 반대 부호. 왼팔 바깥 = -z",
+          "rotation": [
+            0,
+            0,
+            "-query.wg_breath_arm_z * math.sin(query.wg_time * query.wg_breath_speed - 18)"
+          ]
+        },
+
+        "leg_right": {
+          "//": "4.3.1 체중 후방 이동(xRot) + 4.3.2 접지 시 벌어짐(zRot)",
+          "rotation": [
+            "-query.wg_breath_leg_x * math.sin(query.wg_time * query.wg_breath_speed)",
+            0,
+            "query.wg_bounce_leg_z * (1 - math.abs(math.sin(query.wg_time * query.wg_bounce_speed)))"
+          ]
+        },
+
+        "leg_left": {
+          "//": "xRot 은 양다리 같은 부호, zRot 은 좌우 반대 부호",
+          "rotation": [
+            "-query.wg_breath_leg_x * math.sin(query.wg_time * query.wg_breath_speed)",
+            0,
+            "-query.wg_bounce_leg_z * (1 - math.abs(math.sin(query.wg_time * query.wg_bounce_speed)))"
+          ]
+        }
+      }
+    }
+  }
 }

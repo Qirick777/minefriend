@@ -162,6 +162,9 @@ repositories {
         url = 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/'
         content {
             includeGroup 'software.bernie.geckolib'
+            // mclib is not on Maven Central; this repo is the one that serves it (verified: the
+            // blamejared and central coordinates both 404).
+            includeGroup 'com.eliotlash.mclib'
         }
     }
 }
@@ -178,6 +181,18 @@ dependencies {
     // The published artifact is a production jar (SRG-obfuscated member names), so it must be
     // run through fg.deobf() to be remapped into the 'official' dev mappings.
     implementation fg.deobf("software.bernie.geckolib:geckolib-forge-${minecraft_version}:${geckolib_version}")
+
+    // mclib — compile-time only, on purpose.
+    //
+    // GeckoLib's MolangParser extends com.eliotlash.mclib.math.MathBuilder, so javac cannot resolve
+    // any MolangParser reference without it ("cannot access MathBuilder"). At runtime it is already
+    // present: GeckoLib ships it as JarInJar (META-INF/jarjar/mclib-20.jar, declared as
+    // com.eliotlash.mclib:mclib [20,)). Declaring it as anything other than compileOnly would put a
+    // second copy on the classpath.
+    //
+    // Not remapped through fg.deobf: it contains no Minecraft references, so there is nothing to
+    // remap — it is a plain maths/expression library.
+    compileOnly "com.eliotlash.mclib:mclib:${mclib_version}"
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

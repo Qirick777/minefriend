@@ -10,9 +10,12 @@ import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.level.Level;
+import com.wardengirl.anim.AnimRegistry;
 import software.bernie.geckolib.animatable.GeoEntity;
 import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
 import software.bernie.geckolib.core.animation.AnimatableManager;
+import software.bernie.geckolib.core.animation.AnimationController;
+import software.bernie.geckolib.core.object.PlayState;
 import software.bernie.geckolib.util.GeckoLibUtil;
 
 /**
@@ -84,11 +87,17 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     // ---- GeoEntity --------------------------------------------------------------------------
 
     /**
-     * No controllers. Registering any animation here would be T2+ scope (design doc Part 4.2,
-     * Part 10.12). The model still renders, and bones can still be posed procedurally.
+     * C1 only. Design doc Part 4.2.
+     *
+     * <p>{@code vital} is registered as an unconditional loop that always returns
+     * {@link PlayState#CONTINUE}. There is no code path that stops it, by design: Part 4.1 원칙 6
+     * and Part 10.5 both forbid stopping C1. C2 (locomotion) and C3 (action) are separate
+     * controllers and arrive in T5 and T6.
      */
     @Override
     public void registerControllers(AnimatableManager.ControllerRegistrar registrar) {
+        registrar.add(new AnimationController<>(this, AnimRegistry.CONTROLLER_VITAL, 0,
+                state -> state.setAndContinue(AnimRegistry.VITAL)));
     }
 
     @Override
