@@ -137,11 +137,99 @@ public final class BoneTrace {
         double[] head = LAST.get(Bones.HEAD);
         if (head != null) {
             for (int i = 0; i < 3; i++) {
-                double raw = (angles[i] - head[i]) * amplitude;
+                double lag = angles[i] - head[i];
+                double raw = lag * amplitude;
                 if (Math.abs(raw) >= max - 1e-6) {
                     CLAMP_HITS[side][i]++;
                 }
+                SPRING_LAG_MAX[side][i] = Math.max(SPRING_LAG_MAX[side][i], Math.abs(lag));
+                SPRING_LAG_SUMSQ[side][i] += lag * lag;
+                SPRING_LAG_N[side][i]++;
             }
+        }
+    }
+
+    /**
+     * 촉수 휘청임의 크기, 도.
+     *
+     * <p>The tendril's visible swing is {@code (springAngle − headAngle) * AMPLITUDE}, clamped — so
+     * what actually decides "how much does it whip" is the <b>lag error</b>, the amount by which the
+     * spring has failed to keep up with the head. Recording the spring's own angular range instead
+     * would be the wrong quantity: a head that swings 60° drags the spring through 60° whether the
+     * decoration lags by 20° or by 0.2°.
+     *
+     * <p>Peak and RMS both, because T4's question is whether damping the <em>input</em> kills the
+     * effect. A peak can survive on one lucky transient while the typical motion has gone flat, and
+     * the RMS is what an eye watching for a minute actually integrates.
+     */
+    private static final double[][] SPRING_LAG_MAX = new double[SIDES][3];
+    private static final double[][] SPRING_LAG_SUMSQ = new double[SIDES][3];
+    private static final int[][] SPRING_LAG_N = new int[SIDES][3];
+
+    // ---- 4.6 시선 감쇠 --------------------------------------------------------------------------
+
+    /**
+     * Target and damped output, one row per {@link #sample} call.
+     *
+     * <p>A time series, not just extremes. "감쇠가 실제 작동하는가" cannot be answered by min/max:
+     * a filter that is doing nothing and a filter that is working both produce the same range once
+     * the input has been held long enough. What distinguishes them is whether {@code current}
+     * arrives <em>after</em> {@code target} — which needs the two side by side, in order.
+     */
+    private static final int LOOK_CAPACITY = 2400;
+    private static final double[] LOOK_TARGET_YAW = new double[LOOK_CAPACITY];
+    private static final double[] LOOK_CURRENT_YAW = new double[LOOK_CAPACITY];
+    private static final double[] LOOK_TARGET_PITCH = new double[LOOK_CAPACITY];
+    private static final double[] LOOK_CURRENT_PITCH = new double[LOOK_CAPACITY];
+    private static int lookSamples = 0;
+
+    private static final double[] LOOK_ERR_MAX = new double[2];
+    private static final double[] LOOK_DAMPING_MIN = new double[2];
+    private static final double[] LOOK_DAMPING_MAX = new double[2];
+    private static double lookDistanceMin = Double.POSITIVE_INFINITY;
+    private static double lookDistanceMax = Double.NEGATIVE_INFINITY;
+
+    private static final double[] LOOK_PENDING = new double[4];
+    private static boolean lookPendingValid = false;
+    private static int lookFirstTick = Integer.MIN_VALUE;
+    private static int lookLastTick = Integer.MIN_VALUE;
+
+    /**
+     * Called by the model once per frame, before {@link #sample}.
+     *
+     * <p>Stashed rather than appended, so the series gets exactly one row per sample no matter how
+     * many frames the model draws between them. Appending here instead would silently make the
+     * "series" framerate-dependent and its row spacing meaningless.
+     */
+    public static void noteLook(double[] target, double[] current, double damping,
+                                double distance, int tickCount) {
+        if (remainingTicks <= 0) {
+            return;
+        }
+        // sample() runs per FRAME — `remainingTicks` counts frames despite the name, so
+        // sampleCount/totalTicks is identically 1 and says nothing. The entity's own tick counter
+        // is the only clock here that actually ticks, so the frames-per-tick ratio comes from it.
+        if (lookFirstTick == Integer.MIN_VALUE) {
+            lookFirstTick = tickCount;
+        }
+        lookLastTick = tickCount;
+        LOOK_PENDING[0] = target[0];
+        LOOK_PENDING[1] = current[0];
+        LOOK_PENDING[2] = target[1];
+        LOOK_PENDING[3] = current[1];
+        lookPendingValid = true;
+        for (int i = 0; i < 2; i++) {
+            LOOK_ERR_MAX[i] = Math.max(LOOK_ERR_MAX[i], Math.abs(target[i] - current[i]));
+        }
+        // Both slots hold the same value today; kept as a pair so a future per-axis coefficient
+        // does not need the report rewritten.
+        for (int i = 0; i < 2; i++) {
+            LOOK_DAMPING_MIN[i] = Math.min(LOOK_DAMPING_MIN[i], damping);
+            LOOK_DAMPING_MAX[i] = Math.max(LOOK_DAMPING_MAX[i], damping);
+        }
+        if (distance >= 0) {
+            lookDistanceMin = Math.min(lookDistanceMin, distance);
+            lookDistanceMax = Math.max(lookDistanceMax, distance);
         }
     }
 
@@ -155,7 +243,19 @@ public final class BoneTrace {
         pendingRightValid = false;
         for (int side = 0; side < SIDES; side++) {
             java.util.Arrays.fill(CLAMP_HITS[side], 0);
+            java.util.Arrays.fill(SPRING_LAG_MAX[side], 0.0D);
+            java.util.Arrays.fill(SPRING_LAG_SUMSQ[side], 0.0D);
+            java.util.Arrays.fill(SPRING_LAG_N[side], 0);
         }
+        lookSamples = 0;
+        lookPendingValid = false;
+        lookFirstTick = Integer.MIN_VALUE;
+        lookLastTick = Integer.MIN_VALUE;
+        java.util.Arrays.fill(LOOK_ERR_MAX, 0.0D);
+        java.util.Arrays.fill(LOOK_DAMPING_MIN, Double.POSITIVE_INFINITY);
+        java.util.Arrays.fill(LOOK_DAMPING_MAX, Double.NEGATIVE_INFINITY);
+        lookDistanceMin = Double.POSITIVE_INFINITY;
+        lookDistanceMax = Double.NEGATIVE_INFINITY;
         MIN.clear();
         MAX.clear();
         FIRST.clear();
@@ -202,6 +302,14 @@ public final class BoneTrace {
                 }
             }
             LAST.put(bone, new double[]{v[0], v[1], v[2]});
+        }
+
+        if (lookPendingValid && lookSamples < LOOK_CAPACITY) {
+            LOOK_TARGET_YAW[lookSamples] = LOOK_PENDING[0];
+            LOOK_CURRENT_YAW[lookSamples] = LOOK_PENDING[1];
+            LOOK_TARGET_PITCH[lookSamples] = LOOK_PENDING[2];
+            LOOK_CURRENT_PITCH[lookSamples] = LOOK_PENDING[3];
+            lookSamples++;
         }
 
         accumulateFoot(Bones.LEG_RIGHT, rotations, positions);
@@ -516,14 +624,152 @@ public final class BoneTrace {
         positions.forEach((bone, v) -> WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
                 "[trace] %-10s 위치(px) 마지막 = (%+.4f, %+.4f, %+.4f)", bone, v[0], v[1], v[2])));
 
+        fails += reportLook();
         fails += reportSpring();
         fails += reportFeet();
 
         if (fails == 0) {
-            WardenGirlMod.LOGGER.info("[trace] === 판정: 전 항목 통과 (회전 30 + 스프링 좌우 + 발끝 2) ===");
+            WardenGirlMod.LOGGER.info("[trace] === 판정: 전 항목 통과 (회전 30 + 시선 + 스프링 좌우 + 발끝 2) ===");
         } else {
             WardenGirlMod.LOGGER.error("[trace] === 판정: 실패 {}개 ===", fails);
         }
+    }
+
+    /**
+     * 4.6 시선 감쇠 — does the filter actually lag, and by how much.
+     *
+     * <h2>The lag is measured, not asserted</h2>
+     *
+     * A coefficient being set is not evidence that anything is being smoothed; Part 6.2 wants the
+     * observation. So the series is searched for the shift {@code d} that best aligns
+     * {@code current[t]} with {@code target[t-d]}, and that shift is reported in ticks. A filter
+     * that is doing nothing reports 0. A working first-order lag reports something near its time
+     * constant, and the analytic prediction {@code 1/damping − 1} is printed alongside so the two
+     * can be compared rather than trusted.
+     *
+     * <p>The search is over the sample index, and samples are one per frame — so the unit is
+     * "samples", converted to ticks with the measured samples-per-tick ratio. Reporting raw frames
+     * would make the number change with the framerate while the behaviour did not.
+     */
+    private static int reportLook() {
+        if (lookSamples < 4) {
+            WardenGirlMod.LOGGER.warn("[trace] 4.6 시선 표본 없음 ({}개) — 시선 감쇠가 돌지 않았다",
+                    lookSamples);
+            return 1;
+        }
+        double damping = LOOK_DAMPING_MAX[0];
+        boolean bypass = damping >= 1.0D;
+        int tickSpan = lookLastTick - lookFirstTick;
+        double samplesPerTick = tickSpan > 0 ? (double) lookSamples / tickSpan : 1.0D;
+
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace] --- 4.6 시선 감쇠: 실효계수 %.4f ~ %.4f (거리 %.2f ~ %.2f 블록), "
+                        + "표본 %d개 / 엔티티 %d틱 = %.2f 프레임/틱 ---",
+                LOOK_DAMPING_MIN[0], LOOK_DAMPING_MAX[0],
+                Double.isInfinite(lookDistanceMin) ? -1 : lookDistanceMin,
+                Double.isInfinite(lookDistanceMax) ? -1 : lookDistanceMax,
+                lookSamples, tickSpan, samplesPerTick));
+
+        int fails = 0;
+        String[] name = {"yaw ", "pitch"};
+        double[][] tgt = {LOOK_TARGET_YAW, LOOK_TARGET_PITCH};
+        double[][] cur = {LOOK_CURRENT_YAW, LOOK_CURRENT_PITCH};
+        for (int a = 0; a < 2; a++) {
+            int bestShift = bestLagShift(tgt[a], cur[a], lookSamples);
+            double lagTicks = bestShift / Math.max(1e-6, samplesPerTick);
+            double predicted = bypass ? 0.0D : 1.0D / damping - 1.0D;
+            double span = range(tgt[a], lookSamples);
+            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                    "[trace] 시선 %s  target 진폭 %.3f도  최대 |target-current| %.4f도  "
+                            + "실측 지연 %d표본 = %.2f틱  (1차 지연 예측 1/k-1 = %.2f틱)",
+                    name[a], span, LOOK_ERR_MAX[a], bestShift, lagTicks, predicted));
+            if (bypass && LOOK_ERR_MAX[a] > 1e-9) {
+                WardenGirlMod.LOGGER.error(String.format(Locale.ROOT,
+                        "[trace] FAIL 시선 %s — 우회(계수 1.0)인데 target 과 current 가 %.6f도 다르다. "
+                                + "T3 와 동일해야 한다", name[a], LOOK_ERR_MAX[a]));
+                fails++;
+            }
+            if (!bypass && span > 1.0D && LOOK_ERR_MAX[a] < 1e-6) {
+                WardenGirlMod.LOGGER.error(String.format(Locale.ROOT,
+                        "[trace] FAIL 시선 %s — target 이 %.3f도 움직였는데 지연이 0이다. "
+                                + "감쇠가 걸리지 않았다", name[a], span));
+                fails++;
+            }
+        }
+
+        // target 과 current 를 나란히. 지연은 요약값이 아니라 이 표에서 눈으로도 보여야 한다.
+        int rows = Math.min(30, lookSamples);
+        int step = Math.max(1, lookSamples / rows);
+        WardenGirlMod.LOGGER.info("[trace] 시계열 (표본 {}개 중 {}개 간격으로):", lookSamples, step);
+        for (int i = 0; i < lookSamples; i += step) {
+            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                    "[trace]   #%4d  yaw target %+8.3f -> current %+8.3f (차 %+7.3f)   "
+                            + "pitch target %+8.3f -> current %+8.3f (차 %+7.3f)",
+                    i, LOOK_TARGET_YAW[i], LOOK_CURRENT_YAW[i],
+                    LOOK_CURRENT_YAW[i] - LOOK_TARGET_YAW[i],
+                    LOOK_TARGET_PITCH[i], LOOK_CURRENT_PITCH[i],
+                    LOOK_CURRENT_PITCH[i] - LOOK_TARGET_PITCH[i]));
+        }
+
+        // 3. 근거리 전환이 계단식이 아닌지 — 거리를 직접 넣어 실효값을 뽑는다.
+        StringBuilder sb = new StringBuilder("[trace] 거리별 실효 감쇠: ");
+        for (double d : new double[]{0.0D, 1.0D, 2.0D, 2.5D, 3.0D, 3.5D, 4.0D, 8.0D}) {
+            sb.append(String.format(Locale.ROOT, "%.1f=%.4f  ", d, LookDamper.dampingFor(d)));
+        }
+        WardenGirlMod.LOGGER.info(sb.toString());
+        double prevK = LookDamper.dampingFor(0.0D);
+        double maxJump = 0;
+        for (double d = 0.05D; d <= 6.0001D; d += 0.05D) {
+            double k = LookDamper.dampingFor(d);
+            maxJump = Math.max(maxJump, Math.abs(k - prevK));
+            prevK = k;
+        }
+        // 계단이라면 경계 한 칸에서 두 계수의 차 전체가 한꺼번에 나타난다. 선형 보간이면
+        // 한 칸 변화는 (차이 / 구간길이) x 칸 크기 로 나뉜다.
+        double gap = Math.abs(AnimParams.LOOK_DAMPING.get() - AnimParams.LOOK_DAMPING_NEAR.get());
+        double linearStep = gap * 0.05D / Math.max(1e-9, AnimParams.LOOK_NEAR_DISTANCE.get());
+        boolean smooth = maxJump <= linearStep * 1.5D + 1e-9;
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace] 0.05블록 간격 최대 변화 %.6f (선형 예측 %.6f, 계단이면 %.6f) — %s",
+                maxJump, linearStep, gap, smooth ? "OK 연속 (계단 없음)" : "FAIL 계단식 전환"));
+        if (!smooth) {
+            fails++;
+        }
+        return fails;
+    }
+
+    /**
+     * The shift {@code d} minimising sum |current[t] − target[t−d]| over the series.
+     *
+     * <p>Absolute error rather than correlation: correlation is scale-free and would report a
+     * confident alignment even for a filter whose output amplitude had collapsed, which is the very
+     * failure this is meant to catch.
+     */
+    private static int bestLagShift(double[] target, double[] current, int n) {
+        int maxShift = Math.min(120, n / 3);
+        int best = 0;
+        double bestErr = Double.POSITIVE_INFINITY;
+        for (int d = 0; d <= maxShift; d++) {
+            double err = 0;
+            for (int t = maxShift; t < n; t++) {
+                err += Math.abs(current[t] - target[t - d]);
+            }
+            if (err < bestErr - 1e-12) {
+                bestErr = err;
+                best = d;
+            }
+        }
+        return best;
+    }
+
+    private static double range(double[] v, int n) {
+        double mn = Double.POSITIVE_INFINITY;
+        double mx = Double.NEGATIVE_INFINITY;
+        for (int i = 0; i < n; i++) {
+            mn = Math.min(mn, v[i]);
+            mx = Math.max(mx, v[i]);
+        }
+        return mx - mn;
     }
 
     /**
@@ -563,6 +809,8 @@ public final class BoneTrace {
         }
         int fails = 0;
         double c = AnimParams.HEADGEAR_DAMPING.get();
+        double amp = AnimParams.HEADGEAR_AMPLITUDE.get();
+        double max = Math.abs(AnimParams.HEADGEAR_MAX_ANGLE.get());
         double[] headMin = MIN.get(Bones.HEAD);
         double[] headMax = MAX.get(Bones.HEAD);
         String[] axis = {"x", "y", "z"};
@@ -615,6 +863,12 @@ public final class BoneTrace {
                         SPRING_ANGLE_MIN[side][i], SPRING_ANGLE_MAX[side][i], springSpan,
                         SPRING_VEL_MIN[side][i], SPRING_VEL_MAX[side][i],
                         headAxis[i], overshoot, CLAMP_HITS[side][i], samples, hitPct));
+                int n = SPRING_LAG_N[side][i];
+                double rms = n > 0 ? Math.sqrt(SPRING_LAG_SUMSQ[side][i] / n) : 0.0D;
+                WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                        "[trace] 촉수휘청 %s %s축  지연오차 |스프링-head|  최대 %.4f도  RMS %.4f도  "
+                                + "(화면 각도 = 이 값 x amplitude %.2f, ±%.0f 클램프)",
+                        SIDE_NAME[side], axis[i], SPRING_LAG_MAX[side][i], rms, amp, max));
             }
         }
         // The whole point of splitting the bone: identical springs would produce identical output

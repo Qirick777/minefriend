@@ -163,7 +163,7 @@ public final class AnimParams {
         return p;
     }
 
-    /** A shape parameter: excluded from the preset sweep and carrying an explicit range. */
+    /** Excluded from the preset sweep and carrying an explicit range instead of a derived one. */
     private static Param addShape(String key, double def, double lo, double hi, String unit,
                                   String task, String desc, String... affects) {
         Param p = new Param(key, null, def, unit, task, desc, false, new double[]{lo, hi},
@@ -337,8 +337,8 @@ public final class AnimParams {
      * the tendril gets. UVs are untouched: the same picture is drawn on a smaller quad, not a
      * smaller crop of the picture.
      */
-    public static final Param HEADGEAR_SCALE = addShape("headgear_scale", 1.0D, 0.3D, 2.0D,
-            "배율", "T3", "촉수 크기. 피벗 기준이라 줄여도 뿌리는 머리 옆에 붙어 있다",
+    public static final Param HEADGEAR_SCALE = addShape("headgear_scale", 0.6D, 0.3D, 2.0D,
+            "배율", "T3", "촉수 크기. 피벗 기준이라 줄여도 뿌리는 머리 옆에 붙어 있다 (T3 확정 0.6)",
             "headgear_right", "headgear_left");
 
     /**
@@ -351,7 +351,7 @@ public final class AnimParams {
             "0/1", "T3", "진단용. 1 이면 바깥 레이어(모자·재킷·소매·바지)를 전부 숨긴다",
             "head", "body", "arm_right", "arm_left", "leg_right", "leg_left");
 
-    // ---- 4.6 시선 추적 (T3 에서는 가산과 클램프만. 감쇠 보간 · 근거리 반응은 T4) ------------------------
+    // ---- 4.6 시선 추적 (T3: 가산과 클램프. T4: 감쇠 보간 · 근거리 반응) ---------------------------
 
     /**
      * Overall gain on the vanilla look direction.
@@ -369,6 +369,42 @@ public final class AnimParams {
             "head");
     public static final Param LOOK_PITCH_MAX = addFixed("look_pitch_max", null, 35.0D,
             "deg", "T3", "head xRot 클램프 (4.6)", "head");
+
+    /**
+     * 4.6 감쇠 계수 — {@code current += (target - current) * LOOK_DAMPING} per tick.
+     *
+     * <p><b>1.0 은 우회 스위치다.</b> 필터를 끄고 {@code current = target} 으로 만들어 T3 상태를
+     * 그대로 재현한다 — {@link com.wardengirl.client.LookDamper} 참조. 그래야 감쇠가 있는 화면과
+     * 없는 화면을 같은 세션에서 번갈아 보며 판정할 수 있다.
+     *
+     * <p>범위를 0..1 로 명시한다. 파생 범위(×0.01..×10)였다면 0.0013..1.3 이 되어 우회 스위치가
+     * TOML 로는 표현되지만 발산 구간(>1)도 같이 열린다. 음수는 목표에서 <em>멀어지는</em> 방향이라
+     * 의미가 없고, 1 초과는 매 틱 지나쳐 진동한다.
+     */
+    public static final Param LOOK_DAMPING = addShape("look_damping", 0.13D, 0.0D, 1.0D,
+            "계수/틱", "T4",
+            "시선 감쇠. current += (target-current)*이 값. 1.0 이면 감쇠 없음(T3 동작)", "head");
+
+    /**
+     * 근거리에서 쓰는 감쇠 계수. 작을수록 더 느리고 부드럽게 따라온다.
+     *
+     * <p>{@link #LOOK_DAMPING} 과 같은 이유로 범위를 0..1 로 명시한다. 파생 범위였다면 상한이
+     * 0.6 이라 우회 스위치(1.0)를 TOML 로 쓸 수 없었다.
+     */
+    public static final Param LOOK_DAMPING_NEAR = addShape("look_damping_near", 0.06D, 0.0D, 1.0D,
+            "계수/틱", "T4",
+            "근거리 감쇠. NEAR_DISTANCE 안에서 거리에 비례해 look_damping 과 이 값 사이를 잇는다",
+            "head");
+
+    /**
+     * 근거리 판정 거리, 블록. 클라이언트 로컬 플레이어와 엔티티 사이의 3D 거리로 잰다.
+     *
+     * <p>이 거리 밖이면 {@link #LOOK_DAMPING}, 안이면 거리에 <b>선형 보간</b>한 값을 쓴다.
+     * 계단식 전환을 쓰면 이 경계를 걸어서 넘는 순간 목 각속도가 배로 뛴다.
+     */
+    public static final Param LOOK_NEAR_DISTANCE = addShape("look_near_distance", 3.0D, 0.5D, 16.0D,
+            "블록", "T4", "근거리 판정 거리. 이 안에서 look_damping -> look_damping_near 로 선형 보간",
+            "head");
 
     // ------------------------------------------------------------------------------------------
 

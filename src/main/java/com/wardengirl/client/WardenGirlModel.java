@@ -124,10 +124,11 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             for (HeadgearSpring spring : springsFor(animatable)) {
                 spring.reset();
             }
+            damperFor(animatable).reset();
             return;
         }
         applyStaticOffsets();
-        applyLook(animationState);
+        applyLook(animatable, animationState);
         applyHeadgearSpring(animatable);
         applyOverlayVisibility();
         reportParamChange();
@@ -160,8 +161,22 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      * {@code EntityModelData} is built from {@code -netHeadYaw} and {@code -headPitch} (verified in
      * the 4.8.4 bytecode), i.e. GeckoLib has already put them in the bone convention this project
      * uses. Per 4.0.1 nothing is negated again anywhere.
+     *
+     * <h2>4.6 감쇠 — clamp first, then damp</h2>
+     *
+     * The order matters. Damping the raw value and clamping the result would park the head at the
+     * limit for as long as the raw target stayed outside it, and the approach to the limit would be
+     * a straight line cut off at the top. Clamping first makes the limit the target, so the head
+     * eases onto it the same way it eases onto any other angle. It is also what keeps the damped
+     * value inside the clamp for free: a convex combination of two in-range values is in range.
+     *
+     * <p>No angle wrapping. What arrives is already a <em>difference</em> (head minus body) that
+     * vanilla has wrapped into (−180, 180], and the clamp above narrows it to ±75 before the filter
+     * sees it. A sign flip across the back is therefore a sweep from +75 to −75 through zero, which
+     * is the path the head physically has to take anyway.
      */
-    private void applyLook(AnimationState<WardenGirlEntity> animationState) {
+    private void applyLook(WardenGirlEntity animatable,
+                           AnimationState<WardenGirlEntity> animationState) {
         EntityModelData look = animationState.getData(DataTickets.ENTITY_MODEL_DATA);
         if (look == null) {
             return;
@@ -171,10 +186,48 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         // inside the `shouldSit` branch of actuallyRender and never runs for a standing mob; the
         // delivered value is the raw yHeadRot - yBodyRot difference. Measured range across 729
         // samples: -88.280 .. +86.250. See Part 11.
-        double yaw = clampAbs(look.netHeadYaw() * gain, AnimParams.LOOK_YAW_MAX.get());
-        double pitch = clampAbs(look.headPitch() * gain, AnimParams.LOOK_PITCH_MAX.get());
+        double[] target = {
+                clampAbs(look.netHeadYaw() * gain, AnimParams.LOOK_YAW_MAX.get()),
+                clampAbs(look.headPitch() * gain, AnimParams.LOOK_PITCH_MAX.get())};
+
+        double distance = distanceToLocalPlayer(animatable);
+        double damping = LookDamper.dampingFor(distance);
+        LookDamper damper = damperFor(animatable);
+        damper.advanceTo(animatable.tickCount, target, damping);
+        float partialTick = Minecraft.getInstance().getPartialTick();
+        double yaw = damper.output(LookDamper.YAW, partialTick, target[LookDamper.YAW]);
+        double pitch = damper.output(LookDamper.PITCH, partialTick, target[LookDamper.PITCH]);
+
+        BoneTrace.noteLook(target, new double[]{yaw, pitch}, damping, distance,
+                animatable.tickCount);
         addRotY(Bones.HEAD, yaw);
         addRotX(Bones.HEAD, pitch);
+    }
+
+    /**
+     * Distance in blocks to the client's own player, or −1 when there is none.
+     *
+     * <p>The local player, not "the entity's look target": 4.6 근거리 반응 exists so that walking up
+     * to the companion changes how it moves, and the person walking up is the one holding the
+     * screen. Using the AI's target would make the effect invisible to anyone but that target.
+     */
+    private static double distanceToLocalPlayer(WardenGirlEntity animatable) {
+        var player = Minecraft.getInstance().player;
+        return player == null ? -1.0D : animatable.distanceTo(player);
+    }
+
+    /**
+     * One damper per entity, for the same reason as {@link #springsFor} — the model instance is
+     * shared by every WardenGirl on screen, so a single filter would have them all driving one
+     * neck angle.
+     */
+    private final Map<Integer, LookDamper> dampers = new HashMap<>();
+
+    private LookDamper damperFor(WardenGirlEntity animatable) {
+        if (this.dampers.size() > MAX_TRACKED_ENTITIES) {
+            this.dampers.clear();
+        }
+        return this.dampers.computeIfAbsent(animatable.getId(), k -> new LookDamper());
     }
 
     private static double clampAbs(double value, double limit) {
