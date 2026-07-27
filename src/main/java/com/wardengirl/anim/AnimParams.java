@@ -344,24 +344,12 @@ public final class AnimParams {
     /**
      * Debug isolation: 1 hides every outer-layer cube (hat, jacket, sleeves, pants).
      *
-     * <p>Same reason {@code headgear_solo} existed: with the base and the overlay drawn on top of
-     * each other, a capture cannot say which of the two is wrong.
+     * <p>Exists because with the base and the overlay drawn on top of each other, a capture cannot
+     * say which of the two is wrong.
      */
     public static final Param OVERLAY_HIDDEN = addShape("overlay_hidden", 0.0D, 0.0D, 1.0D,
             "0/1", "T3", "진단용. 1 이면 바깥 레이어(모자·재킷·소매·바지)를 전부 숨긴다",
             "head", "body", "arm_right", "arm_left", "leg_right", "leg_left");
-
-    /**
-     * Debug isolation: 0 = both tendrils, 1 = right only, 2 = left only.
-     *
-     * <p>Exists because "is one bone drawing one image, or two overlapping ones?" turned out to be
-     * undecidable from a capture of both — two mirrored bones and one self-mirrored bone look the
-     * same. Three round trips were spent arguing about a picture that could not answer the
-     * question. Hiding one side answers it in a single frame.
-     */
-    public static final Param HEADGEAR_SOLO = addShape("headgear_solo", 0.0D, 0.0D, 3.0D,
-            "0-3", "T3", "진단용. 0=좌우 모두, 1=오른쪽만, 2=왼쪽만, 3=둘 다 숨김",
-            "headgear_right", "headgear_left");
 
     // ---- 4.6 시선 추적 (T3 에서는 가산과 클램프만. 감쇠 보간 · 근거리 반응은 T4) ------------------------
 

@@ -64,12 +64,21 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      * values would render as solid. Vanilla draws player skins with
      * {@code RenderType.entityTranslucent} for exactly this reason.
      *
-     * <p>The tendril layer keeps {@code entityCutoutNoCull} — it needs the no-cull half for its
-     * zero-depth plane, and its texture is binary alpha.
+     * <h2>The tendrils are in this pass too, and they still need no-cull</h2>
+     *
+     * <p>They are zero-depth planes: without back-face culling off, each one would vanish when
+     * viewed from behind. {@code entityTranslucent} covers that — verified in the 1.20.1 bytecode
+     * rather than assumed. {@code RenderType.entityTranslucent} calls
+     * {@code setCullState(RenderStateShard.f_110110_)}, the same field {@code entityCutoutNoCull}
+     * passes, and {@code f_110110_} is {@code new CullStateShard(false)} whose setup runnable is
+     * {@code RenderSystem.disableCull()}. The builder's default is {@code f_110158_} =
+     * {@code CullStateShard(true)}, which is what the separate {@code entity_translucent_cull}
+     * variant falls through to — its existence as a distinct type is the corroborating evidence
+     * that plain {@code entity_translucent} does not cull.
      */
     @Override
     public RenderType getRenderType(WardenGirlEntity animatable, ResourceLocation texture) {
-        return RenderType.entityCutoutNoCull(texture);
+        return RenderType.entityTranslucent(texture);
     }
 
     @Override
@@ -115,13 +124,6 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             for (HeadgearSpring spring : springsFor(animatable)) {
                 spring.reset();
             }
-            return;
-        }
-        // The tendril layer's re-render comes back through here. Everything below either ADDS to a
-        // bone or advances state, so running it twice in one frame would pose the two passes
-        // differently — the tendrils would be drawn against a head that had the offsets applied
-        // twice. The first pass already left the bones in their final state; reuse it.
-        if (TendrilRenderLayer.isTendrilPass()) {
             return;
         }
         applyStaticOffsets();
@@ -245,10 +247,8 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             bone.setRotY(AxisConvention.toRad(roll + spring.output(1, partialTick, target[1])));
             bone.setRotZ(AxisConvention.toRad(splay + spring.output(2, partialTick, target[2])));
 
-            // Visibility is NOT set here. TendrilRenderLayer owns it: this method also runs
-            // during the layer's own re-render pass (reRender → actuallyRender → handleAnimations
-            // → setCustomAnimations), so hiding the tendrils here hid them from the very pass that
-            // exists to draw them, and nothing came out at all.
+            // Nothing touches visibility. The tendrils are ordinary cubes on the one texture the
+            // model already draws, so there is no second pass to hide anything from.
 
             // Attachment point, as a translation of the whole bone. The render applies
             // T(pos)·T(pivot)·R·T(-pivot), so a root vertex sitting on the pivot lands at
