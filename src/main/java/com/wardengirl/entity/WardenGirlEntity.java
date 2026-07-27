@@ -48,6 +48,10 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     private static final EntityDataAccessor<String> DATA_AXIS_TEST =
             SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.STRING);
 
+    /** T5 임시 — json 부호 실측 애니메이션을 재생 중인가. See {@link AnimRegistry#SIGN_TEST}. */
+    private static final EntityDataAccessor<Boolean> DATA_SIGN_TEST =
+            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.BOOLEAN);
+
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
     public WardenGirlEntity(EntityType<? extends PathfinderMob> type, Level level) {
@@ -126,6 +130,7 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     protected void defineSynchedData() {
         super.defineSynchedData();
         this.entityData.define(DATA_AXIS_TEST, "");
+        this.entityData.define(DATA_SIGN_TEST, false);
     }
 
     // ---- axis verification harness (T1 only) -------------------------------------------------
@@ -137,6 +142,14 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
 
     public void setAxisTest(String value) {
         this.entityData.set(DATA_AXIS_TEST, value);
+    }
+
+    public boolean isSignTest() {
+        return this.entityData.get(DATA_SIGN_TEST);
+    }
+
+    public void setSignTest(boolean value) {
+        this.entityData.set(DATA_SIGN_TEST, value);
     }
 
     // ---- GeoEntity --------------------------------------------------------------------------
@@ -170,6 +183,9 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
      * "C1만 재생" — see {@link AnimRegistry#TRANSITION_TICKS}.
      */
     private PlayState locomotionPredicate(AnimationState<WardenGirlEntity> state) {
+        if (isSignTest()) {
+            return state.setAndContinue(AnimRegistry.SIGN_TEST_LOOP);
+        }
         if (state.isMoving()) {
             return state.setAndContinue(AnimRegistry.WALK_LOOP);
         }

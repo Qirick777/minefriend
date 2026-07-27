@@ -41,4 +41,15 @@ public final class AnimRegistry {
      * from the last posed state back toward the snapshot when a controller stops.
      */
     public static final int TRANSITION_TICKS = 6;
+
+    /**
+     * T5 임시 — json 키프레임 경로의 축별 부호 실측용. Deleted once the convention is settled.
+     *
+     * <p>T1 verified the sign convention by calling {@code GeoBone.setRot*} from Java. That says
+     * nothing about the json keyframe path, and the walk cycle is json keyframes. The two are
+     * separate code paths and nothing guaranteed they agreed.
+     */
+    public static final String SIGN_TEST = "signtest";
+
+    public static final RawAnimation SIGN_TEST_LOOP = RawAnimation.begin().thenLoop(SIGN_TEST);
 }

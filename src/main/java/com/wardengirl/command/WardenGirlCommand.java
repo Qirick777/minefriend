@@ -86,6 +86,11 @@ public final class WardenGirlCommand {
                                 .executes(ctx -> setAi(ctx.getSource(), true)))
                         .then(Commands.literal("off")
                                 .executes(ctx -> setAi(ctx.getSource(), false))))
+                .then(Commands.literal("signtest")
+                        .then(Commands.literal("on")
+                                .executes(ctx -> setSignTest(ctx.getSource(), true)))
+                        .then(Commands.literal("off")
+                                .executes(ctx -> setSignTest(ctx.getSource(), false))))
                 .then(Commands.literal("trace")
                         .executes(ctx -> trace(ctx.getSource(), 200))
                         .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
@@ -134,6 +139,23 @@ public final class WardenGirlCommand {
                                 "이동 AI %s — 대상 %d마리 (WaterAvoidingRandomStrollGoal)%n"
                                         + "         시선 Goal 2종은 그대로다. T5 걷기 확인용이며 기본값은 off 다.",
                                 on ? "ON" : "OFF", n))
+                        .withStyle(ChatFormatting.WHITE)), true);
+        return 1;
+    }
+
+    /** T5 임시 — json 키프레임 부호 실측. See {@link com.wardengirl.anim.AnimRegistry#SIGN_TEST}. */
+    private static int setSignTest(CommandSourceStack source, boolean on) {
+        int count = 0;
+        for (ServerLevel level : source.getServer().getAllLevels()) {
+            for (WardenGirlEntity e : level.getEntities(ModEntities.WARDEN_GIRL.get(), x -> true)) {
+                e.setSignTest(on);
+                count++;
+            }
+        }
+        final int n = count;
+        source.sendSuccess(() -> Component.literal("[signtest] ").withStyle(ChatFormatting.GOLD)
+                .append(Component.literal(String.format(Locale.ROOT,
+                        "json 부호 실측 애니메이션 %s — 대상 %d마리", on ? "ON" : "OFF", n))
                         .withStyle(ChatFormatting.WHITE)), true);
         return 1;
     }
