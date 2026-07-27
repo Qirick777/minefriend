@@ -60,6 +60,48 @@ public class TendrilRenderLayer extends GeoRenderLayer<WardenGirlEntity> {
         super(renderer);
     }
 
+    /**
+     * True while this layer's own re-render is running.
+     *
+     * <p>{@code reRender} goes back through {@code actuallyRender}, so every hook here fires twice
+     * per frame — once for the body pass and once for the tendril pass. Without this flag the two
+     * passes cannot ask for different visibility, and the first attempt hid the tendrils during the
+     * pass whose whole purpose was to draw them: the arms were fixed and the tendrils vanished.
+     */
+    private boolean tendrilPass = false;
+
+    /**
+     * Sets visibility for whichever pass is about to run.
+     *
+     * <p>This is the only place bone visibility is decided. The model must not do it — the model's
+     * {@code setCustomAnimations} also runs during the re-render (via {@code handleAnimations}),
+     * so anything it hides is hidden for the tendril pass too.
+     */
+    @Override
+    public void preRender(PoseStack poseStack, WardenGirlEntity animatable,
+                          BakedGeoModel bakedModel, RenderType renderType,
+                          MultiBufferSource bufferSource, VertexConsumer buffer,
+                          float partialTick, int packedLight, int packedOverlay) {
+        int solo = (int) Math.round(AnimParams.HEADGEAR_SOLO.get());
+        for (GeoBone bone : bakedModel.topLevelBones()) {
+            setVisibility(bone, solo);
+        }
+    }
+
+    private void setVisibility(GeoBone bone, int solo) {
+        int index = Bones.HEADGEAR.indexOf(bone.getName());
+        boolean isTendril = index >= 0;
+        boolean wantedNow = this.tendrilPass
+                // tendril pass: only the tendrils, and only the side headgear_solo asks for
+                ? isTendril && solo != 3 && (solo == 0 || solo == index + 1)
+                // body pass: everything except the tendrils
+                : !isTendril;
+        bone.setHidden(!wantedNow);
+        for (GeoBone child : bone.getChildBones()) {
+            setVisibility(child, solo);
+        }
+    }
+
     @Override
     protected ResourceLocation getTextureResource(WardenGirlEntity animatable) {
         return TEXTURE;
@@ -70,48 +112,22 @@ public class TendrilRenderLayer extends GeoRenderLayer<WardenGirlEntity> {
                        RenderType renderType, MultiBufferSource bufferSource,
                        VertexConsumer buffer, float partialTick, int packedLight,
                        int packedOverlay) {
-        int solo = (int) Math.round(AnimParams.HEADGEAR_SOLO.get());
-        if (solo == 3) {
+        if (this.tendrilPass || Math.round(AnimParams.HEADGEAR_SOLO.get()) == 3) {
             return;
         }
-        // Show only the tendrils for this pass, then put every bone straight back. No other frame
-        // or renderer ever observes the modified flags.
-        for (GeoBone bone : bakedModel.topLevelBones()) {
-            showOnly(bone, solo);
-        }
-
         RenderType tendrilType = RenderType.entityCutoutNoCull(TEXTURE);
-        getRenderer().reRender(bakedModel, poseStack, bufferSource, animatable, tendrilType,
-                bufferSource.getBuffer(tendrilType), partialTick, packedLight, packedOverlay,
-                1.0F, 1.0F, 1.0F, 1.0F);
-
+        this.tendrilPass = true;
+        try {
+            getRenderer().reRender(bakedModel, poseStack, bufferSource, animatable, tendrilType,
+                    bufferSource.getBuffer(tendrilType), partialTick, packedLight, packedOverlay,
+                    1.0F, 1.0F, 1.0F, 1.0F);
+        } finally {
+            this.tendrilPass = false;
+        }
+        // Leave the rig as the body pass wants it, so nothing downstream sees a half-hidden model.
         for (GeoBone bone : bakedModel.topLevelBones()) {
-            restore(bone);
+            setVisibility(bone, (int) Math.round(AnimParams.HEADGEAR_SOLO.get()));
         }
     }
 
-    /**
-     * Hides every bone's cubes except the wanted tendrils.
-     *
-     * <p>{@code setHidden} suppresses only this bone's cubes; children are still walked. That is
-     * what makes this work — the tendrils' ancestors (root → hip → body → head) must still be
-     * traversed for the tendrils to be reached and transformed, they just must not draw.
-     *
-     * @param solo 0 = both, 1 = right only, 2 = left only — see {@link AnimParams#HEADGEAR_SOLO}
-     */
-    private void showOnly(GeoBone bone, int solo) {
-        int index = Bones.HEADGEAR.indexOf(bone.getName());
-        bone.setHidden(!(index >= 0 && (solo == 0 || solo == index + 1)));
-        for (GeoBone child : bone.getChildBones()) {
-            showOnly(child, solo);
-        }
-    }
-
-    /** Back to "the main pass draws everything except the tendrils", which the model also sets. */
-    private void restore(GeoBone bone) {
-        bone.setHidden(Bones.HEADGEAR.contains(bone.getName()));
-        for (GeoBone child : bone.getChildBones()) {
-            restore(child);
-        }
-    }
 }

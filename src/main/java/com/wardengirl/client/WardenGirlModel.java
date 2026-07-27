@@ -237,10 +237,10 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             bone.setRotY(AxisConvention.toRad(roll + spring.output(1, partialTick, target[1])));
             bone.setRotZ(AxisConvention.toRad(splay + spring.output(2, partialTick, target[2])));
 
-            // The body pass must not draw these — TendrilRenderLayer redraws them from
-            // tendril.png, and a visible bone would be drawn twice, once with the skin's UVs.
-            // Set every frame rather than once, so the state cannot drift.
-            bone.setHidden(true);
+            // Visibility is NOT set here. TendrilRenderLayer owns it: this method also runs
+            // during the layer's own re-render pass (reRender → actuallyRender → handleAnimations
+            // → setCustomAnimations), so hiding the tendrils here hid them from the very pass that
+            // exists to draw them, and nothing came out at all.
 
             // Attachment point, as a translation of the whole bone. The render applies
             // T(pos)·T(pivot)·R·T(-pivot), so a root vertex sitting on the pivot lands at
