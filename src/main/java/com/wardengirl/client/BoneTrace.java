@@ -957,10 +957,17 @@ public final class BoneTrace {
                             "[trace]   %-14s %-24s 표본 0 — **측정 불가**", label[i], name[p]));
                     continue;
                 }
+                // Per-tick as well as per-frame. A first difference is per RENDERED FRAME, so the
+                // same motion reports twice the difference at half the framerate — and the
+                // framerate on this software renderer wanders by 2x between runs. Two runs are
+                // only comparable in 도/틱.
+                double meanFrame = sum[p] / count[p];
                 WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                        "[trace]   %-14s %-24s 표본 %5d  평균 %7.4f  최대 %8.4f  (최대/평균 %6.2f)",
-                        label[i], name[p], count[p], sum[p] / count[p], worst[p],
-                        sum[p] > 1e-9 ? worst[p] / (sum[p] / count[p]) : 0.0D));
+                        "[trace]   %-14s %-24s 표본 %5d  평균 %7.4f  최대 %8.4f  (최대/평균 %6.2f)"
+                                + "   [도/틱: 평균 %7.4f  최대 %8.4f]",
+                        label[i], name[p], count[p], meanFrame, worst[p],
+                        sum[p] > 1e-9 ? worst[p] / meanFrame : 0.0D,
+                        meanFrame * framesPerTick, worst[p] * framesPerTick));
             }
         }
     }

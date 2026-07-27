@@ -195,11 +195,12 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             damperFor(animatable).reset();
             return;
         }
-        // Read BEFORE anything Java adds: on the blend axes this is C2's contribution and nothing
-        // else, because the base clip writes 0 there and no other controller touches them. Taken
-        // here rather than inside applyActionMotion because C1 writes body.yRot too, and once it
-        // has, the walk's share is no longer separable.
-        double[] walkOnly = readBlendAxes();
+        // C2 first, exactly where the controller used to write it, so every layer below sits on
+        // top of the same value it always did. walkOnly is what C2 contributed on the four axes it
+        // shares with C3 - now known directly instead of read back off the bone.
+        double[] walkOnly = AnimParams.C2_SOURCE.get() < 0.5D
+                ? readBlendAxes()               // 이관 전: 컨트롤러가 이미 본에 썼다
+                : applyLocomotionMotion(animatable);
         VitalMotion.Contribution vital = applyVitalMotion(animatable);
         if (VitalCheck.isRunning()) {
             VitalCheck.sample(readAllBones(), readAllPositions(), animatable.tickCount,
@@ -506,6 +507,59 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         // unresolved on purpose — Part 11.
         addPosY(Bones.ROOT, c.rootPosY());
         return c;
+    }
+
+    // ---- C2 로코모션 (직접 평가) -------------------------------------------------------------
+
+    private final Map<Integer, LocomotionMotion> locomotions = new HashMap<>();
+
+    /**
+     * Adds the walk cycle, cross-faded against idle. Design doc 4.4.1 / 4.4.2.
+     *
+     * <p>See {@link LocomotionMotion} for why this is not a controller any more. The clip, the
+     * keyframes and the easing are unchanged — {@link ClipSampler} reads the same converted
+     * {@code walk} animation the controller was reading, through the same library code.
+     *
+     * @return C2's contribution on {@link #readBlendAxes}'s four axes, in that order
+     */
+    private double[] applyLocomotionMotion(WardenGirlEntity animatable) {
+        if (this.locomotions.size() > MAX_TRACKED_ENTITIES) {
+            this.locomotions.clear();
+        }
+        LocomotionMotion loco = this.locomotions.computeIfAbsent(animatable.getId(),
+                k -> new LocomotionMotion());
+        float partialTick = Minecraft.getInstance().getPartialTick();
+        double now = animatable.tickCount + partialTick;
+        // signtest owns the rig while it is on, the same way axistest does - the whole point is to
+        // read back the constant the json put there, and a walk cycle on top would bury it.
+        boolean walking = !animatable.isSignTest() && animatable.isWalkingForAnimation();
+        double weight = loco.advance(now, walking);
+        if (weight <= 0.0D) {
+            return new double[4];
+        }
+        software.bernie.geckolib.core.animation.Animation clip =
+                getAnimation(animatable, AnimRegistry.WALK);
+        if (clip == null) {
+            return new double[4];
+        }
+        ClipSampler.Pose pose = ClipSampler.sample(clip, loco.phase());
+        for (Map.Entry<String, double[]> e : pose.rotationsDeg().entrySet()) {
+            addRotX(e.getKey(), e.getValue()[0] * weight);
+            addRotY(e.getKey(), e.getValue()[1] * weight);
+            addRotZ(e.getKey(), e.getValue()[2] * weight);
+        }
+        for (Map.Entry<String, double[]> e : pose.positionsRaw().entrySet()) {
+            addPositionRaw(e.getKey(), e.getValue(), weight);
+        }
+        double[] armR = pose.rotationsDeg().get(Bones.ARM_RIGHT);
+        double[] armL = pose.rotationsDeg().get(Bones.ARM_LEFT);
+        double[] body = pose.rotationsDeg().get(Bones.BODY);
+        double[] head = pose.rotationsDeg().get(Bones.HEAD);
+        return new double[]{
+                armR == null ? 0.0D : armR[0] * weight,
+                armL == null ? 0.0D : armL[0] * weight,
+                body == null ? 0.0D : body[1] * weight,
+                head == null ? 0.0D : head[1] * weight};
     }
 
     // ---- C3 액션 레이어 (직접 평가) ---------------------------------------------------------

@@ -207,6 +207,20 @@ public final class AnimParams {
             "flag", "T5", "걷기 애니메이션 강제 재생 (검증용. 실제 이동은 만들지 않는다)",
             "arm_right", "arm_left", "leg_right", "leg_left", "body", "head", "root");
 
+    /**
+     * 0 = GeckoLib 컨트롤러 (이관 전), 1 = Java 직접 평가 (이관 후, 기본).
+     *
+     * <p>{@code c1_source} 와 같은 이유로 존재한다. 1차차분은 <b>프레임당</b> 값이라 프레임률이
+     * 바뀌면 같은 동작도 다른 수치가 된다 — 이 소프트웨어 렌더러의 프레임/틱은 실행마다 1.9 에서
+     * 3.8 사이를 오간다. 빌드를 두 번 해서 비교하면 그 차이가 코드 변경과 뒤섞인다.
+     *
+     * <p>한 빌드 안에서 몇 초 간격으로 두 경로를 재면 프레임률이 사실상 같으므로 비교가 성립한다.
+     * Part 6.2 — 원하는 상황을 즉시 만들 수 있어야 한다.
+     */
+    public static final Param C2_SOURCE = addShape("c2_source", 1.0D, 0.0D, 1.0D,
+            "flag", "T5", "C2 공급 경로. 0 = 컨트롤러(이관 전), 1 = Java 직접 평가(이관 후)",
+            "root", "body", "head", "arm_right", "arm_left", "leg_right", "leg_left");
+
     // ---- C3 직접 평가 (T5 2라운드) --------------------------------------------------------------
     //
     // C3 는 컨트롤러가 아니라 setCustomAnimations 에서 직접 평가해 가산한다. 컨트롤러였다면 C2 가

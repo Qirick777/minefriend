@@ -225,9 +225,18 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         if (isSignTest()) {
             return state.setAndContinue(AnimRegistry.SIGN_TEST_LOOP);
         }
-        if (isWalkingForAnimation()) {
+        // c2_source 0 restores the pre-migration path for A/B measurement. See AnimParams.
+        if (AnimParams.C2_SOURCE.get() < 0.5D && isWalkingForAnimation()) {
             return state.setAndContinue(AnimRegistry.WALK_LOOP);
         }
+        // The walk cycle is NOT played by this controller any more - it is evaluated by
+        // LocomotionMotion + ClipSampler and added in setCustomAnimations, so that its playhead can
+        // be driven by distance rather than by GeckoLib's speed-scaled clock (문제 3).
+        //
+        // idle is still played, and unconditionally. It assigns all seven locomotion channels every
+        // frame, which is what keeps Java's += writes from accumulating. And because this controller
+        // never changes animation any more, it has no transition - so the snapshot pollution that
+        // broke the stop transition cannot happen at all.
         return state.setAndContinue(AnimRegistry.IDLE_LOOP);
     }
 
