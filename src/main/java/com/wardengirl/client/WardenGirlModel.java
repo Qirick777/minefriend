@@ -208,15 +208,11 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         float partialTick = Minecraft.getInstance().getPartialTick();
         HeadgearSpring[] pair = springsFor(animatable);
 
-        int solo = (int) Math.round(AnimParams.HEADGEAR_SOLO.get());
-            // 3 = 둘 다 숨김 (촉수 레이어가 다른 본에 새는지 확인용)
         for (int side = 0; side < 2; side++) {
             Optional<GeoBone> maybeBone = getBone(Bones.HEADGEAR.get(side));
             if (maybeBone.isEmpty()) {
                 continue;
             }
-            // Diagnostic isolation — see AnimParams.HEADGEAR_SOLO.
-            boolean suppressed = solo == 3 || (solo != 0 && solo != side + 1);
             HeadgearSpring spring = pair[side];
             spring.advanceTo(animatable.tickCount, target);
             GeoBone bone = maybeBone.get();
@@ -245,7 +241,6 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             // tendril.png, and a visible bone would be drawn twice, once with the skin's UVs.
             // Set every frame rather than once, so the state cannot drift.
             bone.setHidden(true);
-            TendrilRenderLayer.setSuppressed(bone.getName(), suppressed);
 
             // Attachment point, as a translation of the whole bone. The render applies
             // T(pos)·T(pivot)·R·T(-pivot), so a root vertex sitting on the pivot lands at
