@@ -49,8 +49,12 @@ public final class ClientConfig {
                 builder.push(section.toLowerCase(java.util.Locale.ROOT));
             }
             double def = p.defaultValue;
-            double lo = def == 0 ? -10.0D : Math.min(def * 0.01D, def * 10.0D);
-            double hi = def == 0 ? 10.0D : Math.max(def * 0.01D, def * 10.0D);
+            // A shape parameter carries the range the design admits; deriving x0.01..x10 from a
+            // pivot coordinate of 29 would offer 0.29 .. 290, which is not a range anyone sweeps.
+            double lo = p.range != null ? p.range[0]
+                    : (def == 0 ? -10.0D : Math.min(def * 0.01D, def * 10.0D));
+            double hi = p.range != null ? p.range[1]
+                    : (def == 0 ? 10.0D : Math.max(def * 0.01D, def * 10.0D));
             VALUES.put(p.key, builder
                     .comment(p.description + "  [" + p.unit + ", 기본 " + def + ", " + p.task + "]")
                     .defineInRange(p.key, def, lo, hi));

@@ -168,6 +168,10 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     /** Bounded so despawned entities cannot leak; springs are cheap to re-seed. */
     private static final int MAX_TRACKED_ENTITIES = 64;
 
+    /** Where warden_girl.geo.json actually puts the tendril pivots; the parameters offset from here. */
+    private static final double GEO_PIVOT_X = 4.0D;
+    private static final double GEO_PIVOT_Y = 29.0D;
+
     /** {right, left}, in the order of {@link Bones#HEADGEAR}. */
     private HeadgearSpring[] springsFor(WardenGirlEntity animatable) {
         if (this.springs.size() > MAX_TRACKED_ENTITIES) {
@@ -197,11 +201,34 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             HeadgearSpring spring = pair[side];
             spring.advanceTo(animatable.tickCount, target);
             GeoBone bone = maybeBone.get();
+
+            // Base pose. This used to be baked into the cube's `rotation` in geo.json, which is
+            // read once at model load — no command could move it, and getting the shape right cost
+            // a full rebuild-and-capture round trip each time. Here it is a parameter.
+            //
+            // Signs: +zRot moves the point above the pivot toward the mob's LEFT (+X), so outward
+            // is negative on the right tendril and positive on the left. +xRot moves it toward the
+            // BACK (-Z), so a positive tilt leans the tips backward. Part 4.0.1; nothing is negated
+            // anywhere else.
+            double outward = side == 0 ? -1.0D : 1.0D;
+            double splay = AnimParams.HEADGEAR_SPLAY.get() * outward;
+            double tilt = AnimParams.HEADGEAR_TILT.get();
+
             // ASSIGNED, not added — see HeadgearSpring's class doc. This is what lets the tendrils
-            // keep their Part 10.4 status of having no animation channel at all.
-            bone.setRotX(AxisConvention.toRad(spring.output(0, partialTick, target[0])));
+            // keep their Part 10.4 status of having no animation channel at all. The base pose is
+            // part of the assigned value, not a second write on top of it.
+            bone.setRotX(AxisConvention.toRad(tilt + spring.output(0, partialTick, target[0])));
             bone.setRotY(AxisConvention.toRad(spring.output(1, partialTick, target[1])));
-            bone.setRotZ(AxisConvention.toRad(spring.output(2, partialTick, target[2])));
+            bone.setRotZ(AxisConvention.toRad(splay + spring.output(2, partialTick, target[2])));
+
+            // Attachment point, as a translation of the whole bone. The render applies
+            // T(pos)·T(pivot)·R·T(-pivot), so a root vertex sitting on the pivot lands at
+            // pivot + pos whatever the rotation — moving the bone is exactly equivalent to moving
+            // the pivot, and unlike the pivot it is settable at runtime.
+            AxisConvention.setPositionPx(bone,
+                    (AnimParams.HEADGEAR_PIVOT_X.get() - GEO_PIVOT_X) * outward,
+                    AnimParams.HEADGEAR_PIVOT_Y.get() - GEO_PIVOT_Y,
+                    0.0D);
             BoneTrace.noteSpring(side, spring.angles(), spring.velocities(),
                     spring.effectiveStiffness());
         }

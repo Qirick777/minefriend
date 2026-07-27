@@ -83,6 +83,22 @@ public final class AxisConvention {
     }
 
     /**
+     * Sets a bone's position offset from <b>model pixels</b>.
+     *
+     * <p>The x negation lives here and only here. {@code RenderUtils.translateMatrixToBone} emits
+     * {@code translate(-posX/16, +posY/16, +posZ/16)} while {@code translateToPivotPoint} emits
+     * {@code translate(+pivotX/16, ...)} — verified in the GeckoLib 4.8.4 bytecode — so a bone's
+     * position x runs opposite to every other x in this project. Callers pass ordinary model
+     * coordinates and this converts, for the same reason {@link #toRad} exists: one conversion
+     * point, or two coexisting sign systems over the same rig.
+     */
+    public static void setPositionPx(GeoBone bone, double x, double y, double z) {
+        bone.setPosX((float) -x);
+        bone.setPosY((float) y);
+        bone.setPosZ((float) z);
+    }
+
+    /**
      * This bone's current position offset in pixels, x/y/z.
      *
      * <p>Positions are never converted — they are model pixels on both sides. Needed because the
@@ -90,6 +106,6 @@ public final class AxisConvention {
      * readback would report a rig that looks correct while the bounce silently does nothing.
      */
     public static double[] readPositionPx(GeoBone bone) {
-        return new double[]{bone.getPosX(), bone.getPosY(), bone.getPosZ()};
+        return new double[]{-bone.getPosX(), bone.getPosY(), bone.getPosZ()};
     }
 }

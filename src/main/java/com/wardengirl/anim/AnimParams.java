@@ -91,11 +91,20 @@ public final class AnimParams {
          * {@code /wardengirl param set} — the exclusion is from the sweep, not from tuning.
          */
         public final boolean presetScaled;
+        /**
+         * Explicit tuning range, or {@code null} to derive one from the default.
+         *
+         * <p>Derivation (×0.01 … ×10) is fine for an amplitude but meaningless for a value like a
+         * pivot coordinate, where 0.29 … 290 is not a range anyone wants to sweep. Shape parameters
+         * carry the range the design actually admits.
+         */
+        public final double[] range;
 
         private double value;
 
         Param(String key, String molang, double defaultValue, String unit, String task,
-              String description, boolean presetScaled, List<String> affects) {
+              String description, boolean presetScaled, double[] range, List<String> affects) {
+            this.range = range;
             this.key = key;
             this.molang = molang;
             this.defaultValue = defaultValue;
@@ -141,7 +150,7 @@ public final class AnimParams {
 
     private static Param add(String key, String molang, double def, String unit, String task,
                              String desc, String... affects) {
-        Param p = new Param(key, molang, def, unit, task, desc, true, List.of(affects));
+        Param p = new Param(key, molang, def, unit, task, desc, true, null, List.of(affects));
         REGISTRY.put(key, p);
         return p;
     }
@@ -149,7 +158,16 @@ public final class AnimParams {
     /** Like {@link #add}, but the preset sweep leaves it alone. See {@link Param#presetScaled}. */
     private static Param addFixed(String key, String molang, double def, String unit, String task,
                                   String desc, String... affects) {
-        Param p = new Param(key, molang, def, unit, task, desc, false, List.of(affects));
+        Param p = new Param(key, molang, def, unit, task, desc, false, null, List.of(affects));
+        REGISTRY.put(key, p);
+        return p;
+    }
+
+    /** A shape parameter: excluded from the preset sweep and carrying an explicit range. */
+    private static Param addShape(String key, double def, double lo, double hi, String unit,
+                                  String task, String desc, String... affects) {
+        Param p = new Param(key, null, def, unit, task, desc, false, new double[]{lo, hi},
+                List.of(affects));
         REGISTRY.put(key, p);
         return p;
     }
@@ -247,7 +265,7 @@ public final class AnimParams {
             "계수", "T3", "감쇠. 발산하면 올린다. 1.0 을 넘기면 속도 항의 부호가 매 틱 뒤집혀 발산한다", "headgear_right", "headgear_left");
     public static final Param HEADGEAR_AMPLITUDE = add("headgear_amplitude", null, 1.3D,
             "배율", "T3", "지연 오차분에 곱하는 배율. 장식이 과장되게 휘청이는 정도", "headgear_right", "headgear_left");
-    public static final Param HEADGEAR_MAX_ANGLE = add("headgear_max_angle", null, 45.0D,
+    public static final Param HEADGEAR_MAX_ANGLE = addFixed("headgear_max_angle", null, 45.0D,
             "deg", "T3",
             "스프링 출력 클램프. 35 에서는 기본 AMPLITUDE 만으로도 pitch 스윙에서 클램프에 닿아 "
                     + "튜닝 여지가 없었다. 클램프는 안전장치이지 상시 제한이 아니다 (35 → 45)",
@@ -271,6 +289,36 @@ public final class AnimParams {
             "비율", "T3", "좌우 스프링 강성 차이. 왼쪽 = STIFFNESS × (1 - 이 값). 0 이면 좌우 동일",
             "headgear_left");
 
+    // ---- 4.5 촉수 형태 (런타임 조정용) ---------------------------------------------------------
+    //
+    // The base pose used to be baked into the cube's `rotation` in geo.json, which is read once at
+    // model load and cannot be moved by a command. It now lives here and is ADDED to the bone under
+    // the spring output, so `param set` changes the shape on the next frame with no reload.
+    //
+    // The spring is unaffected by these: it chases head's rotation and emits a lag error, and that
+    // error is computed before the base pose is added. Changing the base cannot destabilise it.
+
+    /** Outward lean, degrees. Right tendril leans toward −X, left toward +X. */
+    public static final Param HEADGEAR_SPLAY = addShape("headgear_splay", 30.0D, 0.0D, 90.0D,
+            "deg", "T3", "촉수 바깥 각도. 0 = 수직, 90 = 수평", "headgear_right", "headgear_left");
+    /** Backward lean, degrees. Positive tips the ends toward the mob's back. */
+    public static final Param HEADGEAR_TILT = addShape("headgear_tilt", 10.0D, -45.0D, 45.0D,
+            "deg", "T3", "촉수 뒤로 젖힘. 양수 = 뒤로, 음수 = 앞으로", "headgear_right", "headgear_left");
+    /**
+     * Attachment x, in model pixels, mirrored left/right. The geo pivot stays at 4; this is applied
+     * as a bone translation of {@code (value - 4)}.
+     *
+     * <p>Translating the bone is exactly equivalent to moving the pivot, and unlike the pivot it is
+     * settable at runtime. The render applies {@code T(pos)·T(pivot)·R·T(-pivot)}, so a root vertex
+     * sitting on the pivot lands at {@code pivot + pos} regardless of the rotation — i.e. the
+     * tendril is the same shape it would be if its pivot were there in the first place.
+     */
+    public static final Param HEADGEAR_PIVOT_X = addShape("headgear_pivot_x", 4.0D, 0.0D, 8.0D,
+            "px", "T3", "촉수 부착 x (좌우 대칭). 4 = 머리 옆면, 0 = 머리 중앙",
+            "headgear_right", "headgear_left");
+    public static final Param HEADGEAR_PIVOT_Y = addShape("headgear_pivot_y", 29.0D, 24.0D, 34.0D,
+            "px", "T3", "촉수 부착 y. 머리 큐브는 y24~32", "headgear_right", "headgear_left");
+
     // ---- 4.6 시선 추적 (T3 에서는 가산과 클램프만. 감쇠 보간 · 근거리 반응은 T4) ------------------------
 
     /**
@@ -282,12 +330,12 @@ public final class AnimParams {
      */
     public static final Param LOOK_GAIN = addFixed("look_gain", null, 1.0D,
             "배율", "T3", "바닐라 시선을 head 본에 싣는 배율. 1.0 = 엔티티가 실제로 보는 방향 그대로", "head");
-    public static final Param LOOK_YAW_MAX = add("look_yaw_max", null, 75.0D,
+    public static final Param LOOK_YAW_MAX = addFixed("look_yaw_max", null, 75.0D,
             "deg", "T3",
             "head yRot 클램프 (4.6). 바닐라 getMaxHeadYRot() 과 같은 값이라 기준이 명확하다. "
                     + "70 이면 실측 6.0%, 75 면 4.0% 의 시간 동안 걸린다 (70/75/90 비교는 param set 으로)",
             "head");
-    public static final Param LOOK_PITCH_MAX = add("look_pitch_max", null, 35.0D,
+    public static final Param LOOK_PITCH_MAX = addFixed("look_pitch_max", null, 35.0D,
             "deg", "T3", "head xRot 클램프 (4.6)", "head");
 
     // ------------------------------------------------------------------------------------------
