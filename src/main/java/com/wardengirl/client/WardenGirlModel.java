@@ -4,6 +4,7 @@ import com.wardengirl.WardenGirlMod;
 import com.wardengirl.anim.AnimParams;
 import com.wardengirl.anim.AxisConvention;
 import com.wardengirl.anim.Bones;
+import com.wardengirl.anim.JsonAxisConvention;
 import com.wardengirl.entity.WardenGirlEntity;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderType;
@@ -85,6 +86,28 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     public ResourceLocation getAnimationResource(WardenGirlEntity animatable) {
         return ANIMATION;
     }
+
+    /**
+     * The single point where a json keyframe's sign becomes the Part 4.0 bone convention.
+     *
+     * <p>See {@link JsonAxisConvention} for the measurement and for why this is not in
+     * {@code AxisConvention}. This is the only call site, and it is on the json path only — the
+     * static offsets, the look addition and the headgear spring never come through here.
+     *
+     * <p>Cached because GeckoLib calls this every time a controller resolves an animation by name,
+     * which is once per {@code setAndContinue} — i.e. every tick the predicate runs. Rebuilding
+     * the whole keyframe tree that often would be wasteful, and handing out a fresh object each
+     * time would also defeat the controller's own "is this the same animation" identity check.
+     */
+    @Override
+    public software.bernie.geckolib.core.animation.Animation getAnimation(
+            WardenGirlEntity animatable, String name) {
+        return this.convertedAnimations.computeIfAbsent(name,
+                k -> JsonAxisConvention.convert(super.getAnimation(animatable, k)));
+    }
+
+    private final Map<String, software.bernie.geckolib.core.animation.Animation>
+            convertedAnimations = new HashMap<>();
 
     /**
      * Publishes the tuning parameters and the animation clock to Molang.
