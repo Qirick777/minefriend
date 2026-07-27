@@ -87,6 +87,7 @@ minecraft {
             property 'mixin.env.remapRefMap', 'true'
             property 'mixin.env.refMapRemappingFile', "${projectDir}/build/createSrgToMcp/output.srg"
 
+
             mods {
                 "${mod_id}" {
                     source sourceSets.main
@@ -135,6 +136,21 @@ tasks.matching { it.name.startsWith('prepareRun') }.configureEach {
 // driven interactively (or scripted) instead of only being killable.
 tasks.matching { it.name == 'runServer' }.configureEach {
     standardInput = System.in
+}
+
+// Run the game with a UTF-8 default charset regardless of the host locale. Note this is the only
+// supported way to set it on a JavaExec task — passing -Dfile.encoding via jvmArgs is silently
+// discarded by Gradle.
+//
+// Scope of what this does and does not fix, measured rather than assumed: on a host in the
+// C/POSIX locale, Korean in the Part 6 command output still reaches the *stdout console* as '?',
+// because Forge's log4j console appender resolves its charset independently. The authoritative
+// record is unaffected — run/logs/latest.log is written UTF-8 and reads correctly — and so is
+// in-game chat, which is where the human actually reads command output.
+tasks.matching { it.name.startsWith('run') }.configureEach {
+    if (it instanceof JavaExec) {
+        it.defaultCharacterEncoding = 'UTF-8'
+    }
 }
 
 repositories {

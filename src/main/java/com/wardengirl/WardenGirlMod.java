@@ -1,8 +1,12 @@
 package com.wardengirl;
 
 import com.mojang.logging.LogUtils;
+import com.wardengirl.command.WardenGirlCommand;
 import com.wardengirl.registry.ModEntities;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
@@ -28,6 +32,14 @@ public class WardenGirlMod {
         ModEntities.register(modEventBus);
 
         modEventBus.addListener(this::commonSetup);
+
+        MinecraftForge.EVENT_BUS.register(this);
+    }
+
+    @SubscribeEvent
+    public void onRegisterCommands(RegisterCommandsEvent event) {
+        WardenGirlCommand.register(event.getDispatcher());
+        LOGGER.info("[wardengirl] /wardengirl commands registered.");
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
