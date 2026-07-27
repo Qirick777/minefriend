@@ -182,6 +182,17 @@ public final class BoneTrace {
     private static final double[] LOOK_CURRENT_YAW = new double[LOOK_CAPACITY];
     private static final double[] LOOK_TARGET_PITCH = new double[LOOK_CAPACITY];
     private static final double[] LOOK_CURRENT_PITCH = new double[LOOK_CAPACITY];
+    /**
+     * The entity tick each row was taken at.
+     *
+     * <p>Needed because samples are per frame and frames do not arrive evenly — when the mob leaves
+     * the screen no frame renders it at all, so a run's <em>average</em> frames-per-tick can be far
+     * from the rate in any particular stretch. Converting a lag measured in samples into ticks with
+     * that average is then wrong by whatever the burstiness was. With the tick on every row the
+     * conversion is exact, and the recurrence itself becomes checkable off the log:
+     * {@code error} must fall by {@code (1-k)^Δtick} between consecutive rows while target is held.
+     */
+    private static final int[] LOOK_TICK = new int[LOOK_CAPACITY];
     private static int lookSamples = 0;
 
     private static final double[] LOOK_ERR_MAX = new double[2];
@@ -191,6 +202,7 @@ public final class BoneTrace {
     private static double lookDistanceMax = Double.NEGATIVE_INFINITY;
 
     private static final double[] LOOK_PENDING = new double[4];
+    private static int lookPendingTick = 0;
     private static boolean lookPendingValid = false;
     private static int lookFirstTick = Integer.MIN_VALUE;
     private static int lookLastTick = Integer.MIN_VALUE;
@@ -218,6 +230,7 @@ public final class BoneTrace {
         LOOK_PENDING[1] = current[0];
         LOOK_PENDING[2] = target[1];
         LOOK_PENDING[3] = current[1];
+        lookPendingTick = tickCount;
         lookPendingValid = true;
         for (int i = 0; i < 2; i++) {
             LOOK_ERR_MAX[i] = Math.max(LOOK_ERR_MAX[i], Math.abs(target[i] - current[i]));
@@ -324,6 +337,7 @@ public final class BoneTrace {
             LOOK_CURRENT_YAW[lookSamples] = LOOK_PENDING[1];
             LOOK_TARGET_PITCH[lookSamples] = LOOK_PENDING[2];
             LOOK_CURRENT_PITCH[lookSamples] = LOOK_PENDING[3];
+            LOOK_TICK[lookSamples] = lookPendingTick;
             lookSamples++;
         }
 
@@ -692,7 +706,7 @@ public final class BoneTrace {
         double[][] cur = {LOOK_CURRENT_YAW, LOOK_CURRENT_PITCH};
         for (int a = 0; a < 2; a++) {
             int bestShift = bestLagShift(tgt[a], cur[a], lookSamples);
-            double lagTicks = bestShift / Math.max(1e-6, samplesPerTick);
+            double lagTicks = lagInTicks(bestShift);
             double predicted = bypass ? 0.0D : 1.0D / damping - 1.0D;
             double span = range(tgt[a], lookSamples);
             WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
@@ -716,15 +730,17 @@ public final class BoneTrace {
         // target 과 current 를 나란히. 지연은 요약값이 아니라 이 표에서 눈으로도 보여야 한다.
         int rows = Math.min(30, lookSamples);
         int step = Math.max(1, lookSamples / rows);
-        WardenGirlMod.LOGGER.info("[trace] 시계열 (표본 {}개 중 {}개 간격으로):", lookSamples, step);
+        WardenGirlMod.LOGGER.info("[trace] 시계열 (표본 {}개 중 {}개 간격으로, t=엔티티 틱):",
+                lookSamples, step);
         for (int i = 0; i < lookSamples; i += step) {
-            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                    "[trace]   #%4d  yaw target %+8.3f -> current %+8.3f (차 %+7.3f)   "
-                            + "pitch target %+8.3f -> current %+8.3f (차 %+7.3f)",
-                    i, LOOK_TARGET_YAW[i], LOOK_CURRENT_YAW[i],
-                    LOOK_CURRENT_YAW[i] - LOOK_TARGET_YAW[i],
-                    LOOK_TARGET_PITCH[i], LOOK_CURRENT_PITCH[i],
-                    LOOK_CURRENT_PITCH[i] - LOOK_TARGET_PITCH[i]));
+            logLookRow(i);
+        }
+        // 연속 구간도 하나 남긴다. 간격을 띄운 표로는 점화식을 검산할 수 없다 —
+        // 두 행 사이에 틱이 몇 번 지났는지가 행마다 다르기 때문이다.
+        int burstFrom = findLargestStepIndex();
+        WardenGirlMod.LOGGER.info("[trace] 연속 구간 (가장 큰 target 변화 직후 40행):");
+        for (int i = burstFrom; i < Math.min(lookSamples, burstFrom + 40); i++) {
+            logLookRow(i);
         }
 
         // 3. 근거리 전환이 계단식이 아닌지 — 거리를 직접 넣어 실효값을 뽑는다.
@@ -752,6 +768,50 @@ public final class BoneTrace {
             fails++;
         }
         return fails;
+    }
+
+    private static void logLookRow(int i) {
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   #%4d t=%d  yaw target %+8.3f -> current %+8.3f (차 %+7.3f)   "
+                        + "pitch target %+8.3f -> current %+8.3f (차 %+7.3f)",
+                i, LOOK_TICK[i], LOOK_TARGET_YAW[i], LOOK_CURRENT_YAW[i],
+                LOOK_CURRENT_YAW[i] - LOOK_TARGET_YAW[i],
+                LOOK_TARGET_PITCH[i], LOOK_CURRENT_PITCH[i],
+                LOOK_CURRENT_PITCH[i] - LOOK_TARGET_PITCH[i]));
+    }
+
+    /** Index of the sample where the yaw target jumped hardest — the most informative burst. */
+    private static int findLargestStepIndex() {
+        int best = 0;
+        double bestJump = -1;
+        for (int i = 1; i < lookSamples; i++) {
+            double jump = Math.abs(LOOK_TARGET_YAW[i] - LOOK_TARGET_YAW[i - 1]);
+            if (jump > bestJump) {
+                bestJump = jump;
+                best = i;
+            }
+        }
+        return Math.max(0, best - 2);
+    }
+
+    /**
+     * Converts a shift measured in samples into ticks using the tick stamps themselves.
+     *
+     * <p>Not {@code shift / averageFramesPerTick}: the average is taken over the whole window
+     * including any stretch where the mob was off screen and no frame sampled it, so it can be
+     * several times off from the rate during the motion being measured.
+     */
+    private static double lagInTicks(int shiftSamples) {
+        if (shiftSamples <= 0 || lookSamples <= shiftSamples) {
+            return 0.0D;
+        }
+        long sum = 0;
+        int n = 0;
+        for (int i = shiftSamples; i < lookSamples; i++) {
+            sum += LOOK_TICK[i] - LOOK_TICK[i - shiftSamples];
+            n++;
+        }
+        return n == 0 ? 0.0D : (double) sum / n;
     }
 
     /**
