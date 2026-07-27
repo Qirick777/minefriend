@@ -133,7 +133,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         applyOverlayVisibility();
         reportParamChange();
         if (BoneTrace.isRunning()) {
-            BoneTrace.sample(readAllBones(), readAllPositions());
+            BoneTrace.sample(readAllBones(), readAllPositions(), animatable.tickCount);
         }
     }
 

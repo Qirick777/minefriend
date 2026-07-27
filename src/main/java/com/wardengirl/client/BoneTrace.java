@@ -50,6 +50,7 @@ public final class BoneTrace {
     }
 
     private static int remainingTicks = 0;
+    private static int startTick = Integer.MIN_VALUE;
     private static int sampleCount = 0;
     private static final Map<String, double[]> MIN = new LinkedHashMap<>();
     private static final Map<String, double[]> MAX = new LinkedHashMap<>();
@@ -236,6 +237,7 @@ public final class BoneTrace {
     public static void start(int ticks) {
         remainingTicks = ticks;
         totalTicks = ticks;
+        startTick = Integer.MIN_VALUE;
         sampleCount = 0;
         java.util.Arrays.fill(SPRING_SEEN, false);
         java.util.Arrays.fill(SPRING_SAMPLES, 0);
@@ -275,12 +277,25 @@ public final class BoneTrace {
      * @param rotations bone -> {x,y,z} in degrees, all ten bones
      * @param positions bone -> {x,y,z} in model pixels, all ten bones
      */
-    public static void sample(Map<String, double[]> rotations, Map<String, double[]> positions) {
+    public static void sample(Map<String, double[]> rotations, Map<String, double[]> positions,
+                              int tickCount) {
         if (remainingTicks <= 0) {
             return;
         }
-        remainingTicks--;
+        // The window is counted in TICKS, not in frames. It used to decrement once per call, i.e.
+        // once per rendered frame — so a `trace 240` covered 94 ticks on one run and 2730 on
+        // another as the software renderer's framerate wandered between 2.55 and 0.55 frames per
+        // tick. Every window then sampled a different slice of the stimulus, which makes two runs
+        // uncomparable: the whole point of the T4 measurement is to hold the input fixed and vary
+        // one coefficient.
+        if (startTick == Integer.MIN_VALUE) {
+            startTick = tickCount;
+        }
         sampleCount++;
+        remainingTicks = totalTicks - (tickCount - startTick);
+        if (remainingTicks < 0) {
+            remainingTicks = 0;
+        }
 
         for (Map.Entry<String, double[]> e : rotations.entrySet()) {
             String bone = e.getKey();
@@ -566,7 +581,8 @@ public final class BoneTrace {
         Map<String, Expect[]> expect = expectations();
         int fails = 0;
 
-        WardenGirlMod.LOGGER.info("[trace] === {}샘플 수집 완료. 본 10개 × 3축 판정 ===", sampleCount);
+        WardenGirlMod.LOGGER.info("[trace] === {}틱 창에서 {}샘플(프레임) 수집 완료. 본 10개 × 3축 판정 ===",
+                totalTicks, sampleCount);
         WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
                 "[trace] %-10s %-5s %10s %10s %-6s %-26s %s",
                 "본", "축", "최소", "최대", "종류", "기대", "판정"));
