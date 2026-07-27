@@ -3,7 +3,7 @@ package com.wardengirl.anim;
 import java.util.List;
 
 /**
- * The eight bones of the WardenGirl rig and the Part 4.0 sign convention they are supposed to obey.
+ * The nine bones of the WardenGirl rig and the Part 4.0 sign convention they obey.
  *
  * <p>Shared by the axis-verification command (server side) and the model (client side), so it
  * cannot live in either — a client-only class referenced from a command would blow up on a
@@ -17,6 +17,8 @@ public final class Bones {
     }
 
     public static final String ROOT = "root";
+    /** Added after T1: whole-body lean / weight shift. No cube — invisible. */
+    public static final String HIP = "hip";
     public static final String BODY = "body";
     public static final String HEAD = "head";
     public static final String HEADGEAR = "headgear";
@@ -25,9 +27,9 @@ public final class Bones {
     public static final String LEG_RIGHT = "leg_right";
     public static final String LEG_LEFT = "leg_left";
 
-    /** All eight, in the hierarchy order given by the design doc Part 4.0 tree. */
+    /** All nine, in the hierarchy order given by the design doc Part 4.0 tree. */
     public static final List<String> ALL = List.of(
-            ROOT, BODY, HEAD, HEADGEAR, ARM_RIGHT, ARM_LEFT, LEG_RIGHT, LEG_LEFT);
+            ROOT, HIP, BODY, HEAD, HEADGEAR, ARM_RIGHT, ARM_LEFT, LEG_RIGHT, LEG_LEFT);
 
     /**
      * Default axis-test angle.
@@ -73,10 +75,18 @@ public final class Bones {
                 case Y -> pos ? "왼쪽을 봄" : "오른쪽을 봄";
                 case Z -> pos ? "왼쪽 갸웃" : "오른쪽 갸웃";
             };
+            // body pivots at the hip (0,12,0), so this is the upper body only — the legs hang
+            // off hip and stay put.
             case BODY -> switch (axis) {
-                case X -> pos ? "뒤로 젖힘" : "앞으로 숙임";
-                case Y -> pos ? "왼쪽 비틀기" : "오른쪽 비틀기";
-                case Z -> pos ? "왼쪽 기울임" : "오른쪽 기울임";
+                case X -> pos ? "상체를 뒤로 젖힘" : "상체를 앞으로 숙임";
+                case Y -> pos ? "상체를 왼쪽으로 비틀기" : "상체를 오른쪽으로 비틀기";
+                case Z -> pos ? "상체를 왼쪽으로 기울임" : "상체를 오른쪽으로 기울임";
+            };
+            // hip carries everything including the legs — the old body behaviour.
+            case HIP -> switch (axis) {
+                case X -> pos ? "전신을 뒤로 젖힘 (다리 포함)" : "전신을 앞으로 숙임 (다리 포함)";
+                case Y -> pos ? "전신을 왼쪽으로 비틀기" : "전신을 오른쪽으로 비틀기";
+                case Z -> pos ? "전신을 왼쪽으로 기울임 (다리 포함)" : "전신을 오른쪽으로 기울임 (다리 포함)";
             };
             case ARM_RIGHT, LEG_RIGHT -> switch (axis) {
                 case X -> pos ? "앞으로 휘두름" : "뒤로 젖힘";
