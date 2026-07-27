@@ -473,45 +473,81 @@ public final class BoneTrace {
     /**
      * 4.5 spring convergence.
      *
-     * <p>The test is not "did it stay small" — a spring chasing a head that keeps turning is
-     * <em>supposed</em> to keep moving. The test is that its speed in the last quarter of the
-     * window is not larger than in the first by more than the head's own motion can explain, and
-     * that the integrated angle never runs away. A diverging spring doubles its velocity every few
-     * ticks, so the ratio is unmistakable when it happens.
+     * <h2>Why this is decided analytically, not from the samples</h2>
+     *
+     * The first version of this check compared the spring's speed in the last quarter of the window
+     * against the first quarter and failed above a 4× ratio. <b>It produced a false FAIL in three
+     * runs out of four.</b> The reason is structural: the spring is <em>driven</em>, and its input
+     * is the vanilla look AI, which turns the head on a random timer. A window whose first quarter
+     * happens to be quiet and whose last quarter contains a big turn gives a ratio of ∞ — the
+     * spring did exactly what it should. "Velocity grew" measures the input, not the spring.
+     *
+     * <p>But stability of this recurrence does not depend on the input at all. It is a linear
+     * system, so the question is entirely a property of {@code STIFFNESS} and {@code DAMPING}.
+     * Writing {@code e = angle - target}:
+     *
+     * <pre>
+     *   v' = (1-c)·v - k·e
+     *   e' = (1-c)·v + (1-k)·e
+     * </pre>
+     *
+     * whose characteristic polynomial is {@code λ² - (2-c-k)λ + (1-c) = 0}. The Jury conditions for
+     * both roots inside the unit circle reduce to <b>{@code k > 0}, {@code k < 4 - 2c},
+     * {@code 0 < c < 2}</b>. That is checked directly, and it cannot be fooled by what the head
+     * happened to do during the window.
+     *
+     * <p>The sampled numbers are still printed — overshoot against the head's own range is the
+     * thing a human tunes by eye ("지나쳤다 되돌아오는가"), and the velocity extremes say how hard
+     * the spring was actually driven. They are <em>information</em>, not verdicts.
      */
     private static int reportSpring() {
         if (!springSeen) {
             WardenGirlMod.LOGGER.warn("[trace] 4.5 스프링 표본 없음 — headgear 스프링이 돌지 않았다");
             return 1;
         }
-        int fails = 0;
-        WardenGirlMod.LOGGER.info("[trace] --- 4.5 headgear 스프링 (각도·속도, 도) ---");
-        String[] axis = {"x", "y", "z"};
-        for (int i = 0; i < 3; i++) {
-            double growth = SPRING_VEL_EARLY[i] <= 1e-6
-                    ? (SPRING_VEL_LATE[i] <= 1e-6 ? 1.0D : Double.POSITIVE_INFINITY)
-                    : SPRING_VEL_LATE[i] / SPRING_VEL_EARLY[i];
-            boolean diverging = growth > DIVERGENCE_RATIO && SPRING_VEL_LATE[i] > 1.0D;
-            if (diverging) {
-                fails++;
-            }
-            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                    "[trace] 스프링 %s축  각도 %+8.3f ~ %+8.3f   속도 %+7.3f ~ %+7.3f   "
-                            + "|속도| 초반 %.3f → 후반 %.3f (×%.2f)  %s",
-                    axis[i], SPRING_ANGLE_MIN[i], SPRING_ANGLE_MAX[i],
-                    SPRING_VEL_MIN[i], SPRING_VEL_MAX[i],
-                    SPRING_VEL_EARLY[i], SPRING_VEL_LATE[i], growth,
-                    diverging ? "FAIL 발산" : "OK 수렴"));
+        double k = AnimParams.HEADGEAR_STIFFNESS.get();
+        double c = AnimParams.HEADGEAR_DAMPING.get();
+        boolean stable = k > 0 && k < 4 - 2 * c && c > 0 && c < 2;
+        double det = 1 - c;
+        double tr = 2 - c - k;
+        double disc = tr * tr - 4 * det;
+        double magnitude = disc < 0 ? Math.sqrt(Math.abs(det))
+                : Math.max(Math.abs((tr + Math.sqrt(disc)) / 2), Math.abs((tr - Math.sqrt(disc)) / 2));
+        String mode;
+        if (disc < 0) {
+            double period = 2 * Math.PI / Math.atan2(Math.sqrt(-disc) / 2, tr / 2);
+            double settle = magnitude >= 1 ? Double.POSITIVE_INFINITY
+                    : Math.log(0.01) / Math.log(magnitude);
+            mode = String.format(Locale.ROOT, "감쇠진동 주기 %.1f틱, 1%%까지 %.0f틱", period, settle);
+        } else {
+            mode = "과감쇠 (진동 없음)";
         }
-        return fails;
-    }
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace] --- 4.5 스프링 안정성 (해석): STIFFNESS=%.3f DAMPING=%.3f  |λ|=%.4f  %s  %s ---",
+                k, c, magnitude, mode,
+                stable ? "OK 안정 (Jury 조건 충족)" : "FAIL 발산 (Jury 조건 위반)"));
 
-    /**
-     * Velocity growth over the window that counts as divergence. A critically-damped-ish spring
-     * settles; anything that ends the window moving four times faster than it started, while
-     * actually moving, is not chasing — it is ringing up.
-     */
-    private static final double DIVERGENCE_RATIO = 4.0D;
+        WardenGirlMod.LOGGER.info("[trace] --- 4.5 스프링 실측 (판정 아님, 참고값) ---");
+        String[] axis = {"x", "y", "z"};
+        String[] headAxis = {"head xRot", "head yRot", "head zRot"};
+        double[] headMin = MIN.get(Bones.HEAD);
+        double[] headMax = MAX.get(Bones.HEAD);
+        for (int i = 0; i < 3; i++) {
+            double springSpan = SPRING_ANGLE_MAX[i] - SPRING_ANGLE_MIN[i];
+            double headSpan = headMin == null ? 0 : headMax[i] - headMin[i];
+            String overshoot = headSpan <= 1e-6
+                    ? "  (입력이 거의 없어 초과폭 무의미)"
+                    : String.format(Locale.ROOT, "  입력폭 %.3f 대비 초과 %+.1f%%",
+                            headSpan, 100.0D * (springSpan / headSpan - 1.0D));
+            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                    "[trace] 스프링 %s축  각도 %+8.3f ~ %+8.3f (폭 %.3f)   속도 %+7.3f ~ %+7.3f   "
+                            + "|속도| 초반 %.3f → 후반 %.3f   [%s]%s",
+                    axis[i], SPRING_ANGLE_MIN[i], SPRING_ANGLE_MAX[i], springSpan,
+                    SPRING_VEL_MIN[i], SPRING_VEL_MAX[i],
+                    SPRING_VEL_EARLY[i], SPRING_VEL_LATE[i], headAxis[i], overshoot));
+        }
+        return stable ? 0 : 1;
+    }
 
     private static int reportFeet() {
         int fails = 0;
