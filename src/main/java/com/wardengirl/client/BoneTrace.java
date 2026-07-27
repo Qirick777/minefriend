@@ -297,6 +297,13 @@ public final class BoneTrace {
         }
         lookSamples = 0;
         walkFrames = 0;
+        moveSumBlocks = 0.0D;
+        moveTicks = 0;
+        moveMaxPerTick = 0.0D;
+        moveLastX = Double.NaN;
+        moveLastZ = Double.NaN;
+        moveLastTick = Integer.MIN_VALUE;
+        deltaMovementSum = 0.0D;
         walkTransitions = 0;
         lastWalkState = null;
         lastRawMoving = null;
@@ -686,6 +693,85 @@ public final class BoneTrace {
         lastWalkState = walking;
     }
 
+    // ---- 이동 속도 (문제 3 조사) ----------------------------------------------------------------
+
+    /**
+     * Horizontal distance travelled per tick while the walk animation is playing.
+     *
+     * <p>Blocks per tick, measured from the entity's own position — not from the
+     * {@code MOVEMENT_SPEED} attribute. The attribute is an input to the movement solver, not the
+     * resulting speed: friction, the pathfinder's own speed modifier and per-tick acceleration all
+     * sit between them. 4.4.2 fixes the walk cycle at 26 ticks, so the number that decides whether
+     * the feet slide is this one, and it has never been measured.
+     *
+     * <p>Sampled once per entity tick, not per frame — the position only changes on a tick, so a
+     * per-frame sample would report zero for most frames and inflate the count.
+     */
+    private static double moveSumBlocks = 0.0D;
+    private static int moveTicks = 0;
+    private static double moveMaxPerTick = 0.0D;
+    private static double moveLastX = Double.NaN;
+    private static double moveLastZ = Double.NaN;
+    private static int moveLastTick = Integer.MIN_VALUE;
+    private static double deltaMovementSum = 0.0D;
+
+    public static void noteMovement(double x, double z, double deltaMovementHoriz, boolean walking,
+                                    int tickCount) {
+        if (remainingTicks <= 0 || tickCount == moveLastTick) {
+            return;
+        }
+        if (!Double.isNaN(moveLastX) && walking && tickCount == moveLastTick + 1) {
+            double dx = x - moveLastX;
+            double dz = z - moveLastZ;
+            double d = Math.sqrt(dx * dx + dz * dz);
+            moveSumBlocks += d;
+            deltaMovementSum += deltaMovementHoriz;
+            moveMaxPerTick = Math.max(moveMaxPerTick, d);
+            moveTicks++;
+        }
+        moveLastX = x;
+        moveLastZ = z;
+        moveLastTick = tickCount;
+    }
+
+    /**
+     * Reports measured speed against the stride the 4.4.2 cycle geometrically implies.
+     *
+     * <p>Stride: the leg pivots at y=12px and the sole is at y=0, so a {@code ±18°} sweep moves the
+     * sole {@code 2 × 12 × sin18° = 7.4164px = 0.46352 blocks}. The cycle contains two such sweeps
+     * (one per leg), so a non-sliding body advances {@code 0.92703 blocks} per 26-tick cycle —
+     * {@code 0.035655 blocks/tick}.
+     */
+    private static void reportMovement() {
+        double stridePx = 2.0D * 12.0D * Math.sin(Math.toRadians(18.0D));
+        double perCycle = 2.0D * stridePx / 16.0D;
+        double required = perCycle / 26.0D;
+        if (moveTicks < 10) {
+            WardenGirlMod.LOGGER.info(
+                    "[trace] --- 이동 속도: 걷기 중 틱 표본 {}개 — **측정 불가** (10틱 미만) ---", moveTicks);
+            return;
+        }
+        double measured = moveSumBlocks / moveTicks;
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace] --- 이동 속도 (문제 3). 걷기 중 %d틱 표본 ---", moveTicks));
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   실측 이동      : %.5f 블록/틱  (틱당 최대 %.5f)", measured, moveMaxPerTick));
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   deltaMovement  : %.5f 블록/틱 (참고. 클라이언트 속도 필드)",
+                deltaMovementSum / moveTicks));
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   4.4.2 보폭     : 다리 ±18° × 12px 레버 = 편도 %.4fpx, 한 걸음 %.4f블록",
+                stridePx / 2.0D, stridePx / 16.0D));
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   필요 이동      : 한 사이클(26틱)에 %.5f 블록 = %.5f 블록/틱", perCycle, required));
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   어긋남         : 실측 / 필요 = %.3f 배  (1.0 이면 발이 미끄러지지 않는다)",
+                required > 1e-9 ? measured / required : 0.0D));
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   사이클 이론값  : 현재 속도라면 %.2f 틱 주기여야 한다 (지금 26틱 고정)",
+                measured > 1e-9 ? perCycle / measured : 0.0D));
+    }
+
     private static final int GRACE_CAP = 32;
     private static final int[] GRACE_OFF_TICK = new int[GRACE_CAP];
     private static final int[] GRACE_LAST_MOVING = new int[GRACE_CAP];
@@ -937,6 +1023,7 @@ public final class BoneTrace {
                         label[i], j, SERIES_TICK[j], SERIES[i][j], d, j == arg ? "   <== 최대" : ""));
             }
         }
+        reportMovement();
         reportByPhase();
         int step = Math.max(1, seriesCount / 260);
         WardenGirlMod.LOGGER.info("[trace] 시계열 행 (t=엔티티틱, d=직전 표본 대비 차분):");

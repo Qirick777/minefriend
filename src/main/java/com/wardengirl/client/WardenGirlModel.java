@@ -221,6 +221,9 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         if (BoneTrace.isRunning()) {
             // Read-only: isWalkingForAnimation() advances the hysteresis, and calling it here would
             // run that state machine at frame rate on top of its normal per-frame call.
+            BoneTrace.noteMovement(animatable.getX(), animatable.getZ(),
+                    animatable.getDeltaMovement().horizontalDistance(),
+                    animatable.walkStateForReport(), animatable.tickCount);
             BoneTrace.noteWalkState(animatable.walkStateForReport(),
                     animatable.rawMovingForReport(), animatable.lastMovingTickForReport(),
                     animatable.tickCount);
