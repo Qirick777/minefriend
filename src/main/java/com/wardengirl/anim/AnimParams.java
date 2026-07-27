@@ -189,6 +189,44 @@ public final class AnimParams {
             "flag", "T5", "C1 공급 경로. 0 = json Molang(이관 전), 1 = Java 가산(이관 후)",
             "root", "body", "head", "arm_right", "arm_left");
 
+    // ---- C3 직접 평가 (T5 2라운드) --------------------------------------------------------------
+    //
+    // C3 는 컨트롤러가 아니라 setCustomAnimations 에서 직접 평가해 가산한다. 컨트롤러였다면 C2 가
+    // 덮거나 C2 를 덮었을 것이고, 걷기 + 기본 공격 동시 재생이 성립하지 않는다 (Part 4.2).
+    // 그러면 전이도 라이브러리가 해 주지 않으므로 여기서 만든다.
+
+    /**
+     * 시작 페이드, 틱. 이 구간에서 C3 기여가 0 에서 1 배로 올라간다.
+     *
+     * <p>C2 의 6틱보다 짧다. C2 전이는 두 <em>자세</em> 사이를 건너는 것이라 시간이 필요하지만,
+     * C3 는 이미 서 있는 자세 위에 <em>얹히는</em> 값이라 0 에서 시작한다. 공격은 총 18틱이고
+     * (4.8), 그중 6틱을 페이드에 쓰면 예비동작이 뭉개진다.
+     */
+    public static final Param ATTACK_FADE_IN = addShape("attack_fade_in", 3.0D, 0.0D, 10.0D,
+            "tick", "T5", "C3 시작 페이드 길이. 0 이면 즉시 전량",
+            "body", "head", "arm_right", "arm_left");
+    /** 종료 페이드, 틱. 시작보다 긴 것은 4.1 원칙 5(오버슈트와 정착)의 '정착' 쪽이다. */
+    public static final Param ATTACK_FADE_OUT = addShape("attack_fade_out", 5.0D, 0.0D, 10.0D,
+            "tick", "T5", "C3 종료 페이드 길이. 0 이면 즉시 0",
+            "body", "head", "arm_right", "arm_left");
+
+    // C2 와 C3 가 겹치는 축에서 걷기 기여를 얼마나 남길지. 1.0 = 단순 가산 (그대로 둔다).
+    //
+    // 겹치는 축은 4.4.2 와 4.8 을 대조해 정한 것이다: 팔 xRot, body yRot, head yRot. 세 축 다
+    // 두 동작이 같은 방향으로 크게 움직이므로, 단순 가산이 과할 수 있다 — 걷기 팔 ±10 에 공격
+    // 팔 +70 이 그대로 더해지면 80 이다. 줄일지 말지는 화면으로 판정한다.
+    //
+    // 축마다 따로 두는 이유: 팔은 과해 보이는데 몸통 비틀기는 오히려 부족할 수 있다. 하나로
+    // 묶으면 그 상태를 표현할 수 없다.
+
+    public static final Param BLEND_WALK_ARM_X = addShape("blend_walk_arm_x", 1.0D, 0.0D, 1.0D,
+            "ratio", "T5", "공격 중 걷기 팔 xRot 기여 비율. 1 = 그대로 가산, 0 = 공격이 팔을 독점",
+            "arm_right", "arm_left");
+    public static final Param BLEND_WALK_BODY_Y = addShape("blend_walk_body_y", 1.0D, 0.0D, 1.0D,
+            "ratio", "T5", "공격 중 걷기 body yRot 기여 비율", "body");
+    public static final Param BLEND_WALK_HEAD_Y = addShape("blend_walk_head_y", 1.0D, 0.0D, 1.0D,
+            "ratio", "T5", "공격 중 걷기 head yRot 기여 비율", "head");
+
     // ---- 4.3.1 호흡 -------------------------------------------------------------------------
     //
     // Periods, not speeds. The json divides 360 by the period, so what is tuned here is the number

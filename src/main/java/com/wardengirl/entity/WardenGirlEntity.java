@@ -53,6 +53,14 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     private static final EntityDataAccessor<Boolean> DATA_SIGN_TEST =
             SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.BOOLEAN);
 
+    /** T5 2라운드 — C3 직접 평가로 재생할 클립 이름. 빈 문자열이면 재생 없음. */
+    private static final EntityDataAccessor<String> DATA_ACTION_CLIP =
+            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.STRING);
+
+    /** 재생 트리거 일련번호. 같은 클립을 다시 재생하는 것과 계속 재생 중인 것을 구분한다. */
+    private static final EntityDataAccessor<Integer> DATA_ACTION_SEQ =
+            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.INT);
+
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
     public WardenGirlEntity(EntityType<? extends PathfinderMob> type, Level level) {
@@ -132,6 +140,8 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         super.defineSynchedData();
         this.entityData.define(DATA_AXIS_TEST, "");
         this.entityData.define(DATA_SIGN_TEST, false);
+        this.entityData.define(DATA_ACTION_CLIP, "");
+        this.entityData.define(DATA_ACTION_SEQ, 0);
     }
 
     // ---- axis verification harness (T1 only) -------------------------------------------------
@@ -151,6 +161,29 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
 
     public void setSignTest(boolean value) {
         this.entityData.set(DATA_SIGN_TEST, value);
+    }
+
+    // ---- C3 액션 (직접 평가. 컨트롤러 없음) ------------------------------------------------------
+
+    /** Clip name currently requested, or empty. Rendered by {@code ActionMotion}, not a controller. */
+    public String getActionClip() {
+        return this.entityData.get(DATA_ACTION_CLIP);
+    }
+
+    /**
+     * Bumped on every trigger, so the client can tell "play again" from "still playing".
+     *
+     * <p>A boolean cannot express a re-trigger while the previous playback is still running, and an
+     * action chain does exactly that — the second attack does not wait for the first to end.
+     */
+    public int getActionSeq() {
+        return this.entityData.get(DATA_ACTION_SEQ);
+    }
+
+    /** Server side. Empty clip name stops playback. */
+    public void playAction(String clip) {
+        this.entityData.set(DATA_ACTION_CLIP, clip);
+        this.entityData.set(DATA_ACTION_SEQ, getActionSeq() + 1);
     }
 
     // ---- GeoEntity --------------------------------------------------------------------------
@@ -223,6 +256,17 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
      * threshold. A late start looks like the body sliding out from under the legs; a late stop is
      * a couple of extra steps and reads as far less wrong.
      */
+    /**
+     * Read-only view of the walk state, for measurement.
+     *
+     * <p>Separate from {@link #isWalkingForAnimation()} because that method <em>advances</em> the
+     * hysteresis. A verifier that called it would be driving the thing it is measuring, and would
+     * do so at frame rate rather than tick rate.
+     */
+    public boolean walkStateForReport() {
+        return this.walkingForAnimation;
+    }
+
     public boolean isWalkingForAnimation() {
         double vx = Math.abs(getDeltaMovement().x);
         double vz = Math.abs(getDeltaMovement().z);

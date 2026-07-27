@@ -6,6 +6,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.wardengirl.anim.AnimParams;
+import com.wardengirl.anim.AnimRegistry;
 import com.wardengirl.anim.Bones;
 import com.wardengirl.config.ClientConfig;
 import com.wardengirl.network.ModNetwork;
@@ -101,6 +102,19 @@ public final class WardenGirlCommand {
                         .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
                                 .executes(ctx -> vitalCheck(ctx.getSource(),
                                         IntegerArgumentType.getInteger(ctx, "ticks")))))
+                .then(Commands.literal("actioncheck")
+                        .executes(ctx -> actionCheck(ctx.getSource(), 200))
+                        .then(Commands.argument("ticks", IntegerArgumentType.integer(20, 6000))
+                                .executes(ctx -> actionCheck(ctx.getSource(),
+                                        IntegerArgumentType.getInteger(ctx, "ticks")))))
+                .then(Commands.literal("action")
+                        .then(Commands.literal("stop")
+                                .executes(ctx -> action(ctx.getSource(), "")))
+                        .then(Commands.argument("clip", StringArgumentType.word())
+                                .suggests((c, b) -> SharedSuggestionProvider.suggest(
+                                        List.of(AnimRegistry.ACTION_TEST), b))
+                                .executes(ctx -> action(ctx.getSource(),
+                                        StringArgumentType.getString(ctx, "clip")))))
                 .then(Commands.literal("param")
                         .then(Commands.literal("list")
                                 .executes(ctx -> paramList(ctx.getSource())))
@@ -196,6 +210,48 @@ public final class WardenGirlCommand {
                                         + "         c1_source 0 = json Molang(이관 전), 1 = Java 가산(이관 후).%n"
                                         + "         두 값 모두에서 잔차가 0 이면 이관 전후가 부호도 크기도 같다는 뜻이다.%n"
                                         + "         결과는 로그의 [vitalcheck] 행에 나온다.",
+                                ticks))
+                        .withStyle(ChatFormatting.WHITE)), true);
+        return 1;
+    }
+
+    // ---- /wardengirl action <clip|stop> -------------------------------------------------------
+
+    /**
+     * T5 2라운드 — C3 직접 평가 재생. See {@link com.wardengirl.client.ActionMotion}.
+     *
+     * <p>No controller is involved. The clip name and a trigger sequence are synched to the client,
+     * which evaluates the clip itself and adds it in {@code setCustomAnimations} — the only place a
+     * layer survives alongside C2 (Part 4.2).
+     */
+    private static int action(CommandSourceStack source, String clip) {
+        int count = 0;
+        for (ServerLevel level : source.getServer().getAllLevels()) {
+            for (WardenGirlEntity e : level.getEntities(ModEntities.WARDEN_GIRL.get(), x -> true)) {
+                e.playAction(clip);
+                count++;
+            }
+        }
+        final int n = count;
+        source.sendSuccess(() -> Component.literal("[action] ").withStyle(ChatFormatting.GOLD)
+                .append(Component.literal(String.format(Locale.ROOT,
+                                clip.isEmpty() ? "재생 중지 — 대상 %2$d마리"
+                                        : "클립 '%s' 재생 — 대상 %d마리 (컨트롤러 없음, 직접 평가)",
+                                clip, n))
+                        .withStyle(ChatFormatting.WHITE)), true);
+        return 1;
+    }
+
+    // ---- /wardengirl actioncheck <ticks> ------------------------------------------------------
+
+    private static int actionCheck(CommandSourceStack source, int ticks) {
+        ModNetwork.broadcastActionCheck(ticks);
+        source.sendSuccess(() -> Component.literal("[actioncheck] ").withStyle(ChatFormatting.GOLD)
+                .append(Component.literal(String.format(Locale.ROOT,
+                                "%d틱 동안 C3 직접 평가 경로를 검증한다.%n"
+                                        + "         이 창 안에서 /wardengirl action actiontest 를 걸어야 한다.%n"
+                                        + "         걸지 않으면 잔차가 전부 0 이지만 '측정 불가' 로 나온다.%n"
+                                        + "         결과는 로그의 [actioncheck] 행에 나온다.",
                                 ticks))
                         .withStyle(ChatFormatting.WHITE)), true);
         return 1;

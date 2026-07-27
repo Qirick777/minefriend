@@ -4,6 +4,7 @@ import com.wardengirl.WardenGirlMod;
 import com.wardengirl.anim.AnimParams;
 import com.wardengirl.anim.AxisConvention;
 import com.wardengirl.anim.Bones;
+import com.wardengirl.anim.ClipSampler;
 import com.wardengirl.anim.JsonAxisConvention;
 import com.wardengirl.entity.WardenGirlEntity;
 import net.minecraft.client.Minecraft;
@@ -153,11 +154,17 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             damperFor(animatable).reset();
             return;
         }
+        // Read BEFORE anything Java adds: on the blend axes this is C2's contribution and nothing
+        // else, because the base clip writes 0 there and no other controller touches them. Taken
+        // here rather than inside applyActionMotion because C1 writes body.yRot too, and once it
+        // has, the walk's share is no longer separable.
+        double[] walkOnly = readBlendAxes();
         applyVitalMotion(animatable);
         if (VitalCheck.isRunning()) {
             VitalCheck.sample(readAllBones(), readAllPositions(), animatable.tickCount,
                     Minecraft.getInstance().getPartialTick());
         }
+        applyActionMotion(animatable, walkOnly);
         applyStaticOffsets();
         applyLook(animatable, animationState);
         applyTurnLean(animatable);
@@ -165,6 +172,9 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         applyOverlayVisibility();
         reportParamChange();
         if (BoneTrace.isRunning()) {
+            // Read-only: isWalkingForAnimation() advances the hysteresis, and calling it here would
+            // run that state machine at frame rate on top of its normal per-frame call.
+            BoneTrace.noteWalkState(animatable.walkStateForReport());
             BoneTrace.sample(readAllBones(), readAllPositions(), animatable.tickCount);
         }
     }
@@ -443,6 +453,134 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         // addition, so C2 wins outright there. Harmless while bounce_amplitude is 0, and left
         // unresolved on purpose — Part 11.
         addPosY(Bones.ROOT, c.rootPosY());
+    }
+
+    // ---- C3 액션 레이어 (직접 평가) ---------------------------------------------------------
+
+    private final Map<Integer, ActionMotion> actions = new HashMap<>();
+
+    /** The four axes where C2 and C3 both write. Order is fixed; see {@link #applyWalkBlend}. */
+    private double[] readBlendAxes() {
+        return new double[]{
+                getBone(Bones.ARM_RIGHT).map(b -> AxisConvention.toDeg(b.getRotX())).orElse(0.0D),
+                getBone(Bones.ARM_LEFT).map(b -> AxisConvention.toDeg(b.getRotX())).orElse(0.0D),
+                getBone(Bones.BODY).map(b -> AxisConvention.toDeg(b.getRotY())).orElse(0.0D),
+                getBone(Bones.HEAD).map(b -> AxisConvention.toDeg(b.getRotY())).orElse(0.0D)};
+    }
+
+    /**
+     * Adds the C3 clip's pose, and rescales C2's share on the axes the two share.
+     *
+     * <h2>Why C3 is evaluated here instead of on a controller</h2>
+     *
+     * 걷기 + 기본 공격 동시 재생은 필수 요구사항이다 (Part 3.2 항목 4). A third controller cannot
+     * deliver that — measured, the later controller erases the earlier on any shared bone. This is
+     * the only place a layer survives alongside C2.
+     *
+     * <h2>Blend weights are applied to C2, not to C3</h2>
+     *
+     * {@code blend_walk_*} answers "how much of the walk survives during an attack", so it scales
+     * the walk's own contribution rather than shrinking the attack. Shrinking the attack instead
+     * would make the swing itself smaller, which is a different thing and would defeat the 4.8
+     * amplitudes the doc fixes.
+     *
+     * <p>The rescale is applied as a delta ({@code c2 × (w−1)}) because the walk value is already
+     * on the bone and cannot be un-written. It rides the same fade envelope as C3, so it cannot
+     * snap: at envelope 0 the effective weight is exactly 1 and this is a no-op.
+     */
+    private void applyActionMotion(WardenGirlEntity animatable, double[] walkOnly) {
+        if (this.actions.size() > MAX_TRACKED_ENTITIES) {
+            this.actions.clear();
+        }
+        ActionMotion action = this.actions.computeIfAbsent(animatable.getId(),
+                k -> new ActionMotion());
+        float partialTick = Minecraft.getInstance().getPartialTick();
+        double now = animatable.tickCount + partialTick;
+
+        String requested = animatable.getActionClip();
+        if (requested.isEmpty()) {
+            action.stop();
+        } else {
+            software.bernie.geckolib.core.animation.Animation clip =
+                    getAnimation(animatable, requested);
+            if (clip != null) {
+                action.syncTo(animatable.getActionSeq(), requested, clip.length(), now);
+            }
+        }
+
+        double age = action.age(now);
+        double weight = action.weight(age);
+        boolean checking = ActionCheck.isRunning();
+        // Snapshot before the C3 write and diff after it. Reading the bone is the only way to
+        // answer "did the value reach the bone" — a check on the sampler's output alone would pass
+        // just as happily if nothing were ever written.
+        LinkedHashMap<String, double[]> beforeRot = checking ? readAllBones() : null;
+        LinkedHashMap<String, double[]> beforePos = checking ? readAllPositions() : null;
+
+        ClipSampler.Pose pose = null;
+        if (age >= 0.0D && weight > 0.0D) {
+            software.bernie.geckolib.core.animation.Animation clip =
+                    getAnimation(animatable, action.clip());
+            if (clip != null) {
+                pose = ClipSampler.sample(clip, age);
+                for (Map.Entry<String, double[]> e : pose.rotationsDeg().entrySet()) {
+                    addRotX(e.getKey(), e.getValue()[0] * weight);
+                    addRotY(e.getKey(), e.getValue()[1] * weight);
+                    addRotZ(e.getKey(), e.getValue()[2] * weight);
+                }
+                for (Map.Entry<String, double[]> e : pose.positionsRaw().entrySet()) {
+                    addPositionRaw(e.getKey(), e.getValue(), weight);
+                }
+            }
+        }
+        if (checking) {
+            ActionCheck.sample(pose, delta(beforeRot, readAllBones()),
+                    delta(beforePos, readAllPositions()), age, weight, action.clip(),
+                    animatable.tickCount);
+        }
+        // After the check, so the measured delta is C3's own contribution and not C3 plus a walk
+        // rescale that has nothing to do with the clip.
+        applyWalkBlend(walkOnly, weight);
+    }
+
+    private static LinkedHashMap<String, double[]> delta(Map<String, double[]> before,
+                                                        Map<String, double[]> after) {
+        LinkedHashMap<String, double[]> out = new LinkedHashMap<>();
+        after.forEach((bone, now) -> {
+            double[] then = before.get(bone);
+            out.put(bone, then == null ? now
+                    : new double[]{now[0] - then[0], now[1] - then[1], now[2] - then[2]});
+        });
+        return out;
+    }
+
+    private void applyWalkBlend(double[] walkOnly, double envelope) {
+        double arm = effectiveBlend(AnimParams.BLEND_WALK_ARM_X.get(), envelope);
+        double body = effectiveBlend(AnimParams.BLEND_WALK_BODY_Y.get(), envelope);
+        double head = effectiveBlend(AnimParams.BLEND_WALK_HEAD_Y.get(), envelope);
+        addRotX(Bones.ARM_RIGHT, walkOnly[0] * (arm - 1.0D));
+        addRotX(Bones.ARM_LEFT, walkOnly[1] * (arm - 1.0D));
+        addRotY(Bones.BODY, walkOnly[2] * (body - 1.0D));
+        addRotY(Bones.HEAD, walkOnly[3] * (head - 1.0D));
+    }
+
+    private static double effectiveBlend(double weight, double envelope) {
+        return 1.0D + (weight - 1.0D) * envelope;
+    }
+
+    /**
+     * Adds a clip's position channel in <b>GeckoLib's</b> raw units, not model pixels.
+     *
+     * <p>Deliberately not {@link AxisConvention#setPositionPx}: that negates x and the json path
+     * does not, so routing a clip through it would make the same json number mean opposite things
+     * in C2 and C3. See {@link ClipSampler}'s class doc and Part 11.
+     */
+    private void addPositionRaw(String bone, double[] raw, double weight) {
+        getBone(bone).ifPresent(b -> {
+            b.setPosX(b.getPosX() + (float) (raw[0] * weight));
+            b.setPosY(b.getPosY() + (float) (raw[1] * weight));
+            b.setPosZ(b.getPosZ() + (float) (raw[2] * weight));
+        });
     }
 
     /**

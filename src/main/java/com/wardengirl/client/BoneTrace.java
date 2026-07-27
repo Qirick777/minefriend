@@ -294,6 +294,9 @@ public final class BoneTrace {
             java.util.Arrays.fill(SPRING_LAG_N[side], 0);
         }
         lookSamples = 0;
+        walkFrames = 0;
+        walkTransitions = 0;
+        lastWalkState = null;
         lookPendingValid = false;
         lookFirstTick = Integer.MIN_VALUE;
         lookLastTick = Integer.MIN_VALUE;
@@ -637,12 +640,67 @@ public final class BoneTrace {
     private static final double TOLERANCE = 0.01D;
     private static final String[] AXIS = {"xRot", "yRot", "zRot"};
 
+    // ---- 측정 유효 조건 (Part 6.3) --------------------------------------------------------------
+
+    private static int walkFrames = 0;
+    private static int walkTransitions = 0;
+    private static Boolean lastWalkState = null;
+
+    /**
+     * One frame's C2 state, recorded so the report can say whether this window contained the
+     * situation it was meant to measure.
+     *
+     * <p>Part 6.3: a window that never saw the stimulus produces clean-looking numbers that mean
+     * nothing. Measured instance — a C1 walking window with 0 walking frames printed "6채널 전부
+     * 잔차 0", which reads as a pass and was in fact a mob standing still.
+     */
+    public static void noteWalkState(boolean walking) {
+        if (remainingTicks <= 0) {
+            return;
+        }
+        if (walking) {
+            walkFrames++;
+        }
+        if (lastWalkState != null && lastWalkState != walking) {
+            walkTransitions++;
+        }
+        lastWalkState = walking;
+    }
+
+    /**
+     * Prints what the window actually contained, before any verdict.
+     *
+     * <p>Deliberately first: reading "걷기 프레임 0" after a page of OK verdicts is not the same
+     * as reading it before them.
+     */
+    private static void reportValidity() {
+        WardenGirlMod.LOGGER.info("[trace] --- 측정 유효 조건 (판정보다 먼저 본다) ---");
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   걷기 프레임      : %d / %d (%.1f%%)   %s",
+                walkFrames, sampleCount, 100.0D * walkFrames / Math.max(1, sampleCount),
+                walkFrames == 0 ? "정지만 관측 — 걷기 관련 판정은 측정 불가"
+                        : walkFrames == sampleCount ? "걷기만 관측 — 정지 관련 판정은 측정 불가"
+                        : "정지·걷기 모두 관측"));
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   idle<->걷기 전이 : %d회   %s",
+                walkTransitions, walkTransitions == 0 ? "전이 판정은 측정 불가" : "전이 관측됨"));
+        double yawSpan = range(LOOK_TARGET_YAW, lookSamples);
+        double pitchSpan = range(LOOK_TARGET_PITCH, lookSamples);
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   시선 목표 변화폭 : yaw %.3f°  pitch %.3f°   %s",
+                yawSpan, pitchSpan,
+                Math.max(yawSpan, pitchSpan) < 1.0D
+                        ? "시선이 거의 움직이지 않았다 — 4.6 감쇠 판정은 측정 불가"
+                        : "시선 관측됨"));
+    }
+
     private static void report(Map<String, double[]> positions) {
         Map<String, Expect[]> expect = expectations();
         int fails = 0;
 
         WardenGirlMod.LOGGER.info("[trace] === {}틱 창에서 {}샘플(프레임) 수집 완료. 본 10개 × 3축 판정 ===",
                 totalTicks, sampleCount);
+        reportValidity();
         WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
                 "[trace] %-10s %-5s %10s %10s %-6s %-26s %s",
                 "본", "축", "최소", "최대", "종류", "기대", "판정"));

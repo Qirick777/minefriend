@@ -85,4 +85,18 @@ public final class AnimRegistry {
     public static final String SIGN_TEST = "signtest";
 
     public static final RawAnimation SIGN_TEST_LOOP = RawAnimation.begin().thenLoop(SIGN_TEST);
+
+    /**
+     * T5 2라운드 임시 — C3 직접 평가 경로 검증용 클립.
+     *
+     * <p><b>There is no controller for this and there must not be one.</b> C3 is evaluated by
+     * {@link ClipSampler} and added in {@code setCustomAnimations}, which is the only place a
+     * second layer survives alongside C2 (Part 4.2). The name is here because
+     * {@code GeoModel.getAnimation} resolves clips by name.
+     *
+     * <p>Replaced by the real 4.8 attack clip in T7. Kept afterwards for the same reason
+     * {@link #SIGN_TEST} is kept — it is the procedure for re-verifying the direct-evaluation path
+     * after a GeckoLib version bump.
+     */
+    public static final String ACTION_TEST = "actiontest";
 }

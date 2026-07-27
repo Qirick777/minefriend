@@ -47,6 +47,30 @@ public final class ModNetwork {
                 TracePacket::encode, TracePacket::decode, TracePacket::handle);
         CHANNEL.registerMessage(2, VitalCheckPacket.class,
                 VitalCheckPacket::encode, VitalCheckPacket::decode, VitalCheckPacket::handle);
+        CHANNEL.registerMessage(3, ActionCheckPacket.class,
+                ActionCheckPacket::encode, ActionCheckPacket::decode, ActionCheckPacket::handle);
+    }
+
+    /** Asks every client to verify the C3 direct-evaluation path for the given number of ticks. */
+    public static void broadcastActionCheck(int ticks) {
+        CHANNEL.send(PacketDistributor.ALL.noArg(), new ActionCheckPacket(ticks));
+    }
+
+    public record ActionCheckPacket(int ticks) {
+
+        public static void encode(ActionCheckPacket packet, FriendlyByteBuf buf) {
+            buf.writeVarInt(packet.ticks);
+        }
+
+        public static ActionCheckPacket decode(FriendlyByteBuf buf) {
+            return new ActionCheckPacket(buf.readVarInt());
+        }
+
+        public static void handle(ActionCheckPacket packet, Supplier<NetworkEvent.Context> ctx) {
+            ctx.get().enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
+                    () -> () -> com.wardengirl.client.ActionCheck.start(packet.ticks)));
+            ctx.get().setPacketHandled(true);
+        }
     }
 
     /** Asks every client to measure C1 against its formula for the given number of ticks. */
