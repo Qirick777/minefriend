@@ -8,11 +8,15 @@ import com.wardengirl.entity.WardenGirlEntity;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import software.bernie.geckolib.cache.object.GeoBone;
+import software.bernie.geckolib.constant.DataTickets;
 import software.bernie.geckolib.core.animation.AnimationState;
 import software.bernie.geckolib.core.molang.MolangParser;
 import software.bernie.geckolib.model.GeoModel;
+import software.bernie.geckolib.model.data.EntityModelData;
 
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -90,13 +94,104 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         // offsets are deliberately skipped. Otherwise a "+45° on one axis" reading would silently
         // be 45° plus a 4° offset, and the number on screen would not be the number reported.
         if (applyAxisTest(animatable)) {
+            springs.computeIfAbsent(animatable.getId(), k -> new HeadgearSpring()).reset();
             return;
         }
         applyStaticOffsets();
+        applyLook(animationState);
+        applyHeadgearSpring(animatable);
         reportParamChange();
         if (BoneTrace.isRunning()) {
             BoneTrace.sample(readAllBones(), readAllPositions());
         }
+    }
+
+    // ---- 4.6 시선 (선택지 A: Java 가산) ----------------------------------------------------------
+
+    /**
+     * Adds the vanilla look direction to {@code head}, on top of C1 and the static offsets.
+     *
+     * <h2>Why this has to exist at all</h2>
+     *
+     * GeckoLib computes the look for us and hands it over as {@code EntityModelData}, but
+     * <b>nothing consumes it</b> unless the model extends {@code DefaultedEntityGeoModel} — and
+     * that class <em>assigns</em> {@code head.setRotX/setRotY}, which would delete C1's breathing
+     * correction every frame. So the data arrives and is dropped. Measured before this method
+     * existed: the entity's {@code yHeadRot} moved through 374° while {@code head}'s bone yRot held
+     * exactly one distinct value, {@code -0.000}, across 729 samples.
+     *
+     * <h2>Added, not assigned</h2>
+     *
+     * Same rule as 4.3.4. C1 has already written this frame's values into {@code head}; assigning
+     * here would erase them.
+     *
+     * <h2>No sign flip</h2>
+     *
+     * {@code EntityModelData} is built from {@code -netHeadYaw} and {@code -headPitch} (verified in
+     * the 4.8.4 bytecode), i.e. GeckoLib has already put them in the bone convention this project
+     * uses. Per 4.0.1 nothing is negated again anywhere.
+     */
+    private void applyLook(AnimationState<WardenGirlEntity> animationState) {
+        EntityModelData look = animationState.getData(DataTickets.ENTITY_MODEL_DATA);
+        if (look == null) {
+            return;
+        }
+        double gain = AnimParams.LOOK_GAIN.get();
+        // The clamp is NOT redundant with GeckoLib's. GeckoLib's Mth.clamp(..., -85, 85) sits
+        // inside the `shouldSit` branch of actuallyRender and never runs for a standing mob; the
+        // delivered value is the raw yHeadRot - yBodyRot difference. Measured range across 729
+        // samples: -88.280 .. +86.250. See Part 11.
+        double yaw = clampAbs(look.netHeadYaw() * gain, AnimParams.LOOK_YAW_MAX.get());
+        double pitch = clampAbs(look.headPitch() * gain, AnimParams.LOOK_PITCH_MAX.get());
+        addRotY(Bones.HEAD, yaw);
+        addRotX(Bones.HEAD, pitch);
+    }
+
+    private static double clampAbs(double value, double limit) {
+        double max = Math.abs(limit);
+        return Math.max(-max, Math.min(max, value));
+    }
+
+    // ---- 4.5 headgear 스프링 -------------------------------------------------------------------
+
+    /**
+     * One spring per entity.
+     *
+     * <p>The model is created once by the renderer and shared by every WardenGirl on screen, so a
+     * single spring instance would have all of them driving the same state — two mobs looking in
+     * different directions would fight over one decoration angle. Keyed by entity id instead.
+     */
+    private final Map<Integer, HeadgearSpring> springs = new HashMap<>();
+
+    /** Bounded so despawned entities cannot leak; springs are cheap to re-seed. */
+    private static final int MAX_TRACKED_ENTITIES = 64;
+
+    private void applyHeadgearSpring(WardenGirlEntity animatable) {
+        Optional<GeoBone> maybeHeadgear = getBone(Bones.HEADGEAR);
+        Optional<GeoBone> maybeHead = getBone(Bones.HEAD);
+        if (maybeHeadgear.isEmpty() || maybeHead.isEmpty()) {
+            return;
+        }
+        if (this.springs.size() > MAX_TRACKED_ENTITIES) {
+            this.springs.clear();
+        }
+        HeadgearSpring spring =
+                this.springs.computeIfAbsent(animatable.getId(), k -> new HeadgearSpring());
+
+        // head's rotation *after* C1, the static offset and the look addition — the decoration is
+        // lagging behind the pose actually being drawn, not behind some earlier stage of it.
+        double[] target = AxisConvention.readDegrees(maybeHead.get());
+        spring.advanceTo(animatable.tickCount, target);
+
+        float partialTick = Minecraft.getInstance().getPartialTick();
+        GeoBone headgear = maybeHeadgear.get();
+        // ASSIGNED, not added — see HeadgearSpring's class doc. This is what lets headgear keep
+        // its Part 10.4 status of having no animation channel at all.
+        headgear.setRotX(AxisConvention.toRad(spring.output(0, partialTick, target[0])));
+        headgear.setRotY(AxisConvention.toRad(spring.output(1, partialTick, target[1])));
+        headgear.setRotZ(AxisConvention.toRad(spring.output(2, partialTick, target[2])));
+
+        BoneTrace.noteSpring(spring.angles(), spring.velocities());
     }
 
     private long lastParamGeneration = -1L;

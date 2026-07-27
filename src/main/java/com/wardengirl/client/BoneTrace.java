@@ -56,12 +56,59 @@ public final class BoneTrace {
     private static final Map<String, double[]> FIRST = new LinkedHashMap<>();
     private static final Map<String, double[]> LAST = new LinkedHashMap<>();
     private static final Map<String, int[]> MONOTONIC = new LinkedHashMap<>();
-    /** bone -> {maxAbsDx, maxAbsDy, maxAbsDz, maxHorizontal} in model pixels. */
+    /** leg -> {maxAbsDx, maxAbsDy, maxAbsDz, maxHorizontal, worstCornerIndex} in model pixels. */
     private static final Map<String, double[]> FOOT = new LinkedHashMap<>();
+    /**
+     * 4.5 spring internals: min/max of the spring angle and of its velocity, per axis.
+     *
+     * <p>The bone value alone cannot answer "is the spring converging". The applied value is the
+     * lag <em>error</em> {@code (angle − target) × AMPLITUDE}, so a spring oscillating with a
+     * growing amplitude while chasing a moving head can still produce bone values inside the clamp.
+     * Divergence shows up in the velocity, which is why it is recorded separately.
+     */
+    private static final double[] SPRING_ANGLE_MIN = new double[3];
+    private static final double[] SPRING_ANGLE_MAX = new double[3];
+    private static final double[] SPRING_VEL_MIN = new double[3];
+    private static final double[] SPRING_VEL_MAX = new double[3];
+    /** Largest |velocity| seen in the first and the last quarter of the window, per axis. */
+    private static final double[] SPRING_VEL_EARLY = new double[3];
+    private static final double[] SPRING_VEL_LATE = new double[3];
+    private static boolean springSeen = false;
+    private static int totalTicks = 0;
+
+    /** Called by the model once per frame while a trace is running. */
+    public static void noteSpring(double[] angles, double[] velocities) {
+        if (remainingTicks <= 0) {
+            return;
+        }
+        for (int i = 0; i < 3; i++) {
+            if (!springSeen) {
+                SPRING_ANGLE_MIN[i] = angles[i];
+                SPRING_ANGLE_MAX[i] = angles[i];
+                SPRING_VEL_MIN[i] = velocities[i];
+                SPRING_VEL_MAX[i] = velocities[i];
+            }
+            SPRING_ANGLE_MIN[i] = Math.min(SPRING_ANGLE_MIN[i], angles[i]);
+            SPRING_ANGLE_MAX[i] = Math.max(SPRING_ANGLE_MAX[i], angles[i]);
+            SPRING_VEL_MIN[i] = Math.min(SPRING_VEL_MIN[i], velocities[i]);
+            SPRING_VEL_MAX[i] = Math.max(SPRING_VEL_MAX[i], velocities[i]);
+            double speed = Math.abs(velocities[i]);
+            if (sampleCount <= totalTicks / 4) {
+                SPRING_VEL_EARLY[i] = Math.max(SPRING_VEL_EARLY[i], speed);
+            } else if (sampleCount >= totalTicks * 3 / 4) {
+                SPRING_VEL_LATE[i] = Math.max(SPRING_VEL_LATE[i], speed);
+            }
+        }
+        springSeen = true;
+    }
 
     public static void start(int ticks) {
         remainingTicks = ticks;
+        totalTicks = ticks;
         sampleCount = 0;
+        springSeen = false;
+        java.util.Arrays.fill(SPRING_VEL_EARLY, 0.0D);
+        java.util.Arrays.fill(SPRING_VEL_LATE, 0.0D);
         MIN.clear();
         MAX.clear();
         FIRST.clear();
@@ -120,7 +167,7 @@ public final class BoneTrace {
 
     // ---- foot displacement -------------------------------------------------------------------
 
-    // Model pivots, straight out of warden_girl.geo.json. Part 3.7.
+    // Model pivots and cube extents, straight out of warden_girl.geo.json. Part 3.7.
     private static final double[] PIVOT_ROOT = {0, 0, 0};
     private static final double[] PIVOT_HIP = {0, 12, 0};
     private static final double[] PIVOT_LEG_R = {-2.0, 12, 0};
@@ -131,28 +178,60 @@ public final class BoneTrace {
      */
     private static final double SOLE_Y = 0.0D;
 
+    /**
+     * The four corners of one sole, not its centre.
+     *
+     * <p>The centre lies <em>on</em> the leg's own y axis, so {@code leg.yRot} moves it by exactly
+     * zero — the 안짱 offset of ±2° measured 0.0000px, which is geometrically correct and
+     * completely uninformative. What reads as sliding on screen is the corner sweeping. A
+     * centre-only measure is structurally blind to every yaw of the foot, and T5's walk cycle turns
+     * the legs on y. So all four corners are tracked and the largest displacement wins.
+     *
+     * <p>Labels are in the mob's frame: the mob faces +Z and its left is +X, so F/B is z = +2/−2
+     * and L/R is the larger/smaller x of that leg's cube.
+     */
+    private static final String[] CORNER_LABELS = {"FL", "FR", "BL", "BR"};
+
+    /** Corner offsets in absolute model x/z for one leg, ordered to match {@link #CORNER_LABELS}. */
+    private static double[][] soleCorners(String leg) {
+        // leg_right cube x = [-4, 0], leg_left cube x = [0, 4]; both z = [-2, +2].
+        double xMin = leg.equals(Bones.LEG_RIGHT) ? -4.0D : 0.0D;
+        double xMax = leg.equals(Bones.LEG_RIGHT) ? 0.0D : 4.0D;
+        return new double[][]{
+                {xMax, SOLE_Y, 2.0D},   // FL
+                {xMin, SOLE_Y, 2.0D},   // FR
+                {xMax, SOLE_Y, -2.0D},  // BL
+                {xMin, SOLE_Y, -2.0D},  // BR
+        };
+    }
+
     private static double[] pivotOf(String leg) {
         return leg.equals(Bones.LEG_RIGHT) ? PIVOT_LEG_R : PIVOT_LEG_L;
     }
 
     private static void accumulateFoot(String leg, Map<String, double[]> rot,
                                        Map<String, double[]> pos) {
-        double[] legPivot = pivotOf(leg);
-        double[] rest = {legPivot[0], SOLE_Y, legPivot[2]};
-        double[] p = solePosition(leg, rot, pos);
-        double dx = p[0] - rest[0];
-        double dy = p[1] - rest[1];
-        double dz = p[2] - rest[2];
-        double horiz = Math.hypot(dx, dz);
-        double[] acc = FOOT.computeIfAbsent(leg, k -> new double[]{0, 0, 0, 0});
-        acc[0] = Math.max(acc[0], Math.abs(dx));
-        acc[1] = Math.max(acc[1], Math.abs(dy));
-        acc[2] = Math.max(acc[2], Math.abs(dz));
-        acc[3] = Math.max(acc[3], horiz);
+        double[][] rest = soleCorners(leg);
+        // {maxAbsDx, maxAbsDy, maxAbsDz, maxHorizontal, worstCornerIndex}
+        double[] acc = FOOT.computeIfAbsent(leg, k -> new double[]{0, 0, 0, 0, -1});
+        for (int c = 0; c < rest.length; c++) {
+            double[] p = transformCorner(leg, rest[c], rot, pos);
+            double dx = p[0] - rest[c][0];
+            double dy = p[1] - rest[c][1];
+            double dz = p[2] - rest[c][2];
+            double horiz = Math.hypot(dx, dz);
+            acc[0] = Math.max(acc[0], Math.abs(dx));
+            acc[1] = Math.max(acc[1], Math.abs(dy));
+            acc[2] = Math.max(acc[2], Math.abs(dz));
+            if (horiz > acc[3]) {
+                acc[3] = horiz;
+                acc[4] = c;
+            }
+        }
     }
 
     /**
-     * Forward kinematics for the centre of one sole, in model pixels.
+     * Forward kinematics for one sole corner, in model pixels.
      *
      * <p>The chain is root → hip → leg, which is exactly what
      * {@code GeoRenderer.renderRecursively} walks. Each bone contributes
@@ -166,11 +245,10 @@ public final class BoneTrace {
      * Nothing in C1 writes a position x, so this cannot affect today's numbers — it is here so the
      * measurement stays correct when T5 or T9 does.
      */
-    private static double[] solePosition(String leg, Map<String, double[]> rot,
-                                         Map<String, double[]> pos) {
-        double[] legPivot = pivotOf(leg);
-        double[] q = {legPivot[0], SOLE_Y, legPivot[2]};
-        q = applyBone(q, leg, legPivot, rot, pos);
+    private static double[] transformCorner(String leg, double[] restPoint,
+                                            Map<String, double[]> rot, Map<String, double[]> pos) {
+        double[] q = {restPoint[0], restPoint[1], restPoint[2]};
+        q = applyBone(q, leg, pivotOf(leg), rot, pos);
         q = applyBone(q, Bones.HIP, PIVOT_HIP, rot, pos);
         q = applyBone(q, Bones.ROOT, PIVOT_ROOT, rot, pos);
         return q;
@@ -240,6 +318,15 @@ public final class BoneTrace {
         static Expect band(double centre, double amplitude, double periodTicks) {
             return new Expect("RANGE", centre, amplitude, periodTicks);
         }
+
+        /**
+         * A band with no period at all — the vanilla look goals are driven by a random timer, so
+         * "moved one way for the whole window" carries no information about accumulation. Marked
+         * rather than silently exempted: the verdict column says so on every line.
+         */
+        static Expect aperiodic(double centre, double amplitude) {
+            return new Expect("RANGE", centre, amplitude, Double.POSITIVE_INFINITY);
+        }
     }
 
     /**
@@ -271,13 +358,23 @@ public final class BoneTrace {
                 // 4.3.3 sway and 4.3.5 weight shift are summed into this one axis; the band is the
                 // sum of both amplitudes and the slower period governs a full cycle.
                 Expect.band(0, swayBodyZ + weight, Math.max(pSway, pWeight))});
+        // head now carries 4.6's look on top of C1: xRot = 정적 오프셋 + 호흡 + headPitch,
+        // yRot = look only (C1 writes a literal 0 there). Both bands widen by the look clamp.
+        double lookYaw = AnimParams.LOOK_YAW_MAX.get();
+        double lookPitch = AnimParams.LOOK_PITCH_MAX.get();
         m.put(Bones.HEAD, new Expect[]{
-                Expect.band(AnimParams.OFFSET_HEAD_X.get(), breathHead, pBreath),
-                Expect.constant(0),
+                Expect.aperiodic(AnimParams.OFFSET_HEAD_X.get(), breathHead + lookPitch),
+                Expect.aperiodic(0, lookYaw),
                 Expect.band(0, swayHead + weightHead, Math.max(pSway, pWeight))});
-        // headgear is spring-driven from T3 onward; in T2 nothing writes it.
+        // 4.5 spring. Output is clamped to ±MAX_ANGLE by construction, so the band is that clamp —
+        // a value outside it means the clamp itself is broken. The nominal period of the discrete
+        // oscillator is 2π/√STIFFNESS ticks (≈12.6 at 0.25), which is what the drift guard needs.
+        double springPeriod = 2 * Math.PI / Math.sqrt(Math.max(1e-6, AnimParams.HEADGEAR_STIFFNESS.get()));
+        double springMax = Math.abs(AnimParams.HEADGEAR_MAX_ANGLE.get());
         m.put(Bones.HEADGEAR, new Expect[]{
-                Expect.constant(0), Expect.constant(0), Expect.constant(0)});
+                Expect.band(0, springMax, springPeriod),
+                Expect.band(0, springMax, springPeriod),
+                Expect.band(0, springMax, springPeriod)});
         // arm zRot carries an outward-only bias: amp*(1+sin) spans 0 .. 2*amp.
         m.put(Bones.ARM_RIGHT, new Expect[]{
                 Expect.constant(AnimParams.OFFSET_ARM_R_X.get()),
@@ -343,8 +440,10 @@ public final class BoneTrace {
                     verdict = "FAIL 단조누적";
                     fails++;
                 } else if (monotonic && !windowCoversCycle) {
-                    verdict = String.format(Locale.ROOT,
-                            "OK (누적판정보류: 창 %d틱 < 주기 %.0f틱)", sampleCount, e.periodTicks);
+                    verdict = Double.isInfinite(e.periodTicks)
+                            ? "OK (누적판정보류: 비주기 — 바닐라 시선)"
+                            : String.format(Locale.ROOT,
+                                    "OK (누적판정보류: 창 %d틱 < 주기 %.0f틱)", sampleCount, e.periodTicks);
                 } else {
                     verdict = "OK";
                 }
@@ -361,14 +460,58 @@ public final class BoneTrace {
         positions.forEach((bone, v) -> WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
                 "[trace] %-10s 위치(px) 마지막 = (%+.4f, %+.4f, %+.4f)", bone, v[0], v[1], v[2])));
 
+        fails += reportSpring();
         fails += reportFeet();
 
         if (fails == 0) {
-            WardenGirlMod.LOGGER.info("[trace] === 판정: 전 항목 통과 (회전 27 + 발끝 2) ===");
+            WardenGirlMod.LOGGER.info("[trace] === 판정: 전 항목 통과 (회전 27 + 스프링 3 + 발끝 2) ===");
         } else {
             WardenGirlMod.LOGGER.error("[trace] === 판정: 실패 {}개 ===", fails);
         }
     }
+
+    /**
+     * 4.5 spring convergence.
+     *
+     * <p>The test is not "did it stay small" — a spring chasing a head that keeps turning is
+     * <em>supposed</em> to keep moving. The test is that its speed in the last quarter of the
+     * window is not larger than in the first by more than the head's own motion can explain, and
+     * that the integrated angle never runs away. A diverging spring doubles its velocity every few
+     * ticks, so the ratio is unmistakable when it happens.
+     */
+    private static int reportSpring() {
+        if (!springSeen) {
+            WardenGirlMod.LOGGER.warn("[trace] 4.5 스프링 표본 없음 — headgear 스프링이 돌지 않았다");
+            return 1;
+        }
+        int fails = 0;
+        WardenGirlMod.LOGGER.info("[trace] --- 4.5 headgear 스프링 (각도·속도, 도) ---");
+        String[] axis = {"x", "y", "z"};
+        for (int i = 0; i < 3; i++) {
+            double growth = SPRING_VEL_EARLY[i] <= 1e-6
+                    ? (SPRING_VEL_LATE[i] <= 1e-6 ? 1.0D : Double.POSITIVE_INFINITY)
+                    : SPRING_VEL_LATE[i] / SPRING_VEL_EARLY[i];
+            boolean diverging = growth > DIVERGENCE_RATIO && SPRING_VEL_LATE[i] > 1.0D;
+            if (diverging) {
+                fails++;
+            }
+            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                    "[trace] 스프링 %s축  각도 %+8.3f ~ %+8.3f   속도 %+7.3f ~ %+7.3f   "
+                            + "|속도| 초반 %.3f → 후반 %.3f (×%.2f)  %s",
+                    axis[i], SPRING_ANGLE_MIN[i], SPRING_ANGLE_MAX[i],
+                    SPRING_VEL_MIN[i], SPRING_VEL_MAX[i],
+                    SPRING_VEL_EARLY[i], SPRING_VEL_LATE[i], growth,
+                    diverging ? "FAIL 발산" : "OK 수렴"));
+        }
+        return fails;
+    }
+
+    /**
+     * Velocity growth over the window that counts as divergence. A critically-damped-ish spring
+     * settles; anything that ends the window moving four times faster than it started, while
+     * actually moving, is not chasing — it is ringing up.
+     */
+    private static final double DIVERGENCE_RATIO = 4.0D;
 
     private static int reportFeet() {
         int fails = 0;
@@ -386,9 +529,11 @@ public final class BoneTrace {
             if (!ok) {
                 fails++;
             }
+            String worst = a[4] >= 0 ? CORNER_LABELS[(int) a[4]] : "--";
             WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                    "[trace] %-10s 최대|dx|=%.4f  최대|dy|=%.4f  최대|dz|=%.4f  최대 수평변위=%.4f  %s",
-                    leg, a[0], a[1], a[2], a[3], ok ? "OK" : "FAIL 발이 미끄러진다"));
+                    "[trace] %-10s 최대|dx|=%.4f  최대|dy|=%.4f  최대|dz|=%.4f  "
+                            + "최대 수평변위=%.4f (%s 모서리)  %s",
+                    leg, a[0], a[1], a[2], a[3], worst, ok ? "OK" : "FAIL 발이 미끄러진다"));
         }
         return fails;
     }

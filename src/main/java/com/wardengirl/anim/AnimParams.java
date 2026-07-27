@@ -72,11 +72,25 @@ public final class AnimParams {
         public final String description;
         /** Bones whose rotation this parameter moves — used by the command's readback. */
         public final List<String> affects;
+        /**
+         * Whether {@link #applyPreset} moves this value.
+         *
+         * <p>The preset sweep is a sweep of <em>magnitudes</em> — "is this motion an order of
+         * magnitude too big". Not every number here is a magnitude. A spring's stiffness and
+         * damping are rate constants of a difference equation, and {@code ×4} does not make the
+         * spring "four times bigger": {@code DAMPING 0.35 → 1.4} makes the velocity term overshoot
+         * its own sign every tick and the spring diverges. A gain of 1.0 that means "match the
+         * entity's actual look direction" has no meaningful ×4 either.
+         *
+         * <p>So those are held fixed across presets. They are still settable individually with
+         * {@code /wardengirl param set} — the exclusion is from the sweep, not from tuning.
+         */
+        public final boolean presetScaled;
 
         private double value;
 
         Param(String key, String molang, double defaultValue, String unit, String task,
-              String description, List<String> affects) {
+              String description, boolean presetScaled, List<String> affects) {
             this.key = key;
             this.molang = molang;
             this.defaultValue = defaultValue;
@@ -84,6 +98,7 @@ public final class AnimParams {
             this.unit = unit;
             this.task = task;
             this.description = description;
+            this.presetScaled = presetScaled;
             this.affects = affects;
         }
 
@@ -99,7 +114,7 @@ public final class AnimParams {
         }
 
         public double presetValue(Preset preset) {
-            return this.defaultValue * preset.factor;
+            return this.presetScaled ? this.defaultValue * preset.factor : this.defaultValue;
         }
     }
 
@@ -121,7 +136,15 @@ public final class AnimParams {
 
     private static Param add(String key, String molang, double def, String unit, String task,
                              String desc, String... affects) {
-        Param p = new Param(key, molang, def, unit, task, desc, List.of(affects));
+        Param p = new Param(key, molang, def, unit, task, desc, true, List.of(affects));
+        REGISTRY.put(key, p);
+        return p;
+    }
+
+    /** Like {@link #add}, but the preset sweep leaves it alone. See {@link Param#presetScaled}. */
+    private static Param addFixed(String key, String molang, double def, String unit, String task,
+                                  String desc, String... affects) {
+        Param p = new Param(key, molang, def, unit, task, desc, false, List.of(affects));
         REGISTRY.put(key, p);
         return p;
     }
@@ -201,6 +224,38 @@ public final class AnimParams {
             "deg", "T2", "목 앞으로", "head");
     public static final Param OFFSET_BODY_X = add("offset_body_x", null, -1.5D,
             "deg", "T2", "어깨 앞으로", "body");
+
+    // ---- 4.5.1 headgear 감쇠 스프링 (T3) --------------------------------------------------------
+    //
+    // headgear is head's child, so head's rotation is already inherited. What the spring adds is
+    // the lag error only — (angleDeg - targetDeg) — which is why the applied value is a difference
+    // and not the spring angle itself. Applying the angle would turn the decoration twice.
+
+    public static final Param HEADGEAR_STIFFNESS = addFixed("headgear_stiffness", null, 0.25D,
+            "계수", "T3", "스프링 강성. 클수록 빠르게 따라온다. 4.5.2 상태별 전환 대상", "headgear");
+    public static final Param HEADGEAR_DAMPING = addFixed("headgear_damping", null, 0.35D,
+            "계수", "T3", "감쇠. 발산하면 올린다. 1.0 을 넘기면 속도 항의 부호가 매 틱 뒤집혀 발산한다", "headgear");
+    public static final Param HEADGEAR_AMPLITUDE = add("headgear_amplitude", null, 1.3D,
+            "배율", "T3", "지연 오차분에 곱하는 배율. 장식이 과장되게 휘청이는 정도", "headgear");
+    public static final Param HEADGEAR_MAX_ANGLE = add("headgear_max_angle", null, 35.0D,
+            "deg", "T3", "스프링 출력 클램프. 장식이 머리를 뚫고 돌아가는 것을 막는다", "headgear");
+
+    // ---- 4.6 시선 추적 (T3 에서는 가산과 클램프만. 감쇠 보간 · 근거리 반응은 T4) ------------------------
+
+    /**
+     * Overall gain on the vanilla look direction.
+     *
+     * <p>1.0 means "the head bone matches the direction the entity is actually looking". Anything
+     * else desynchronises the rendered gaze from the AI's gaze, so this is excluded from the preset
+     * sweep — see {@link Param#presetScaled}. It exists as a knob for T4's damping work.
+     */
+    public static final Param LOOK_GAIN = addFixed("look_gain", null, 1.0D,
+            "배율", "T3", "바닐라 시선을 head 본에 싣는 배율. 1.0 = 엔티티가 실제로 보는 방향 그대로", "head");
+    public static final Param LOOK_YAW_MAX = add("look_yaw_max", null, 70.0D,
+            "deg", "T3", "head yRot 클램프 (4.6). GeckoLib 이 이미 ±88° 로 좁혀 보내므로 이중 클램프다 — Part 11 참조",
+            "head");
+    public static final Param LOOK_PITCH_MAX = add("look_pitch_max", null, 35.0D,
+            "deg", "T3", "head xRot 클램프 (4.6)", "head");
 
     // ------------------------------------------------------------------------------------------
 
