@@ -6,6 +6,7 @@ import com.wardengirl.anim.AxisConvention;
 import com.wardengirl.anim.Bones;
 import com.wardengirl.entity.WardenGirlEntity;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.resources.ResourceLocation;
 import software.bernie.geckolib.cache.object.GeoBone;
 import software.bernie.geckolib.constant.DataTickets;
@@ -52,6 +53,23 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     @Override
     public ResourceLocation getTextureResource(WardenGirlEntity animatable) {
         return TEXTURE;
+    }
+
+    /**
+     * Translucent, not cutout — the skin is a player skin and has partial alpha.
+     *
+     * <p>Measured: {@code warden_girl.png} contains alpha values 12, 16, 129, 160, 177 and 240 as
+     * well as 0 and 255. GeckoLib's default {@code entityCutoutNoCull} is alpha-<em>tested</em>: it
+     * discards below the cutoff and draws everything else fully opaque, so all six of those partial
+     * values would render as solid. Vanilla draws player skins with
+     * {@code RenderType.entityTranslucent} for exactly this reason.
+     *
+     * <p>The tendril layer keeps {@code entityCutoutNoCull} — it needs the no-cull half for its
+     * zero-depth plane, and its texture is binary alpha.
+     */
+    @Override
+    public RenderType getRenderType(WardenGirlEntity animatable, ResourceLocation texture) {
+        return RenderType.entityTranslucent(texture);
     }
 
     @Override
@@ -168,9 +186,6 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     /** Bounded so despawned entities cannot leak; springs are cheap to re-seed. */
     private static final int MAX_TRACKED_ENTITIES = 64;
 
-    /** Where warden_girl.geo.json actually puts the tendril pivots; the parameters offset from here. */
-    private static final double GEO_PIVOT_X = 4.0D;
-    private static final double GEO_PIVOT_Y = 30.0D;
 
     /** {right, left}, in the order of {@link Bones#HEADGEAR}. */
     private HeadgearSpring[] springsFor(WardenGirlEntity animatable) {
@@ -216,12 +231,13 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             double outward = side == 0 ? -1.0D : 1.0D;
             double splay = AnimParams.HEADGEAR_SPLAY.get() * outward;
             double tilt = AnimParams.HEADGEAR_TILT.get();
+            double roll = AnimParams.HEADGEAR_ROLL.get() * outward;
 
             // ASSIGNED, not added — see HeadgearSpring's class doc. This is what lets the tendrils
             // keep their Part 10.4 status of having no animation channel at all. The base pose is
             // part of the assigned value, not a second write on top of it.
             bone.setRotX(AxisConvention.toRad(tilt + spring.output(0, partialTick, target[0])));
-            bone.setRotY(AxisConvention.toRad(spring.output(1, partialTick, target[1])));
+            bone.setRotY(AxisConvention.toRad(roll + spring.output(1, partialTick, target[1])));
             bone.setRotZ(AxisConvention.toRad(splay + spring.output(2, partialTick, target[2])));
 
             // The body pass must not draw these — TendrilRenderLayer redraws them from
@@ -235,9 +251,9 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             // pivot + pos whatever the rotation — moving the bone is exactly equivalent to moving
             // the pivot, and unlike the pivot it is settable at runtime.
             AxisConvention.setPositionPx(bone,
-                    (AnimParams.HEADGEAR_PIVOT_X.get() - GEO_PIVOT_X) * outward,
-                    AnimParams.HEADGEAR_PIVOT_Y.get() - GEO_PIVOT_Y,
-                    0.0D);
+                    AnimParams.HEADGEAR_POS_X.get() * outward,
+                    AnimParams.HEADGEAR_POS_Y.get(),
+                    AnimParams.HEADGEAR_POS_Z.get());
             BoneTrace.noteSpring(side, spring.angles(), spring.velocities(),
                     spring.effectiveStiffness());
         }

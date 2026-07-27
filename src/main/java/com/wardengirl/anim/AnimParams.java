@@ -299,25 +299,34 @@ public final class AnimParams {
     // error is computed before the base pose is added. Changing the base cannot destabilise it.
 
     /** Outward lean, degrees. Right tendril leans toward −X, left toward +X. */
-    public static final Param HEADGEAR_SPLAY = addShape("headgear_splay", 5.0D, 0.0D, 90.0D,
-            "deg", "T3", "촉수 바깥 각도. 0 = 수직, 90 = 수평. 텍스처가 이미 사선이라 기본은 거의 0", "headgear_right", "headgear_left");
-    /** Backward lean, degrees. Positive tips the ends toward the mob's back. */
-    public static final Param HEADGEAR_TILT = addShape("headgear_tilt", 0.0D, -45.0D, 45.0D,
-            "deg", "T3", "촉수 뒤로 젖힘. 양수 = 뒤로, 음수 = 앞으로", "headgear_right", "headgear_left");
-    /**
-     * Attachment x, in model pixels, mirrored left/right. The geo pivot stays at 4; this is applied
-     * as a bone translation of {@code (value - 4)}.
-     *
-     * <p>Translating the bone is exactly equivalent to moving the pivot, and unlike the pivot it is
-     * settable at runtime. The render applies {@code T(pos)·T(pivot)·R·T(-pivot)}, so a root vertex
-     * sitting on the pivot lands at {@code pivot + pos} regardless of the rotation — i.e. the
-     * tendril is the same shape it would be if its pivot were there in the first place.
-     */
-    public static final Param HEADGEAR_PIVOT_X = addShape("headgear_pivot_x", 4.0D, 0.0D, 8.0D,
-            "px", "T3", "촉수 부착 x (좌우 대칭). 4 = 머리 옆면, 0 = 머리 중앙",
+    public static final Param HEADGEAR_SPLAY = addShape("headgear_splay", 5.0D, -90.0D, 90.0D,
+            "deg", "T3", "촉수 바깥 각도. 0 = 수직, 90 = 수평. 텍스처가 이미 사선이라 기본은 거의 0",
             "headgear_right", "headgear_left");
-    public static final Param HEADGEAR_PIVOT_Y = addShape("headgear_pivot_y", 30.0D, 24.0D, 34.0D,
-            "px", "T3", "촉수 부착 y. 머리 큐브는 y24~32", "headgear_right", "headgear_left");
+    /** Backward lean, degrees. Positive tips the ends toward the mob's back. */
+    public static final Param HEADGEAR_TILT = addShape("headgear_tilt", 0.0D, -90.0D, 90.0D,
+            "deg", "T3", "촉수 앞뒤 각도. 양수 = 뒤로, 음수 = 앞으로", "headgear_right", "headgear_left");
+    /**
+     * Roll about the tendril's own long axis (bone yRot), mirrored left/right.
+     *
+     * <p>The tendril is a flat plane, so this turns it edge-on to the viewer. Worth having because
+     * a plane facing straight forward and a plane angled outward read very differently.
+     */
+    public static final Param HEADGEAR_ROLL = addShape("headgear_roll", 0.0D, -90.0D, 90.0D,
+            "deg", "T3", "촉수 비틀기 (자기 축 회전). 평면이 정면을 보는 정도", "headgear_right", "headgear_left");
+
+    // Position is an OFFSET from the geo pivot (∓4, 30, 0), not an absolute coordinate — x is
+    // mirrored so one number moves both sides symmetrically. The geo pivot itself is not
+    // reachable at runtime; translating the bone is exactly equivalent (T(pos)·T(pivot)·R·T(-pivot)
+    // puts a root vertex on the pivot at pivot + pos whatever the rotation), and unlike the pivot
+    // it is settable from a command.
+    public static final Param HEADGEAR_POS_X = addShape("headgear_pos_x", 0.0D, -8.0D, 8.0D,
+            "px", "T3", "촉수 좌우 이동. 기준 피벗 x=∓4 에서의 오프셋. 부호는 좌우 자동 대칭",
+            "headgear_right", "headgear_left");
+    public static final Param HEADGEAR_POS_Y = addShape("headgear_pos_y", 0.0D, -8.0D, 8.0D,
+            "px", "T3", "촉수 상하 이동. 기준 피벗 y=30 에서의 오프셋 (머리 큐브는 y24~32)",
+            "headgear_right", "headgear_left");
+    public static final Param HEADGEAR_POS_Z = addShape("headgear_pos_z", 0.0D, -8.0D, 8.0D,
+            "px", "T3", "촉수 앞뒤 이동. 양수 = 앞(+Z)", "headgear_right", "headgear_left");
 
     /**
      * Debug isolation: 0 = both tendrils, 1 = right only, 2 = left only.
