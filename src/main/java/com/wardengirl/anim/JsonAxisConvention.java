@@ -1,5 +1,6 @@
 package com.wardengirl.anim;
 
+import com.eliotlash.mclib.math.Constant;
 import com.eliotlash.mclib.math.IValue;
 import software.bernie.geckolib.core.animation.Animation;
 import software.bernie.geckolib.core.keyframe.BoneAnimation;
@@ -49,12 +50,51 @@ public final class JsonAxisConvention {
     private JsonAxisConvention() {
     }
 
-    /** Wraps a keyframe value so that it reads back negated, whatever produced it. */
+    /**
+     * Wraps a keyframe value so that it reads back negated, <b>without becoming a
+     * {@link Constant}</b>.
+     *
+     * <p>That distinction is the whole problem. GeckoLib uses {@code instanceof Constant} as a
+     * marker meaning "this value was already converted at bake time":
+     *
+     * <pre>
+     *   BakedAnimationsAdapter.buildKeyframeStack(list, isForRotation)
+     *       x,y: isConstant() ? new Constant(toRadians(-v)) : molangValue
+     *       z  : isConstant() ? new Constant(toRadians( v)) : molangValue
+     *
+     *   AnimationController.getAnimationPointAtTick(..., isRotation, axis)
+     *       if (isRotation and NOT instanceof Constant) {
+     *           v = toRadians(v);  if (axis == X or Y) v *= -1;
+     *       }
+     * </pre>
+     *
+     * The first attempt wrapped every value in a plain {@code IValue}, which erased the marker, so
+     * a value already in radians was put through {@code toRadians} a second time and negated
+     * again. Measured: json {@code +61} on x arrived as {@code -1.065°}, and
+     * {@code -(61 × π/180) = -1.0647}. The z axis was correct only because it was passed through
+     * untouched and kept its {@code Constant}.
+     */
     private record Negated(IValue inner) implements IValue {
         @Override
         public double get() {
             return -this.inner.get();
         }
+    }
+
+    /**
+     * Negates one value, preserving whichever conversion stage it belongs to.
+     *
+     * <ul>
+     *   <li><b>Constant</b> — already {@code toRadians(-deg)} from the bake. Negating gives
+     *       {@code +toRadians(deg)}, which is what the bone should hold, and it must stay a
+     *       {@code Constant} so the runtime leaves it alone.</li>
+     *   <li><b>Expression</b> — still raw degrees; the runtime will apply
+     *       {@code toRadians(v) × −1}. Feeding it {@code −deg} therefore yields
+     *       {@code +toRadians(deg)}. It must stay non-{@code Constant} so that step still runs.</li>
+     * </ul>
+     */
+    private static IValue negateValue(IValue v) {
+        return v instanceof Constant ? new Constant(-v.get()) : new Negated(v);
     }
 
     /**
@@ -90,10 +130,10 @@ public final class JsonAxisConvention {
             // on exactly the axes this method is correcting.
             List<IValue> args = new ArrayList<>(k.easingArgs().size());
             for (IValue a : k.easingArgs()) {
-                args.add(new Negated(a));
+                args.add(negateValue(a));
             }
-            out.add(new Keyframe<>(k.length(), new Negated(k.startValue()),
-                    new Negated(k.endValue()), k.easingType(), args));
+            out.add(new Keyframe<>(k.length(), negateValue(k.startValue()),
+                    negateValue(k.endValue()), k.easingType(), args));
         }
         return out;
     }
