@@ -423,6 +423,29 @@ public final class AnimParams {
     public static final Param WALK_BODY_LEAN = addShape("walk_body_lean", 4.0D, -10.0D, 10.0D,
             "deg", "T5", "걷기 상시 상체 전방 기울기 (4.4.2). 0 이면 상체가 수직", "body");
 
+    /**
+     * 걷기 종료 유예, 틱. 임계 미만이 이만큼 <em>연속</em>되어야 걷기를 끝낸다.
+     *
+     * <p>시작은 즉시, 종료는 느리게 — 비대칭이 의도다. 걷기 시작이 늦으면 몸이 먼저 나가고
+     * 다리가 따라붙어 미끄러지는 것처럼 보인다. 종료가 늦는 것은 몇 틱 더 걷는 것이라 덜
+     * 눈에 띈다.
+     *
+     * <p>기본 6 은 {@code transitionLength} 와 같은 값이다. 시작점일 뿐 근거는 아니다.
+     */
+    public static final Param WALK_STOP_GRACE = addShape("walk_stop_grace", 6.0D, 0.0D, 20.0D,
+            "tick", "T5", "걷기 종료 유예. 임계 미만이 이만큼 연속되어야 정지로 본다", "root");
+
+    /**
+     * 걷기로 판정하는 평균 수평 속도 임계.
+     *
+     * <p>GeckoLib 의 {@code getMotionAnimThreshold()} 기본값과 같은 0.015 로 시작한다. 같은
+     * 양을 재지만 판정은 우리가 한다 — {@code AnimationState.isMoving()} 은
+     * {@code avgVelocity >= threshold && limbSwingAmount != 0} 을 <b>이력 없이</b> 매 프레임
+     * 새로 계산하므로, 경로 노드 사이 감속에서 한 틱만 내려가도 즉시 false 가 된다.
+     */
+    public static final Param WALK_MOVE_THRESHOLD = addShape("walk_move_threshold", 0.015D,
+            0.001D, 0.1D, "블록/틱", "T5", "걷기 판정 평균 수평 속도 임계 ((|vx|+|vz|)/2)", "root");
+
     // ---- 4.4.3 방향 전환 기울임 (T5) -------------------------------------------------------
 
     /**

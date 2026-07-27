@@ -14,6 +14,7 @@ import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
+import com.wardengirl.anim.AnimParams;
 import com.wardengirl.anim.AnimRegistry;
 import software.bernie.geckolib.animatable.GeoEntity;
 import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
@@ -186,10 +187,49 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         if (isSignTest()) {
             return state.setAndContinue(AnimRegistry.SIGN_TEST_LOOP);
         }
-        if (state.isMoving()) {
+        if (isWalkingForAnimation()) {
             return state.setAndContinue(AnimRegistry.WALK_LOOP);
         }
-        return PlayState.STOP;
+        return state.setAndContinue(AnimRegistry.IDLE_LOOP);
+    }
+
+    // ---- 걷기 판정 (자체, 이력 있음) ------------------------------------------------------------
+
+    /** Last tick the entity was measurably moving, or {@link Integer#MIN_VALUE} if never. */
+    private int lastMovingTick = Integer.MIN_VALUE;
+    private boolean walkingForAnimation = false;
+
+    /**
+     * Whether to play the walk cycle. Replaces {@code AnimationState.isMoving()}.
+     *
+     * <h2>Why not the library's</h2>
+     *
+     * {@code AnimationState.isMoving()} is
+     * {@code avgVelocity >= getMotionAnimThreshold() && limbSwingAmount != 0}, recomputed from
+     * scratch every frame with <b>no history</b>, and {@code getDeltaMovement()} is an
+     * <em>instantaneous</em> velocity. A pathfinding mob decelerates between path nodes and stops
+     * dead on reaching a destination before picking the next one, so the average dips below the
+     * 0.015 default for a tick or two at a time while still visibly walking. Each dip ended the
+     * animation and the next frame restarted it from tick 0.
+     *
+     * <h2>Asymmetric hysteresis</h2>
+     *
+     * Start immediately, stop only after {@code walk_stop_grace} consecutive ticks below the
+     * threshold. A late start looks like the body sliding out from under the legs; a late stop is
+     * a couple of extra steps and reads as far less wrong.
+     */
+    public boolean isWalkingForAnimation() {
+        double vx = Math.abs(getDeltaMovement().x);
+        double vz = Math.abs(getDeltaMovement().z);
+        double avg = (vx + vz) / 2.0D;
+        if (avg >= AnimParams.WALK_MOVE_THRESHOLD.get()) {
+            this.lastMovingTick = this.tickCount;
+            this.walkingForAnimation = true;
+        } else if (this.walkingForAnimation && this.lastMovingTick != Integer.MIN_VALUE
+                && this.tickCount - this.lastMovingTick >= AnimParams.WALK_STOP_GRACE.get()) {
+            this.walkingForAnimation = false;
+        }
+        return this.walkingForAnimation;
     }
 
     @Override

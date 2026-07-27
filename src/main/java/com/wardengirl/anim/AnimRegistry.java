@@ -32,13 +32,21 @@ public final class AnimRegistry {
 
     public static final RawAnimation WALK_LOOP = RawAnimation.begin().thenLoop(WALK);
 
+    /** 4.4.1 idle — an empty clip, not {@link software.bernie.geckolib.core.object.PlayState#STOP}. */
+    public static final String IDLE = "idle";
+
+    public static final RawAnimation IDLE_LOOP = RawAnimation.begin().thenLoop(IDLE);
+
     /**
-     * idle 정지 is the <em>absence</em> of a C2 animation, not an animation of its own.
+     * C2 transition length, ticks. Design doc 4.4.1.
      *
-     * <p>4.4.1 says "C1만 재생". Registering an empty idle clip here would be a second thing writing
-     * the same bones as C1 every tick; returning {@code STOP} instead lets the controller unwind to
-     * nothing and leaves C1 alone. The 6-tick transition still applies, because GeckoLib blends
-     * from the last posed state back toward the snapshot when a controller stops.
+     * <p>It only takes effect because idle is an <em>empty clip</em> rather than
+     * {@code PlayState.STOP}. Measured in the 4.8.4 bytecode: {@code AnimationController.process}
+     * checks {@code playState == STOP} and, if so, sets {@code State.STOPPED}, sets
+     * {@code justStopped} and returns immediately — the {@code TRANSITIONING} branch sits above
+     * that check and is never reached. The bone therefore loses the walk's contribution in a
+     * single frame, and {@code justStopped} makes the next start call {@code adjustTick} so the
+     * clip restarts from tick 0.
      */
     public static final int TRANSITION_TICKS = 6;
 

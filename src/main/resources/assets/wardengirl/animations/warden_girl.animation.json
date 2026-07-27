@@ -708,6 +708,21 @@
           }
         }
       }
+    },
+    "idle": {
+      "loop": true,
+      "animation_length": 0.05,
+      "//": [
+        "4.4.1 idle 정지. 본이 하나도 없는 빈 클립이다 - 의도적이다.",
+        "",
+        "PlayState.STOP 은 transitionLength 를 적용하지 않는다. AnimationController.process 에서",
+        "STOP 이면 State.STOPPED 로 놓고 즉시 return 하며, 전이 로직은 그 검사보다 위에 있어",
+        "타지 않는다. 그래서 걷기 기여가 한 프레임에 0 이 되고, justStopped 가 남아",
+        "재시작 때 재생 위치가 0 으로 리셋된다.",
+        "",
+        "빈 클립을 재생하면 STOP 분기를 아예 타지 않으므로 6틱 전이가 실제로 작동한다.",
+        "본이 없으니 본에 기여하지 않는다 - 4.4.1 'C1만 재생' 과 실질 동일하다."
+      ]
     }
   }
 }
