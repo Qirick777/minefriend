@@ -299,6 +299,17 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
 
     private boolean rawMoving = false;
 
+    /**
+     * 4.13 좌석 높이. {@code Boat.positionRider} 가 이 값을 더한다 — 승객 높이는 쓰지 않는다.
+     *
+     * <p>서버와 클라이언트가 모두 {@code positionRider} 를 부르고 둘 다 같은 파라미터를 읽으므로
+     * 불일치가 생기지 않는다. 파라미터는 {@code ParamSyncPacket} 으로 동기화된다.
+     */
+    @Override
+    public double getMyRidingOffset() {
+        return isPassenger() ? AnimParams.SIT_RIDING_OFFSET.get() : super.getMyRidingOffset();
+    }
+
     public boolean isWalkingForAnimation() {
         // 4.13. 탈것에 타면 몹 좌표가 탈것을 따라 움직여 이동으로 잡힌다. 별도 게이트를 두면
         // 조건이 둘로 갈라져 어긋나므로 여기 하나로 막는다.

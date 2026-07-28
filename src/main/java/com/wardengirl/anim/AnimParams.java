@@ -264,8 +264,8 @@ public final class AnimParams {
     public static final Param SIT_LEG_X = addShape("sit_leg_x", 90.0D, 0.0D, 120.0D,
             "deg", "T6", "탑승 앉기 다리 xRot. + 가 앞이다 (실측)", "leg_right", "leg_left");
     /** 다리를 좌우로 벌리는 각. 오른다리 +, 왼다리 −. */
-    public static final Param SIT_LEG_Y = addShape("sit_leg_y", 10.0D, 0.0D, 30.0D,
-            "deg", "T6", "탑승 앉기 다리 yRot (오른쪽 +, 왼쪽 −)", "leg_right", "leg_left");
+    public static final Param SIT_LEG_Y = addShape("sit_leg_y", -10.0D, -30.0D, 0.0D,
+            "deg", "T6", "탑승 앉기 다리 yRot (오른쪽 −, 왼쪽 +) = 밖짱", "leg_right", "leg_left");
     /**
      * 팔 xRot. 바닐라 riding 의 −36° 는 두 손으로 노를 잡는 자세라 쓰지 않는다.
      *
@@ -273,7 +273,7 @@ public final class AnimParams {
      * 무릎 위까지의 각이 대략 그 부근이고, −15 면 팔이 허공에 뜨고 −25 면 손이 무릎을 지나
      * 정강이로 내려간다.
      */
-    public static final Param SIT_ARM_X = addShape("sit_arm_x", -20.0D, -60.0D, 0.0D,
+    public static final Param SIT_ARM_X = addShape("sit_arm_x", 20.0D, 0.0D, 60.0D,
             "deg", "T6", "탑승 앉기 팔 xRot", "arm_right", "arm_left");
     /**
      * 팔 zRot. 오른팔 +, 왼팔 −(둘 다 바깥).
@@ -284,6 +284,18 @@ public final class AnimParams {
      */
     public static final Param SIT_ARM_Z = addShape("sit_arm_z", 2.0D, -10.0D, 10.0D,
             "deg", "T6", "탑승 앉기 팔 zRot (오른쪽 +, 왼쪽 −)", "arm_right", "arm_left");
+    /**
+     * 보트 좌석 높이 보정. {@code Entity.getMyRidingOffset()} 로 반환한다.
+     *
+     * <p><b>사람이 지시한 훅과 다르다 — 보고 대상이다.</b> 바이트코드상 {@code Boat.positionRider}
+     * 는 {@code this.getPassengersRidingOffset()}(보트 자신) 과 {@code passenger.getMyRidingOffset()}
+     * 만 더한다. 우리 몹의 {@code getPassengersRidingOffset()} 은 <b>무언가가 우리를 탈 때</b> 쓰이는
+     * 값이라 보트 좌석 높이에 영향을 주지 않는다. 그래서 실제로 듣는 훅인 승객 쪽을 썼다.
+     * {@code Player} 가 이 훅으로 −0.35 를 반환하므로 기본값도 그 값이다.
+     */
+    public static final Param SIT_RIDING_OFFSET =
+            addShape("sit_riding_offset", -0.35D, -2.0D, 0.5D,
+                    "block", "T6", "탑승 시 좌석 높이 보정 (getMyRidingOffset)", "root");
     /** 탑승 중에만 킁킁 진폭에 곱한다. 0 이면 탑승 중 킁킁 없음. */
     public static final Param SNIFF_RIDING_SCALE =
             addShape("sniff_riding_scale", 1.0D, 0.0D, 1.0D,
