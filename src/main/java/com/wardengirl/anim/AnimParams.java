@@ -221,6 +221,45 @@ public final class AnimParams {
             "flag", "T5", "C2 공급 경로. 0 = 컨트롤러(이관 전), 1 = Java 직접 평가(이관 후)",
             "root", "body", "head", "arm_right", "arm_left", "leg_right", "leg_left");
 
+    // ---- 4.4.2 거리 기반 걷기 (문제 3, 2라운드) --------------------------------------------------
+    //
+    // 걷기 사이클을 시간이 아니라 이동 거리에서 뽑는다. 바닐라 HumanoidModel 과 같은 구조다:
+    // 위상은 limbSwing(누적 이동), 진폭은 limbSwingAmount(평활된 속도).
+    //
+    // 자기 일관성이 핵심이다. 진폭이 정하는 보폭만큼 이동했을 때 한 사이클이 끝나도록 위상을
+    // 전진시킨다. 그래서 진폭 배율을 어떻게 잡든 발 미끄러짐 비율은 1.0 으로 유지된다 —
+    // 배율은 실루엣을 정하지 접지를 깨지 않는다.
+
+    /** 거리 대비 주기 배율. 1.0 = 계산된 무미끄러짐 주기. 크게 하면 보폭이 길어지고 발이 끌린다. */
+    public static final Param WALK_CYCLE_SCALE = addShape("walk_cycle_scale", 1.0D, 0.25D, 4.0D,
+            "ratio", "T5", "걷기 주기 배율. 1.0 이 발이 미끄러지지 않는 계산값이다",
+            "leg_right", "leg_left", "arm_right", "arm_left", "body", "head", "root");
+
+    /**
+     * 다리 진폭 배율. 4.4.2 의 ±18° 에 곱한다.
+     *
+     * <p>기준값 ±18° 는 그대로 둔다. 바닐라 {@code HumanoidModel} 의 다리 계수는 1.4 rad = 80.2°
+     * 이고 우리 ±18° 는 그 4.5분의 1이라, <b>배율 4.5 가 바닐라와 같아지는 지점</b>이다.
+     * 실루엣 판정은 사람이 한다.
+     */
+    public static final Param WALK_LEG_AMP_SCALE = addShape("walk_leg_amp_scale", 1.0D, 0.25D, 4.0D,
+            "ratio", "T5", "걷기 다리 진폭 배율. 4.5 면 바닐라와 같다 (범위 상한은 4.0)",
+            "leg_right", "leg_left");
+    /** 팔 진폭 배율. 다리를 키우면 팔도 같이 봐야 한다. */
+    public static final Param WALK_ARM_AMP_SCALE = addShape("walk_arm_amp_scale", 1.0D, 0.25D, 4.0D,
+            "ratio", "T5", "걷기 팔 진폭 배율", "arm_right", "arm_left");
+
+    /**
+     * {@code walk_force} 가 위상에 먹이는 합성 속도, 블록/틱. 0 이면 위상이 멈춘다.
+     *
+     * <p>기본값은 실측 순항 속도다. {@code walk_force} 는 실제 이동을 만들지 않으므로 거리 기반
+     * 위상이 그대로 멈춰 버린다 — 지금까지 그 값으로 잰 전이·합성 창이 전부 무의미해진다.
+     * 합성 속도를 공급하면 느린 걷기·빠른 걷기도 재현할 수 있어 검증 도구로도 낫다.
+     */
+    public static final Param WALK_FORCE_SPEED = addShape("walk_force_speed", 0.11428D, 0.0D, 0.5D,
+            "블록/틱", "T5", "walk_force 가 위상에 먹이는 합성 속도. 0 이면 위상 정지",
+            "leg_right", "leg_left", "arm_right", "arm_left");
+
     // ---- C3 직접 평가 (T5 2라운드) --------------------------------------------------------------
     //
     // C3 는 컨트롤러가 아니라 setCustomAnimations 에서 직접 평가해 가산한다. 컨트롤러였다면 C2 가

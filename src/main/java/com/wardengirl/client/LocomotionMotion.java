@@ -1,5 +1,6 @@
 package com.wardengirl.client;
 
+import com.wardengirl.anim.AnimParams;
 import com.wardengirl.anim.AnimRegistry;
 
 /**
@@ -45,16 +46,40 @@ import com.wardengirl.anim.AnimRegistry;
  * <p>The fade-<em>in</em> stays a cross-fade. There the source is idle's constant zero, so the sum
  * collapses to one term anyway, and it measured clean both before and after the migration.
  *
- * <h2>Round 1 keeps the clock as it was</h2>
+ * <h2>Round 2: the playhead is driven by distance</h2>
  *
- * The playhead still advances one tick per tick. Distance-driven phase and speed-scaled amplitude
- * are round 2. This split exists so the regression check has exactly one variable: if the numbers
- * move here, it is the migration and not the new clock.
+ * The cycle no longer advances with time. It advances with how far the mob has actually gone, and
+ * the distance one cycle covers is computed from the leg amplitude that will be drawn:
+ *
+ * <pre>
+ *   한 걸음  = 2 × 12px × sin(유효 다리 진폭) / 16      (레버 12px, 발바닥 y=0)
+ *   한 사이클 = 2 걸음
+ *   위상 전진 = (이번 틱 이동거리 / 한 사이클) × 26틱 / walk_cycle_scale
+ * </pre>
+ *
+ * <b>Self-consistent by construction.</b> The stride the amplitude implies <em>is</em> the distance
+ * the cycle takes, so {@code walk_leg_amp_scale} changes the silhouette without ever breaking
+ * contact — the foot-slip ratio stays 1.0 at any amplitude. That is why the amplitude is a free
+ * tuning knob and the cycle length is not.
  */
 public final class LocomotionMotion {
 
     /** json {@code animation_length: 1.3} seconds; GeckoLib multiplies by 20. */
     public static final double WALK_LENGTH_TICKS = 26.0D;
+
+    /** 4.4.2 leg amplitude, degrees. {@code walk_leg_amp_scale} and limbSwingAmount multiply it. */
+    public static final double LEG_AMPLITUDE_DEG = 18.0D;
+
+    /**
+     * Blocks the body must cover per walk cycle, for a given drawn leg amplitude.
+     *
+     * <p>The leg pivots at {@code y = 12px} and the sole sits at {@code y = 0}, so a sweep to
+     * {@code ±A} moves the sole {@code 2 × 12 × sin A} pixels — one step. A cycle is two steps.
+     * Divided by 16 to get blocks.
+     */
+    public static double cycleBlocks(double legAmplitudeDeg) {
+        return 2.0D * (2.0D * 12.0D * Math.sin(Math.toRadians(Math.abs(legAmplitudeDeg))) / 16.0D);
+    }
 
     /** Ticks into the walk cycle, wrapped. */
     private double phase;
@@ -71,13 +96,19 @@ public final class LocomotionMotion {
         return this.lastDt;
     }
 
+    /** Ticks since the previous frame, for callers that need to convert a speed into a distance. */
+    public double lastFrameTicks(double now) {
+        return Double.isNaN(this.lastTime) ? 0.0D : Math.max(0.0D, now - this.lastTime);
+    }
+
     /**
      * Advances to {@code now} and returns the walk clip's blend weight.
      *
      * @param now     {@code tickCount + partialTick}
      * @param walking whether C2 should be playing the walk cycle
      */
-    public double advance(double now, boolean walking) {
+    public double advance(double now, boolean walking, double distanceBlocks,
+                          double legAmplitudeDeg) {
         if (Double.isNaN(this.lastTime)) {
             this.lastTime = now;
             this.weight = walking ? 1.0D : 0.0D;
@@ -92,7 +123,15 @@ public final class LocomotionMotion {
             dt = 0.0D;
         }
 
-        this.phase = (this.phase + dt) % WALK_LENGTH_TICKS;
+        // Distance, not time. A cycle covers exactly the stride its own amplitude implies, so the
+        // feet cannot slide however the amplitude is tuned. Guarded because a zero amplitude has
+        // no stride to divide by - at that point the legs are not moving and neither should the
+        // phase.
+        double perCycle = cycleBlocks(legAmplitudeDeg) * AnimParams.WALK_CYCLE_SCALE.get();
+        if (perCycle > 1.0E-6D && distanceBlocks > 0.0D) {
+            this.phase = (this.phase + distanceBlocks / perCycle * WALK_LENGTH_TICKS)
+                    % WALK_LENGTH_TICKS;
+        }
         if (this.wasWalking && !walking) {
             this.frozenPhase = this.phase;
         } else if (walking) {

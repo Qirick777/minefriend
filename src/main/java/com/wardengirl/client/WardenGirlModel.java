@@ -200,7 +200,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         // shares with C3 - now known directly instead of read back off the bone.
         double[] walkOnly = AnimParams.C2_SOURCE.get() < 0.5D
                 ? readBlendAxes()               // 이관 전: 컨트롤러가 이미 본에 썼다
-                : applyLocomotionMotion(animatable);
+                : applyLocomotionMotion(animatable, animationState);
         VitalMotion.Contribution vital = applyVitalMotion(animatable);
         if (VitalCheck.isRunning()) {
             VitalCheck.sample(readAllBones(), readAllPositions(), animatable.tickCount,
@@ -222,8 +222,13 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         if (BoneTrace.isRunning()) {
             // Read-only: isWalkingForAnimation() advances the hysteresis, and calling it here would
             // run that state machine at frame rate on top of its normal per-frame call.
+            // 12px lever, sole at y=0, /16 to blocks. The drawn angle, so it includes every
+            // amplitude scale actually applied.
+            double legDeg = getBone(Bones.LEG_RIGHT)
+                    .map(b -> AxisConvention.toDeg(b.getRotX())).orElse(0.0D);
             BoneTrace.noteMovement(animatable.getX(), animatable.getZ(),
                     animatable.getDeltaMovement().horizontalDistance(),
+                    12.0D * Math.sin(Math.toRadians(legDeg)) / 16.0D,
                     animatable.walkStateForReport(), animatable.tickCount);
             BoneTrace.noteWalkState(animatable.walkStateForReport(),
                     animatable.rawMovingForReport(), animatable.lastMovingTickForReport(),
@@ -522,7 +527,8 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      *
      * @return C2's contribution on {@link #readBlendAxes}'s four axes, in that order
      */
-    private double[] applyLocomotionMotion(WardenGirlEntity animatable) {
+    private double[] applyLocomotionMotion(WardenGirlEntity animatable,
+                                          AnimationState<WardenGirlEntity> animationState) {
         if (this.locomotions.size() > MAX_TRACKED_ENTITIES) {
             this.locomotions.clear();
         }
@@ -533,7 +539,27 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         // signtest owns the rig while it is on, the same way axistest does - the whole point is to
         // read back the constant the json put there, and a walk cycle on top would bury it.
         boolean walking = !animatable.isSignTest() && animatable.isWalkingForAnimation();
-        double weight = loco.advance(now, walking);
+
+        // 4.4.2 거리 기반. 진폭은 limbSwingAmount (평활된 속도), 위상은 그 진폭이 정하는 보폭.
+        //
+        // limbSwingAmount is vanilla's walkAnimation.speed(), which GeckoLib interpolates for us.
+        // limbSwing (walkAnimation.position()) is its integral, so either would give a
+        // distance-locked phase - but the position delta is used instead because it is the one
+        // quantity already proven truthful: getDeltaMovement() reported half the real travel, and
+        // limbSwing carries vanilla's own min(dist*4, 1) clamp on top. Part 11.
+        double swingAmount = Math.min(1.0D, Math.max(0.0D, animationState.getLimbSwingAmount()));
+        double legAmp = LocomotionMotion.LEG_AMPLITUDE_DEG
+                * AnimParams.WALK_LEG_AMP_SCALE.get() * swingAmount;
+        double distance = animatable.walkDistanceThisTickForAnimation();
+        if (AnimParams.WALK_FORCE.get() >= 0.5D) {
+            // walk_force makes no real movement, so a distance-driven phase would simply stop.
+            // Feeding it a synthetic cruise speed keeps every window measured with it meaningful -
+            // and lets a slow or fast walk be reproduced on demand. Part 6.2.
+            distance = AnimParams.WALK_FORCE_SPEED.get() * loco.lastFrameTicks(now);
+            swingAmount = 1.0D;
+            legAmp = LocomotionMotion.LEG_AMPLITUDE_DEG * AnimParams.WALK_LEG_AMP_SCALE.get();
+        }
+        double weight = loco.advance(now, walking, distance, legAmp);
         if (BoneTrace.isRunning()) {
             BoneTrace.noteFade(weight, loco.lastDt(), now);
         }
@@ -546,23 +572,48 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             return new double[4];
         }
         ClipSampler.Pose pose = ClipSampler.sample(clip, loco.phase());
+        // Amplitude scales with speed, vanilla-style. Legs and arms get their own user scale on top
+        // because raising the stride without raising the arm swing reads as a limp - the two are
+        // judged together on screen.
+        double armScale = swingAmount * AnimParams.WALK_ARM_AMP_SCALE.get();
+        double legScale = swingAmount * AnimParams.WALK_LEG_AMP_SCALE.get();
         for (Map.Entry<String, double[]> e : pose.rotationsDeg().entrySet()) {
-            addRotX(e.getKey(), e.getValue()[0] * weight);
-            addRotY(e.getKey(), e.getValue()[1] * weight);
-            addRotZ(e.getKey(), e.getValue()[2] * weight);
+            double amp = weight * boneAmplitude(e.getKey(), swingAmount, armScale, legScale);
+            addRotX(e.getKey(), e.getValue()[0] * amp);
+            addRotY(e.getKey(), e.getValue()[1] * amp);
+            addRotZ(e.getKey(), e.getValue()[2] * amp);
         }
         for (Map.Entry<String, double[]> e : pose.positionsRaw().entrySet()) {
-            addPositionRaw(e.getKey(), e.getValue(), weight);
+            addPositionRaw(e.getKey(), e.getValue(),
+                    weight * boneAmplitude(e.getKey(), swingAmount, armScale, legScale));
         }
         double[] armR = pose.rotationsDeg().get(Bones.ARM_RIGHT);
         double[] armL = pose.rotationsDeg().get(Bones.ARM_LEFT);
         double[] body = pose.rotationsDeg().get(Bones.BODY);
         double[] head = pose.rotationsDeg().get(Bones.HEAD);
+        double armAmp = weight * armScale;
+        double bodyAmp = weight * swingAmount;
         return new double[]{
-                armR == null ? 0.0D : armR[0] * weight,
-                armL == null ? 0.0D : armL[0] * weight,
-                body == null ? 0.0D : body[1] * weight,
-                head == null ? 0.0D : head[1] * weight};
+                armR == null ? 0.0D : armR[0] * armAmp,
+                armL == null ? 0.0D : armL[0] * armAmp,
+                body == null ? 0.0D : body[1] * bodyAmp,
+                head == null ? 0.0D : head[1] * bodyAmp};
+    }
+
+    /**
+     * Per-bone amplitude multiplier for the walk clip.
+     *
+     * <p>Everything scales with speed (a slow walk should not twist the torso as hard as a fast
+     * one — vanilla does the same). Only the arms and legs carry an extra user scale, because those
+     * are the two the silhouette is judged by.
+     */
+    private static double boneAmplitude(String bone, double swingAmount, double armScale,
+                                        double legScale) {
+        return switch (bone) {
+            case Bones.ARM_RIGHT, Bones.ARM_LEFT -> armScale;
+            case Bones.LEG_RIGHT, Bones.LEG_LEFT -> legScale;
+            default -> swingAmount;
+        };
     }
 
     // ---- C3 액션 레이어 (직접 평가) ---------------------------------------------------------

@@ -272,6 +272,36 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
      * hysteresis. A verifier that called it would be driving the thing it is measuring, and would
      * do so at frame rate rather than tick rate.
      */
+    /**
+     * Horizontal distance covered since the previous tick, in blocks.
+     *
+     * <p>Measured from the entity's own position, <b>not</b> from {@code getDeltaMovement()}: that
+     * field reported roughly half the real travel (0.051 against 0.093 blocks/tick measured), and
+     * feeding it to a distance-driven phase would halve the stride. Part 11.
+     *
+     * <p>Zero on any frame that is not the first of a new tick, so the phase advances once per tick
+     * rather than once per frame.
+     */
+    public double walkDistanceThisTickForAnimation() {
+        if (this.tickCount == this.lastDistanceTick) {
+            return 0.0D;
+        }
+        double d = 0.0D;
+        if (this.lastDistanceTick != Integer.MIN_VALUE) {
+            double dx = getX() - this.lastDistanceX;
+            double dz = getZ() - this.lastDistanceZ;
+            d = Math.sqrt(dx * dx + dz * dz);
+        }
+        this.lastDistanceTick = this.tickCount;
+        this.lastDistanceX = getX();
+        this.lastDistanceZ = getZ();
+        return d;
+    }
+
+    private int lastDistanceTick = Integer.MIN_VALUE;
+    private double lastDistanceX;
+    private double lastDistanceZ;
+
     public boolean walkStateForReport() {
         return this.walkingForAnimation;
     }

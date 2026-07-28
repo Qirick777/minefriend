@@ -300,6 +300,8 @@ public final class BoneTrace {
         walkFrames = 0;
         fadeCount = 0;
         moveSumBlocks = 0.0D;
+        footArcSum = 0.0D;
+        lastFootArc = Double.NaN;
         moveTicks = 0;
         moveMaxPerTick = 0.0D;
         moveLastX = Double.NaN;
@@ -717,11 +719,20 @@ public final class BoneTrace {
     private static int moveLastTick = Integer.MIN_VALUE;
     private static double deltaMovementSum = 0.0D;
 
-    public static void noteMovement(double x, double z, double deltaMovementHoriz, boolean walking,
-                                    int tickCount) {
+    /**
+     * @param footArcNow the drawn sole offset from under the hip, in blocks
+     *                   ({@code 12 · sin(leg xRot) / 16})
+     */
+    public static void noteMovement(double x, double z, double deltaMovementHoriz,
+                                    double footArcNow, boolean walking, int tickCount) {
         if (remainingTicks <= 0 || tickCount == moveLastTick) {
             return;
         }
+        if (!Double.isNaN(moveLastX) && walking && tickCount == moveLastTick + 1
+                && !Double.isNaN(lastFootArc) && !Double.isNaN(footArcNow)) {
+            footArcSum += Math.abs(footArcNow - lastFootArc);
+        }
+        lastFootArc = footArcNow;
         if (!Double.isNaN(moveLastX) && walking && tickCount == moveLastTick + 1) {
             double dx = x - moveLastX;
             double dz = z - moveLastZ;
@@ -744,6 +755,23 @@ public final class BoneTrace {
      * (one per leg), so a non-sliding body advances {@code 0.92703 blocks} per 26-tick cycle —
      * {@code 0.035655 blocks/tick}.
      */
+    /**
+     * Foot travel divided by body travel, over the same ticks.
+     *
+     * <p>Part 6.3.0.1: the raw slip distance depends on the walk phase and on how long the mob
+     * happened to walk, so it cannot be compared between runs. The <b>ratio</b> can — it is 1.0
+     * when the planted foot holds still relative to the ground, whatever the amplitude, whatever
+     * the speed, however long the sample.
+     *
+     * <p>Foot travel is computed from the drawn leg angle, not from a bone position: the sole is
+     * {@code 12 × sin(legAngle)} pixels from under the hip, so the ground-relative movement of a
+     * planted foot is the body's travel minus that quantity's change. Summing |Δ| of
+     * {@code 12·sin θ / 16} over the window and dividing by the body's travel gives the ratio
+     * directly.
+     */
+    private static double footArcSum = 0.0D;
+    private static double lastFootArc = Double.NaN;
+
     private static void reportMovement() {
         double stridePx = 2.0D * 12.0D * Math.sin(Math.toRadians(18.0D));
         double perCycle = 2.0D * stridePx / 16.0D;
@@ -770,8 +798,13 @@ public final class BoneTrace {
                 "[trace]   어긋남         : 실측 / 필요 = %.3f 배  (1.0 이면 발이 미끄러지지 않는다)",
                 required > 1e-9 ? measured / required : 0.0D));
         WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                "[trace]   사이클 이론값  : 현재 속도라면 %.2f 틱 주기여야 한다 (지금 26틱 고정)",
+                "[trace]   사이클 이론값  : 현재 속도라면 %.2f 틱 주기여야 한다 (±18° 기준)",
                 measured > 1e-9 ? perCycle / measured : 0.0D));
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   ** 발 이동 / 몸 이동 = %.4f **  (1.0 이면 발이 미끄러지지 않는다. "
+                        + "발 %.4f블록 / 몸 %.4f블록)",
+                moveSumBlocks > 1e-9 ? footArcSum / moveSumBlocks : 0.0D,
+                footArcSum, moveSumBlocks));
     }
 
     // ---- C2 페이드 (가설 2 확인) -----------------------------------------------------------------
