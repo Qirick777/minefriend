@@ -18,21 +18,24 @@ import java.util.*;
  * side of it exceeds VISIBLE degrees. A 0.05 degree wiggle is a reversal in the data and
  * nothing at all on screen.
  */
-public final class HeadCount {
+public final class ClipAudit {
 
     static final double VISIBLE = 1.0;   // 도. 이보다 작은 스윙은 화면에서 안 보인다
 
     public static void main(String[] args) throws Exception {
         String path = "src/main/resources/assets/wardengirl/animations/warden_girl.animation.json";
         JsonObject root = JsonParser.parseString(Files.readString(Paths.get(path))).getAsJsonObject();
-        JsonObject clip = root.getAsJsonObject("animations").getAsJsonObject("idle_sniff");
+        String name = args.length > 0 ? args[0] : "idle_sniff";
+        JsonObject clip = root.getAsJsonObject("animations").getAsJsonObject(name);
+        System.out.println("클립 " + name);
+        int fails = 0;
         double len = clip.get("animation_length").getAsDouble() * 20.0;
         JsonObject bones = clip.getAsJsonObject("bones");
 
-        System.out.printf("idle_sniff  길이 %.1f틱%n%n", len);
+        System.out.printf("  길이 %.1f틱%n%n", len);
         Map<String, double[][]> series = new LinkedHashMap<>();
         int steps = 3800;
-        for (String bone : new String[]{"body", "head"}) {
+        for (String bone : new String[]{"body", "head", "arm_right", "arm_left"}) {
             if (!bones.has(bone) || !bones.getAsJsonObject(bone).has("rotation")) continue;
             JsonObject rot = bones.getAsJsonObject(bone).getAsJsonObject("rotation");
             for (int axis = 0; axis < 3; axis++) {
@@ -46,6 +49,7 @@ public final class HeadCount {
                 String key = bone + "." + "xyz".charAt(axis) + "Rot";
                 series.put(key, new double[][]{t, v});
                 report(key, t, v);
+                fails += zeroCross(name, key, t, v);
             }
         }
         // 머리 방향 벡터: R_body * R_head * (0,0,1).  본 규약대로 Rz*Ry*Rx.
@@ -61,7 +65,67 @@ public final class HeadCount {
         System.out.println();
         report("합성 머리방향 pitch(위아래)", bt, pitch);
         report("합성 머리방향 yaw(좌우)", bt, yaw);
+        System.out.println(fails == 0 ? "\n판정: 통과" : "\n판정: **실패 " + fails + "건**");
+        if (fails > 0) {
+            System.exit(1);
+        }
     }
+
+    /**
+     * 0 통과 횟수 검사. <b>json 만으로 판정한다 — 게임을 띄우지 않는다.</b>
+     *
+     * <h2>왜 이 검사가 필요했나</h2>
+     *
+     * 클립 생성 코드가 축별 시각을 합집합으로 묶으면서 상대 축에 0 을 채웠다. 그래서
+     * {@code head.xRot} 이 끄덕 사이마다 정확히 0 을 지났고, 얼굴이 매번 정면으로 복귀해
+     * 끄덕이 4회가 아니라 8회로 보였다. <b>이것이 화면 반려를 두 번 통과해 살아남았다</b> —
+     * 아무도 생성된 데이터를 검사하지 않았기 때문이다.
+     *
+     * <p>선언값은 "이 채널이 0 을 몇 번 지나도 되는가"다. 진입에서 예비동작이 반대 부호로
+     * 나갔다 본동작으로 넘어오면 1회, 복귀에서 오버슈트로 넘어가면 1회 — 그래서 보통 2다.
+     * 그보다 많으면 값이 중간에 0 으로 되돌아갔다는 뜻이고, 그것이 이 결함의 서명이다.
+     */
+    static int zeroCross(String clip, String key, double[] t, double[] v) {
+        Integer max = LIMIT.get(clip + "/" + key);
+        // 0 을 스치기만 한 것은 세지 않는다. catmullrom 은 끝점 부근에서 0.05도쯤 반대
+        // 부호로 언더슈트하는데 그것은 화면에 없는 것이고, 우리가 잡으려는 것은 "자세가
+        // 실제로 반대편으로 넘어갔는가" 다. 넘어간 뒤 VISIBLE 이상 머물러야 1회로 센다.
+        int cross = 0;
+        int sign = 0;
+        for (int i = 0; i < v.length; i++) {
+            if (Math.abs(v[i]) < VISIBLE) {
+                continue;
+            }
+            int s2 = v[i] > 0 ? 1 : -1;
+            if (sign != 0 && s2 != sign) {
+                cross++;
+            }
+            sign = s2;
+        }
+        if (max == null) {
+            System.out.printf("    %-18s 0 통과 %d회  (선언 없음 - 참고)%n", key, cross);
+            return 0;
+        }
+        boolean ok = cross <= max;
+        System.out.printf("    %-18s 0 통과 %d회  선언 %d  %s%n", key, cross, max,
+                ok ? "OK" : "**FAIL - 값이 중간에 0 으로 되돌아간다**");
+        return ok ? 0 : 1;
+    }
+
+    /** 클립마다 선언한다. 새 클립을 만들면 여기에 한 줄 추가하는 것이 규칙이다. */
+    static final Map<String, Integer> LIMIT = Map.ofEntries(
+            Map.entry("idle_sniff/head.xRot", 2),
+            Map.entry("idle_sniff/head.yRot", 6),
+            Map.entry("idle_sniff/body.xRot", 2),
+            Map.entry("idle_sniff/body.zRot", 6),
+            Map.entry("idle_sniff/arm_right.xRot", 2),
+            Map.entry("idle_sniff/arm_right.zRot", 0),
+            Map.entry("idle_sniff/arm_left.xRot", 2),
+            Map.entry("idle_sniff/arm_left.zRot", 0),
+            Map.entry("idle_hurt/head.xRot", 2),
+            Map.entry("idle_hurt/body.xRot", 2),
+            Map.entry("idle_hurt/arm_right.zRot", 2),
+            Map.entry("idle_hurt/arm_left.zRot", 2));
 
     static double get(Map<String, double[][]> m, String k, int i) {
         double[][] a = m.get(k);
