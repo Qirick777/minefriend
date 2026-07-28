@@ -266,8 +266,25 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     private static int lastSyncTick = Integer.MIN_VALUE;
     private static int syncCliSeq = 0;
     private static boolean syncCliInit = false;
+    /**
+     * 계측 오염 방지. static 상태이므로 <b>대상 엔티티가 바뀌면 전부 초기화</b>한다.
+     * {@code EntityLock} 과 별개로 자체 ID 를 들고 비교하는 방식을 골랐다 — 이 계측만의
+     * 상태이므로 락의 수명에 묶지 않는 편이 지우기 쉽다. 제품 동작은 건드리지 않는다.
+     */
+    private static int syncCliEntityId = Integer.MIN_VALUE;
 
     private void noteSyncReceive(WardenGirlEntity animatable) {
+        if (syncCliEntityId != animatable.getId()) {
+            syncCliEntityId = animatable.getId();
+            syncCliInit = false;
+            syncCliSeq = 0;
+            lastSyncTick = Integer.MIN_VALUE;
+            lastSyncX = Float.NaN;
+            lastSyncY = Float.NaN;
+            lastSyncZ = Float.NaN;
+            WardenGirlMod.LOGGER.info("[synccli] --- 대상 엔티티 변경, 계측 초기화 id="
+                    + animatable.getId() + " uuid=" + animatable.getUUID());
+        }
         if (animatable.tickCount == lastSyncTick) {
             return;
         }
@@ -287,8 +304,9 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         lastSyncZ = z;
         syncCliSeq++;
         WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
-                "[synccli] seq=%d t=%d wanted=%b x=%.7f y=%.7f z=%.7f",
-                syncCliSeq, animatable.tickCount, w, x, y, z));
+                "[synccli] id=%d uuid=%s seq=%d t=%d wanted=%b x=%.7f y=%.7f z=%.7f",
+                animatable.getId(), animatable.getUUID(), syncCliSeq, animatable.tickCount,
+                w, x, y, z));
     }
 
     /**

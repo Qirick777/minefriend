@@ -446,10 +446,10 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
             if (w0 != this.probeWanted || x0 != xf || y0 != yf || z0 != zf) {
                 this.syncSeq++;
                 com.wardengirl.WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
-                        "[syncsrv] seq=%d t=%d wanted=%b x=%.7f y=%.7f z=%.7f "
+                        "[syncsrv] id=%d uuid=%s seq=%d t=%d wanted=%b x=%.7f y=%.7f z=%.7f "
                                 + "rawx=%.12f rawy=%.12f rawz=%.12f",
-                        this.syncSeq, this.tickCount, this.probeWanted, xf, yf, zf,
-                        this.probeX, this.probeY, this.probeZ));
+                        getId(), getUUID(), this.syncSeq, this.tickCount, this.probeWanted,
+                        xf, yf, zf, this.probeX, this.probeY, this.probeZ));
             }
         }
     }
@@ -457,14 +457,14 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     @Override
     public void tick() {
         super.tick();
-        if (!level().isClientSide && isPassenger() && this.probeLogged < 200) {
+        if (!level().isClientSide && isPassenger() && this.probeLogged < 1200) {
             this.probeLogged++;
             com.wardengirl.WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
-                    "[probe] t=%d aiStep=%.3f tickEnd=%.3f yRot=%.3f yBodyRot=%.3f "
+                    "[probe] id=%d uuid=%s t=%d aiStep=%.3f tickEnd=%.3f yRot=%.3f yBodyRot=%.3f "
                             + "wanted=%s x=%.3f y=%.3f z=%.3f goals=%s follow=%.1f",
-                    this.tickCount, this.headAfterAiStep, getYHeadRot(), getYRot(), this.yBodyRot,
-                    this.probeWanted, this.probeX, this.probeY, this.probeZ, this.probeGoals,
-                    AnimParams.SIT_BODY_FOLLOW.get()));
+                    getId(), getUUID(), this.tickCount, this.headAfterAiStep, getYHeadRot(),
+                    getYRot(), this.yBodyRot, this.probeWanted, this.probeX, this.probeY,
+                    this.probeZ, this.probeGoals, AnimParams.SIT_BODY_FOLLOW.get()));
         }
     }
 
