@@ -974,8 +974,6 @@ public final class BoneTrace {
             double foot = 0.0D;
             double swingSum = 0.0D;
             int n = 0;
-            int lo = Integer.MAX_VALUE;
-            int hi = Integer.MIN_VALUE;
             for (int i = 0; i < slipCount; i++) {
                 boolean full = SLIP_W0[i] >= 1.0D - 1.0E-9D && SLIP_W1[i] >= 1.0D - 1.0E-9D;
                 boolean steady = Math.abs(SLIP_S1[i] - SLIP_S0[i]) <= SWING_STABLE;
@@ -988,13 +986,29 @@ public final class BoneTrace {
                 body += SLIP_BODY[i];
                 foot += SLIP_FOOT[i];
                 swingSum += SLIP_S1[i];
-                lo = Math.min(lo, SLIP_TICK[i]);
-                hi = Math.max(hi, SLIP_TICK[i]);
                 n++;
             }
             // The bar is a full walk cycle's worth of TIME, not a row count - rows are per frame
             // now, so a row count would pass or fail with the framerate rather than with coverage.
-            int spanTicks = n == 0 ? 0 : hi - lo + 1;
+            //
+            // DISTINCT ticks, not the span. The first version used hi-lo+1, which counts every idle
+            // tick between two walking stretches: a window with two 20-tick walks 600 ticks apart
+            // reported a 640-tick sample and a body speed diluted 16-fold. The ratio itself was
+            // unaffected (it is a sum over sum), but every per-tick column derived from it was
+            // wrong, and the coverage bar passed on stretches that had not earned it.
+            int spanTicks = 0;
+            int prev = Integer.MIN_VALUE;
+            for (int i = 0; i < slipCount; i++) {
+                boolean full = SLIP_W0[i] >= 1.0D - 1.0E-9D && SLIP_W1[i] >= 1.0D - 1.0E-9D;
+                boolean steady = Math.abs(SLIP_S1[i] - SLIP_S0[i]) <= SWING_STABLE;
+                if ((cond >= 1 && !full) || (cond >= 2 && !steady)) {
+                    continue;
+                }
+                if (SLIP_TICK[i] != prev) {
+                    spanTicks++;
+                    prev = SLIP_TICK[i];
+                }
+            }
             if (spanTicks < SLIP_MIN_TICKS || n < 8 || body <= 1.0E-9D) {
                 WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
                         "[trace]   %-28s 프레임 %4d, 걸친 틱 %3d (필요 %d) — **측정 불가**",
@@ -1382,10 +1396,10 @@ public final class BoneTrace {
             edges++;
             int edgeTick = SERIES_TICK[k];
             int count = 0;
-            int lo = Integer.MAX_VALUE;
-            int hi = Integer.MIN_VALUE;
             double sum = 0.0D;
             int mine = 0;
+            int lo = Integer.MAX_VALUE;
+            int hi = Integer.MIN_VALUE;
             for (int j = 1; j < seriesCount; j++) {
                 int t = SERIES_TICK[j];
                 if (t < edgeTick || t > edgeTick + PHASE_WINDOW_TICKS) {
