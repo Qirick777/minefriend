@@ -93,6 +93,19 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     private static final EntityDataAccessor<Integer> DATA_LOOK_PROBE_SEQ =
             SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.INT);
 
+    /**
+     * 4.14 1-B-1. 서버가 계산한 <b>최종</b> shadow 각도. 아직 본에 적용하지 않는다.
+     *
+     * <p>yaw/pitch 를 먼저 쓰고 seq 를 <b>마지막에</b> 올린다 — 클라가 새 seq 를 본 순간
+     * 두 각도가 이미 그 seq 의 것이어야 짝지을 수 있다. 1-A 에서 같은 규칙으로 불일치 0 을 얻었다.
+     */
+    private static final EntityDataAccessor<Float> DATA_LOOK_SHADOW_YAW =
+            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Float> DATA_LOOK_SHADOW_PITCH =
+            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Integer> DATA_LOOK_SHADOW_SEQ =
+            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.INT);
+
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
     public WardenGirlEntity(EntityType<? extends PathfinderMob> type, Level level) {
@@ -125,11 +138,23 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
      * targeting and no combat. They are here because the 4.5 headgear spring takes head rotation as
      * its input, and a head that never moves cannot verify a spring.
      */
+    /**
+     * 4.14 1-B-1. 두 LOOK Goal 을 <b>인스턴스로 보유</b>한다.
+     *
+     * <p>실행 중 Goal 판정에 클래스 이름 문자열을 쓰지 않기 위해서다 —
+     * {@code goalSelector.getRunningGoals()} 가 돌려주는 객체와 이 필드를 {@code ==} 로 비교한다.
+     * 등록에도 같은 인스턴스를 쓴다.
+     */
+    private WardenGirlLookAtPlayerGoal lookAtPlayerGoal;
+    private RandomLookAroundGoal randomLookGoal;
+
     @Override
     protected void registerGoals() {
+        this.lookAtPlayerGoal = new WardenGirlLookAtPlayerGoal(this, Player.class, 12.0F);
+        this.randomLookGoal = new RandomLookAroundGoal(this);
         this.goalSelector.addGoal(0, new FloatGoal(this));
-        this.goalSelector.addGoal(7, new LookAtPlayerGoal(this, Player.class, 12.0F));
-        this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
+        this.goalSelector.addGoal(7, this.lookAtPlayerGoal);
+        this.goalSelector.addGoal(8, this.randomLookGoal);
     }
 
     // ---- T5 임시 이동 AI 토글 -----------------------------------------------------------------
@@ -179,6 +204,9 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         this.entityData.define(DATA_LOOK_Y, 0.0F);
         this.entityData.define(DATA_LOOK_Z, 0.0F);
         this.entityData.define(DATA_LOOK_PROBE_SEQ, 0);
+        this.entityData.define(DATA_LOOK_SHADOW_YAW, 0.0F);
+        this.entityData.define(DATA_LOOK_SHADOW_PITCH, 0.0F);
+        this.entityData.define(DATA_LOOK_SHADOW_SEQ, 0);
     }
 
     // ---- axis verification harness (T1 only) -------------------------------------------------
@@ -420,6 +448,62 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     private double probeZ;
     private String probeGoals = "";
     private int syncSeq = 0;
+    private final SitLookShadow shadow = new SitLookShadow();
+    private int shadowSeq = 0;
+
+    /**
+     * 4.14 1-B-1. shadow 를 서버 틱당 한 번 전진시키고 최종각을 동기화한다.
+     *
+     * <p>{@code aiStep()} 직후에서만 불린다 — Goal 과 {@code LookControl} 이 막 끝났고
+     * {@code Boat.clampRotation} 은 아직 오지 않은 지점이다.
+     *
+     * <p><b>실행 중 Goal 은 인스턴스 동일성으로 판정한다.</b> 두 LOOK Goal 이 동시에 잡히는
+     * 경우가 있는지도 함께 센다 — 있으면 우선순위를 만들지 않고 값만 남긴다.
+     */
+    private void advanceShadow() {
+        boolean pRun = false;
+        boolean rRun = false;
+        java.util.Iterator<net.minecraft.world.entity.ai.goal.WrappedGoal> it =
+                this.goalSelector.getRunningGoals().iterator();
+        while (it.hasNext()) {
+            net.minecraft.world.entity.ai.goal.Goal g = it.next().getGoal();
+            if (g == this.lookAtPlayerGoal) {
+                pRun = true;
+            } else if (g == this.randomLookGoal) {
+                rRun = true;
+            }
+        }
+        SitLookShadow.Goal goal = pRun ? SitLookShadow.Goal.PLAYER
+                : (rRun ? SitLookShadow.Goal.RANDOM : SitLookShadow.Goal.NONE);
+        net.minecraft.world.entity.Entity target =
+                this.lookAtPlayerGoal == null ? null : this.lookAtPlayerGoal.getLookAt();
+        double dist = -1.0D;
+        if (goal == SitLookShadow.Goal.PLAYER && target != null) {
+            dist = distanceTo(target);
+        }
+        SitLookShadow.Step st = this.shadow.advance(getX(), getEyeY(), getZ(), this.yBodyRot,
+                this.probeWanted, this.probeX, this.probeY, this.probeZ, goal, dist);
+
+        this.entityData.set(DATA_LOOK_SHADOW_YAW, (float) st.outYaw);
+        this.entityData.set(DATA_LOOK_SHADOW_PITCH, (float) st.outPitch);
+        this.shadowSeq++;
+        this.entityData.set(DATA_LOOK_SHADOW_SEQ, this.shadowSeq);
+
+        com.wardengirl.WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
+                "[shadow] uuid=%s gt=%d wanted=%b goal=%s both=%b tgtid=%s tgtplayer=%b "
+                        + "dist=%.5f wx=%.5f wy=%.5f wz=%.5f rawY=%.5f rawP=%.5f "
+                        + "prevY=%.5f prevP=%.5f limY=%.5f limP=%.5f bodyY=%.5f body=%.5f "
+                        + "boneY=%.5f boneP=%.5f clY=%.5f clP=%.5f k=%.5f "
+                        + "poutY=%.5f poutP=%.5f outY=%.5f outP=%.5f seq=%d",
+                getUUID(), level().getGameTime(), st.wanted, goal, pRun && rRun,
+                target == null ? "none" : String.valueOf(target.getId()),
+                target instanceof Player, dist,
+                st.wantX, st.wantY, st.wantZ, st.rawYaw, st.rawPitch,
+                st.prevHeadYaw, st.prevPitch, st.limitedHeadYaw, st.limitedPitch,
+                st.bodyClampedYaw, this.yBodyRot, st.boneYaw, st.bonePitch,
+                st.gainClampYaw, st.gainClampPitch, st.damping,
+                st.prevOutYaw, st.prevOutPitch, st.outYaw, st.outPitch, this.shadowSeq));
+    }
     private int probeLogged = 0;
 
     @Override
@@ -455,6 +539,7 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
             this.entityData.set(DATA_LOOK_X, xf);
             this.entityData.set(DATA_LOOK_Y, yf);
             this.entityData.set(DATA_LOOK_Z, zf);
+            advanceShadow();
             if (w0 != this.probeWanted || x0 != xf || y0 != yf || z0 != zf) {
                 this.syncSeq++;
                 // 순번은 반드시 마지막에 올린다. 클라가 seq 변화를 본 순간 네 값이 이미 그
@@ -473,6 +558,10 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     @Override
     public void tick() {
         super.tick();
+        if (!level().isClientSide && !isPassenger() && this.shadow.isRiding()) {
+            // 하차. shadow 상태를 버린다 - 다음 탑승은 몸통 정면 / pitch 0 에서 다시 시작한다.
+            this.shadow.reset();
+        }
         if (!level().isClientSide && isPassenger() && this.probeLogged < 1200) {
             this.probeLogged++;
             com.wardengirl.WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
