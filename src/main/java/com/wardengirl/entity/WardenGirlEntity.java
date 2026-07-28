@@ -490,11 +490,13 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         this.entityData.set(DATA_LOOK_SHADOW_SEQ, this.shadowSeq);
 
         com.wardengirl.WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
+                // recurrence 판정에 쓰는 컬럼은 %.9f 다. %.5f 로는 반올림 반폭(5e-6)이
+                // 허용 오차보다 커서 잔차를 잴 수 없었다. 단계별 각도도 같은 정밀도로 맞춘다.
                 "[shadow] uuid=%s gt=%d wanted=%b goal=%s both=%b tgtid=%s tgtplayer=%b "
-                        + "dist=%.5f wx=%.5f wy=%.5f wz=%.5f rawY=%.5f rawP=%.5f "
-                        + "prevY=%.5f prevP=%.5f limY=%.5f limP=%.5f bodyY=%.5f body=%.5f "
-                        + "boneY=%.5f boneP=%.5f clY=%.5f clP=%.5f k=%.5f "
-                        + "poutY=%.5f poutP=%.5f outY=%.5f outP=%.5f seq=%d",
+                        + "dist=%.9f wx=%.9f wy=%.9f wz=%.9f rawY=%.9f rawP=%.9f "
+                        + "prevY=%.9f prevP=%.9f limY=%.9f limP=%.9f bodyY=%.9f body=%.9f "
+                        + "boneY=%.9f boneP=%.9f clY=%.9f clP=%.9f k=%.9f "
+                        + "poutY=%.9f poutP=%.9f outY=%.9f outP=%.9f seq=%d",
                 getUUID(), level().getGameTime(), st.wanted, goal, pRun && rRun,
                 target == null ? "none" : String.valueOf(target.getId()),
                 target instanceof Player, dist,

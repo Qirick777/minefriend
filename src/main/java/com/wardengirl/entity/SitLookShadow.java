@@ -189,7 +189,10 @@ public final class SitLookShadow {
         s.gainClampPitch = clampAbs(s.bonePitch * gain, AnimParams.LOOK_PITCH_MAX.get());
 
         // --- 7. 지수 감쇠 ----------------------------------------------------------------
-        s.damping = goal == Goal.PLAYER && dampingDistance >= 0.0D
+        // 거리 감쇠는 "지금 실제로 그 대상을 보고 있을 때"만 쓴다. Goal 이 running 이어도
+        // wanted=false 인 틱(LookControl 쿨다운이 그 틱에 소진된 경우)에는 목표가 없으므로
+        // 거리 계수를 쓰면 유휴 복귀에 근거리 계수가 섞인다.
+        s.damping = wanted && goal == Goal.PLAYER && dampingDistance >= 0.0D
                 ? LookDamping.dampingFor(dampingDistance)
                 : LookDamping.farDamping();
         this.damper.advanceTick(s.gainClampYaw, s.gainClampPitch, s.damping);
