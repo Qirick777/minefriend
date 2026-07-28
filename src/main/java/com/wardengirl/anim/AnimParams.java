@@ -296,58 +296,6 @@ public final class AnimParams {
     public static final Param SIT_RIDING_OFFSET =
             addShape("sit_riding_offset", -0.35D, -2.0D, 0.5D,
                     "block", "T6", "탑승 시 좌석 높이 보정 (getMyRidingOffset)", "root");
-    /**
-     * 4.13 문제 3. 탑승 중 몸통 방향을 탈것에 맞춘다. 0 이면 기능 끔.
-     *
-     * <p><b>맞추는 축은 {@code yRot} 이지 {@code yBodyRot} 이 아니다.</b> 측정에서
-     * {@code yBodyRot} 은 이미 탈것 {@code yRot} 과 소수점까지 일치했다 — {@code Boat.clampRotation}
-     * 의 첫 명령이 {@code passenger.setYBodyRot(boat.getYRot())} 이기 때문이다. 옆을 보게 만드는
-     * 것은 몸통이 아니라 <b>고개</b>이고, 그 원인은 같은 메서드의 마지막 줄
-     * {@code setYHeadRot(passenger.getYRot())} 과 탑승 중 얼어붙는 {@code yRot} 이다.
-     * 그래서 {@code yRot} 을 탈것 쪽으로 밀면 {@code netHeadYaw = yHeadRot − yBodyRot} 이 0 으로
-     * 수렴하고 고개가 정면을 본다. {@code yBodyRot} 을 밀면 항등 연산이라 아무 일도 일어나지 않는다.
-     */
-    public static final Param SIT_BODY_FOLLOW =
-            addShape("sit_body_follow", 1.0D, 0.0D, 1.0D,
-                    "ratio", "T6", "탑승 중 몸통 방향 정렬 강도 (0 = 끔)", "head");
-    /**
-     * 정렬 보간율. 매 틱 {@code yRot += wrapDegrees(탈것yaw − yRot) × rate} 다.
-     *
-     * <p>기본 0.3 은 {@code LivingEntity.tickHeadTurn} 의
-     * {@code yBodyRot += wrapDegrees(yHeadRot − yBodyRot) * 0.3F} 에서 온 값이다. 즉시 스냅하면
-     * 탑승 첫 틱에 고개가 한 프레임 만에 최대 105° 돌아 튄다.
-     */
-    public static final Param SIT_BODY_FOLLOW_RATE =
-            addShape("sit_body_follow_rate", 0.3D, 0.05D, 1.0D,
-                    "ratio", "T6", "탑승 중 몸통 방향 정렬 보간율", "head");
-    /**
-     * 4.14 (1). 탑승 중 시선 추적. 0 이면 끔.
-     *
-     * <p>탑승하면 {@code Boat.clampRotation} 이 매 틱 {@code yHeadRot = yRot} 로 덮어써서
-     * 서버 {@code LookControl} 의 결과가 지워진다 — 측정에서 플레이어 방위 8개 전부에 대해
-     * {@code netHeadYaw} 이 +105.000 상수였다. 그래서 탑승 중에는 엔티티의 {@code yHeadRot} 을
-     * 쓰지 않고 <b>클라이언트에서 플레이어 방향 − yBodyRot 을 직접 계산</b>해 head 본에 넣는다.
-     *
-     * <p>0~1 사이 값은 진폭 배율로도 동작한다. 감쇠와 클램프는 4.6 과 같은 것을 쓴다 —
-     * 탑승 중이라고 다른 값을 쓰면 인상이 달라진다.
-     */
-    public static final Param SIT_LOOK_ENABLE =
-            addShape("sit_look_enable", 1.0D, 0.0D, 1.0D,
-                    "ratio", "T6", "탑승 중 시선 추적 (0 = 끔)", "head");
-    /**
-     * 4.14 1-C. 탑승 시선의 출처. <b>계측·A/B 시험용</b>이다.
-     *
-     * <ul>
-     *   <li>{@code 0} — 기존 클라이언트 {@code SitLook} + {@code LookDamper} (기본값)</li>
-     *   <li>{@code 1} — 서버 권위 shadow ({@code DATA_LOOK_SHADOW_YAW/PITCH})</li>
-     * </ul>
-     *
-     * <p>기본을 아직 서버 shadow 로 확정하지 않는다 — 사람의 화면 판정 전이다.
-     * 시험은 {@code /wardengirl param set sit_look_source 1} 로 켠다.
-     */
-    public static final Param SIT_LOOK_SOURCE =
-            addShape("sit_look_source", 0.0D, 0.0D, 1.0D,
-                    "flag", "T6", "탑승 시선 출처 (0 = SitLook, 1 = 서버 shadow)", "head");
     /** 탑승 중에만 킁킁 진폭에 곱한다. 0 이면 탑승 중 킁킁 없음. */
     public static final Param SNIFF_RIDING_SCALE =
             addShape("sniff_riding_scale", 1.0D, 0.0D, 1.0D,
@@ -657,55 +605,16 @@ public final class AnimParams {
      *
      * <p>1.0 means "the head bone matches the direction the entity is actually looking". Anything
      * else desynchronises the rendered gaze from the AI's gaze, so this is excluded from the preset
-     * sweep — see {@link Param#presetScaled}. It exists as a knob for T4's damping work.
+     * sweep — see {@link Param#presetScaled}.
+     *
+     * <p>4.14 에서 clamp 와 감쇠를 지웠는데도 이 배율만 남긴 이유는 하나다:
+     * {@code BlendCheck} 가 {@code head.yRot} 재구성 잔차를 판정하려면 창 동안 시선을 0 으로
+     * 끌 수 있어야 한다. 그 유효 조건이 이 노브이고, 지우면 그 채널은 영구히 판정 불가가 된다.
+     * 이전 시선 경로를 되살리는 용도가 아니다 — 1.0 은 항등이다.
      */
     public static final Param LOOK_GAIN = addFixed("look_gain", null, 1.0D,
             "배율", "T3", "바닐라 시선을 head 본에 싣는 배율. 1.0 = 엔티티가 실제로 보는 방향 그대로", "head");
-    public static final Param LOOK_YAW_MAX = addFixed("look_yaw_max", null, 75.0D,
-            "deg", "T3",
-            "head yRot 클램프 (4.6). 바닐라 getMaxHeadYRot() 과 같은 값이라 기준이 명확하다. "
-                    + "70 이면 실측 6.0%, 75 면 4.0% 의 시간 동안 걸린다 (70/75/90 비교는 param set 으로)",
-            "head");
-    public static final Param LOOK_PITCH_MAX = addFixed("look_pitch_max", null, 35.0D,
-            "deg", "T3", "head xRot 클램프 (4.6)", "head");
 
-    /**
-     * 4.6 감쇠 계수 — {@code current += (target - current) * LOOK_DAMPING} per tick.
-     *
-     * <p><b>1.0 은 우회 스위치다.</b> 필터를 끄고 {@code current = target} 으로 만들어 T3 상태를
-     * 그대로 재현한다 — {@link com.wardengirl.client.LookDamper} 참조. 그래야 감쇠가 있는 화면과
-     * 없는 화면을 같은 세션에서 번갈아 보며 판정할 수 있다.
-     *
-     * <p>범위를 0..1 로 명시한다. 파생 범위(×0.01..×10)였다면 0.0013..1.3 이 되어 우회 스위치가
-     * TOML 로는 표현되지만 발산 구간(>1)도 같이 열린다. 음수는 목표에서 <em>멀어지는</em> 방향이라
-     * 의미가 없고, 1 초과는 매 틱 지나쳐 진동한다.
-     */
-    public static final Param LOOK_DAMPING = addShape("look_damping", 0.5D, 0.0D, 1.0D,
-            "계수/틱", "T4",
-            "시선 감쇠. current += (target-current)*이 값. 1.0 이면 감쇠 없음(T3 동작). "
-                    + "T4 확정 0.5 — 지연 1.69틱으로 스냅은 사라지되 굼뜨지 않고, "
-                    + "head yRot 이 ±75 를 온전히 채우며, 촉수 오버슈트가 T3 대비 12%만 준다", "head");
-
-    /**
-     * 근거리에서 쓰는 감쇠 계수. 작을수록 더 느리고 부드럽게 따라온다.
-     *
-     * <p>{@link #LOOK_DAMPING} 과 같은 이유로 범위를 0..1 로 명시한다. 파생 범위였다면 상한이
-     * 0.6 이라 우회 스위치(1.0)를 TOML 로 쓸 수 없었다.
-     */
-    public static final Param LOOK_DAMPING_NEAR = addShape("look_damping_near", 0.06D, 0.0D, 1.0D,
-            "계수/틱", "T4",
-            "근거리 감쇠. NEAR_DISTANCE 안에서 거리에 비례해 look_damping 과 이 값 사이를 잇는다",
-            "head");
-
-    /**
-     * 근거리 판정 거리, 블록. 클라이언트 로컬 플레이어와 엔티티 사이의 3D 거리로 잰다.
-     *
-     * <p>이 거리 밖이면 {@link #LOOK_DAMPING}, 안이면 거리에 <b>선형 보간</b>한 값을 쓴다.
-     * 계단식 전환을 쓰면 이 경계를 걸어서 넘는 순간 목 각속도가 배로 뛴다.
-     */
-    public static final Param LOOK_NEAR_DISTANCE = addShape("look_near_distance", 3.0D, 0.5D, 16.0D,
-            "블록", "T4", "근거리 판정 거리. 이 안에서 look_damping -> look_damping_near 로 선형 보간",
-            "head");
 
     // ---- 4.4.2 걷기 (T5) --------------------------------------------------------------------
 

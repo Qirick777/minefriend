@@ -62,63 +62,14 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
             SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.INT);
 
     /**
-     * 4.14 1-A. 서버 시선 정책 결과. <b>가시 경로에 연결돼 있지 않다</b> — 이번 라운드는 전달만이다.
+     * 4.12 킁킁 시작 통지. <b>표준 엔티티 사건</b>이고 전용 패킷이 아니다.
      *
-     * <h2>자료형은 descriptor 로 정했다</h2>
-     *
-     * {@code LookControl.getWantedX/Y/Z()} 의 descriptor 는 <b>{@code ()D}</b> — Java {@code double}
-     * 이다. 그런데 {@code EntityDataSerializers} 에 {@code DOUBLE} 이 <b>없다</b>(BYTE INT LONG FLOAT
-     * STRING … VECTOR3 QUATERNION, 전부 확인). 그래서 {@code FLOAT} 를 쓰며 <b>double → float 축소가
-     * 일어난다.</b> 오차는 실측해 보고한다.
-     *
-     * <p>{@code isLookingAtTarget()} 는 {@code ()Z} 이므로 {@code BOOLEAN} 이 정확히 맞는다.
+     * <p>바닐라가 이 상속 계통에서 쓰는 값은 {@code Entity} 53, {@code LivingEntity}
+     * 3 / 29 / 30 / 46~52 / 54 / 55 / 60, {@code Mob} 20 이다 — 세 클래스의
+     * {@code handleEntityEvent} switch 를 바이트코드에서 전부 확인했다. 61 은 비어 있고,
+     * 이 프로젝트에서 {@code broadcastEntityEvent} 를 쓰는 다른 곳도 없다.
      */
-    private static final EntityDataAccessor<Boolean> DATA_LOOK_WANTED =
-            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.BOOLEAN);
-    private static final EntityDataAccessor<Float> DATA_LOOK_X =
-            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.FLOAT);
-    private static final EntityDataAccessor<Float> DATA_LOOK_Y =
-            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.FLOAT);
-    private static final EntityDataAccessor<Float> DATA_LOOK_Z =
-            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.FLOAT);
-
-    /**
-     * <b>계측 전용.</b> 네 상태값이 바뀔 때마다 마지막에 1 증가한다.
-     *
-     * <p>좌표 폴링으로 이벤트를 만들면 서버 스냅숏과 클라 스냅숏을 짝지을 키가 없다 — 지난
-     * 라운드에 클라 183건이 서버 열과 하나도 대응되지 않은 것이 그 때문이다. 순번을
-     * <b>마지막에</b> 올리므로, 클라가 새 seq 를 본 시점에는 네 값이 이미 그 seq 의 것이다.
-     * 검증이 끝나기 전에는 제거하지 않는다.
-     */
-    private static final EntityDataAccessor<Integer> DATA_LOOK_PROBE_SEQ =
-            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.INT);
-
-    /**
-     * 4.14 1-B-1. 서버가 계산한 <b>최종</b> shadow 각도. 아직 본에 적용하지 않는다.
-     *
-     * <p>yaw/pitch 를 먼저 쓰고 seq 를 <b>마지막에</b> 올린다 — 클라가 새 seq 를 본 순간
-     * 두 각도가 이미 그 seq 의 것이어야 짝지을 수 있다. 1-A 에서 같은 규칙으로 불일치 0 을 얻었다.
-     */
-    private static final EntityDataAccessor<Float> DATA_LOOK_SHADOW_YAW =
-            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.FLOAT);
-    private static final EntityDataAccessor<Float> DATA_LOOK_SHADOW_PITCH =
-            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.FLOAT);
-    /**
-     * 4.14 1-C-2. <b>직전 서버 틱</b>의 최종 shadow 각도. 렌더 보간의 시작점이다.
-     *
-     * <p>서버 double 이 아니라 <b>직전 틱에 실제로 동기화한 FLOAT</b> 를 그대로 보낸다. 그래야
-     * 클라이언트가 두 endpoint 사이를 보간할 때 시작점이 이전 프레임의 도착점과 정확히 같다.
-     *
-     * <p>동기화 순서는 prev → current → seq 다. seq 가 마지막이어야 클라가 새 seq 를 본 순간
-     * 두 endpoint 가 이미 그 seq 의 것이다.
-     */
-    private static final EntityDataAccessor<Float> DATA_LOOK_SHADOW_PREV_YAW =
-            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.FLOAT);
-    private static final EntityDataAccessor<Float> DATA_LOOK_SHADOW_PREV_PITCH =
-            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.FLOAT);
-
-    private static final EntityDataAccessor<Integer> DATA_LOOK_SHADOW_SEQ =
-            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.INT);
+    public static final byte EVENT_SNIFF = 61;
 
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
@@ -152,23 +103,14 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
      * targeting and no combat. They are here because the 4.5 headgear spring takes head rotation as
      * its input, and a head that never moves cannot verify a spring.
      */
-    /**
-     * 4.14 1-B-1. 두 LOOK Goal 을 <b>인스턴스로 보유</b>한다.
-     *
-     * <p>실행 중 Goal 판정에 클래스 이름 문자열을 쓰지 않기 위해서다 —
-     * {@code goalSelector.getRunningGoals()} 가 돌려주는 객체와 이 필드를 {@code ==} 로 비교한다.
-     * 등록에도 같은 인스턴스를 쓴다.
-     */
-    private WardenGirlLookAtPlayerGoal lookAtPlayerGoal;
-    private RandomLookAroundGoal randomLookGoal;
-
     @Override
     protected void registerGoals() {
-        this.lookAtPlayerGoal = new WardenGirlLookAtPlayerGoal(this, Player.class, 12.0F);
-        this.randomLookGoal = new RandomLookAroundGoal(this);
         this.goalSelector.addGoal(0, new FloatGoal(this));
-        this.goalSelector.addGoal(7, this.lookAtPlayerGoal);
-        this.goalSelector.addGoal(8, this.randomLookGoal);
+        // 4.12 킁킁. 플래그가 없으므로 두 시선 Goal 과 동시에 돈다 — 킁킁 중에도 고개는 계속
+        // 움직인다. 우선순위는 시선보다 아래에 둔다.
+        this.goalSelector.addGoal(9, new WardenGirlSniffGoal(this));
+        this.goalSelector.addGoal(7, new LookAtPlayerGoal(this, Player.class, 12.0F));
+        this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
     }
 
     // ---- T5 임시 이동 AI 토글 -----------------------------------------------------------------
@@ -213,16 +155,6 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         this.entityData.define(DATA_SIGN_TEST, false);
         this.entityData.define(DATA_ACTION_CLIP, "");
         this.entityData.define(DATA_ACTION_SEQ, 0);
-        this.entityData.define(DATA_LOOK_WANTED, false);
-        this.entityData.define(DATA_LOOK_X, 0.0F);
-        this.entityData.define(DATA_LOOK_Y, 0.0F);
-        this.entityData.define(DATA_LOOK_Z, 0.0F);
-        this.entityData.define(DATA_LOOK_PROBE_SEQ, 0);
-        this.entityData.define(DATA_LOOK_SHADOW_YAW, 0.0F);
-        this.entityData.define(DATA_LOOK_SHADOW_PITCH, 0.0F);
-        this.entityData.define(DATA_LOOK_SHADOW_PREV_YAW, 0.0F);
-        this.entityData.define(DATA_LOOK_SHADOW_PREV_PITCH, 0.0F);
-        this.entityData.define(DATA_LOOK_SHADOW_SEQ, 0);
     }
 
     // ---- axis verification harness (T1 only) -------------------------------------------------
@@ -392,302 +324,83 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     }
 
     /**
-     * 4.13 문제 3. 탑승 중 방향을 탈것에 맞춘다. <b>클라이언트에서만 돈다.</b>
+     * 4.14. {@code Boat.clampRotation} 이 지운 {@code yHeadRot} 하나를 되살린다.
      *
-     * <h2>왜 super 뒤인가</h2>
+     * <h2>값이 죽는 지점 (바이트코드 확인)</h2>
      *
-     * {@code Entity.rideTick} 은 {@code tick()} → {@code getVehicle().positionRider(this)} 순서다
-     * (바이트코드 확인). {@code tick()} 안에서 서버가 보낸 {@code lerpYRot} 보간이 {@code yRot} 을
-     * 되돌리고, 그 뒤 {@code Boat.clampRotation} 이 {@code yBodyRot = 탈것yaw},
-     * {@code yHeadRot = yRot} 을 쓴다. 그래서 <b>둘 다 끝난 뒤</b>에 밀어야 우리 값이 살아남는다.
-     * 매 틱 다시 밀리므로 한 번 쓰고 마는 것이 아니라 계속 보간이 이어진다.
+     * {@code Entity.rideTick} 은 {@code setDeltaMovement(ZERO)} → {@code if (canUpdate()) tick()}
+     * → {@code if (isPassenger()) getVehicle().positionRider(this)} 순서다.
+     * {@code Boat.positionRider} 는 오프셋 184 에서 {@code clampRotation} 을 부르고, 그 메서드는
+     * <ol>
+     *   <li>{@code passenger.setYBodyRot(boat.getYRot())} — 몸통을 배에 맞춘다,</li>
+     *   <li>{@code yRot} 을 배 기준 ±105° 로 자른다,</li>
+     *   <li>{@code passenger.setYHeadRot(passenger.getYRot())} — <b>여기서만 값이 죽는다</b></li>
+     * </ol>
+     * 를 한다. {@code xRot} 은 건드리지 않으므로 pitch 는 손댈 것이 없다. 몸통 정렬도 1번이 이미
+     * 하므로 별도 추종을 만들지 않는다.
      *
-     * <h2>왜 yRot 인가 — 측정 결과</h2>
+     * <h2>왜 이 두 지점인가</h2>
      *
-     * 보트를 0°→45°→90° 로 돌린 900틱 창에서 {@code yBodyRot} 은 탈것 {@code yRot} 과 모든 행에서
-     * 일치했고(보간 중인 +31.5 / +63.0 포함), {@code yRot} 은 +0.000 에 얼어 있었다. 화면에서
-     * 옆을 보는 것은 몸통이 아니라 고개이고, 그 각도는
-     * {@code netHeadYaw = yHeadRot − yBodyRot = yRot − 탈것yaw} 라는 <b>상수</b>였다. 그래서
-     * {@code yRot} 을 탈것 쪽으로 밀면 그 상수가 0 으로 수렴한다. {@code yBodyRot} 을 밀면 이미
-     * 같은 값이라 아무 일도 일어나지 않는다.
+     * {@link #tick()} 은 {@code super.rideTick()} <b>안에서</b> 불리므로, 거기서 보존한 값은
+     * 바닐라 Goal → {@code LookControl} (서버) 또는 {@code lerpHeadTo} 보간 (클라이언트) 이 막
+     * 계산해 넣은 값이다. {@code positionRider} 는 그 뒤에 오고, 복원은 그보다 더 뒤다.
      *
-     * <h2>서버 판정 무영향</h2>
+     * <p>서버·클라이언트를 가르지 않는다. {@code positionRider} 는 양쪽에서 모두 돌아 양쪽의
+     * {@code yHeadRot} 을 똑같이 지우므로, 한쪽만 고치면 다른 쪽이 어긋난다.
      *
-     * 몹의 회전은 서버 → 클라이언트 단방향이다. 클라이언트가 쓴 {@code yRot} / {@code yHeadRot} 은
-     * 어떤 패킷으로도 서버에 올라가지 않으므로 서버의 {@code getViewVector}, 넉백 방향,
-     * {@code clampRotation} 의 ±105 기준은 전부 그대로다.
+     * <h2>전달은 바닐라가 한다</h2>
+     *
+     * {@code ServerLevel.tick} 은 {@code ServerChunkCache.tick}(추적자 방송, 오프셋 267)을
+     * {@code entityTickList.forEach}(엔티티 틱, 오프셋 400)보다 <b>먼저</b> 부른다. 그래서 틱 N
+     * 끝에 복원한 값이 틱 N+1 방송이 읽는 값이다. {@code ServerEntity.sendChanges} 의 승객 분기는
+     * 회전 패킷을 보낸 뒤 {@code goto} 로 머리 블록에 합류하므로 탑승 중에도
+     * {@code ClientboundRotateHeadPacket} 이 나가고, 클라이언트는 {@code lerpHeadTo(f, 3)} 으로
+     * 3틱에 걸쳐 보간한다 — 모든 바닐라 몹과 같은 격자다.
      */
+    private float ridingHeadYaw;
+
     @Override
     public void rideTick() {
         super.rideTick();
-        if (!level().isClientSide || !isPassenger()) {
-            return;
+        if (isPassenger()) {
+            setYHeadRot(this.ridingHeadYaw);
         }
-        double follow = AnimParams.SIT_BODY_FOLLOW.get();
-        if (follow <= 0.0D) {
-            return;
-        }
-        net.minecraft.world.entity.Entity vehicle = getVehicle();
-        if (vehicle == null) {
-            return;
-        }
-        // 탈것 종류를 가리지 않는다. 보트는 자체 yRot 을 갖고, 말/마인카트도 Entity.getYRot() 이
-        // 진행 방향이다. 다만 말처럼 LivingEntity 인 탈것은 GeckoLib 이 렌더 단계에서 몸통을
-        // 탈것의 yBodyRot 으로 따로 덮으므로 이 보정과 겹친다 - 보트에서 통과한 뒤 본다.
-        float rate = (float) (AnimParams.SIT_BODY_FOLLOW_RATE.get() * follow);
-        // 4.14 (2). 결과를 반드시 정규화한다. 없으면 고정점이 0 이 아니라 +360 이다 -
-        // wrapDegrees(0 - 359.99) 가 +0.01 이라 359.99 에서도 계속 위로 올라가기 때문이다.
-        // 측정에서 yRot 이 +360.000 에 park 했고, 그 값이 clampRotation 을 통해 yHeadRot 으로
-        // 흘러 GeckoLib 의 netHeadYaw = headRot - bodyRot = 360 이 됐다. GeckoLib 은 비-LivingEntity
-        // 탈것에서 그 차를 감싸지 않으므로 ±75 클램프가 -75 로 때려박았고, 화면에서는 고개가
-        // 0 과 -75 를 오갔다.
-        float next = net.minecraft.util.Mth.wrapDegrees(getYRot()
-                + net.minecraft.util.Mth.wrapDegrees(vehicle.getYRot() - getYRot()) * rate);
-        setYRot(next);
-        // 4.14 (1). setYHeadRot(next) 를 뺐다. 그것이 (2) 의 증상을 만든 경로였고, 이제 head 본을
-        // 우리가 직접 쓰므로 엔티티 yHeadRot 을 몸통에 정렬시킬 이유가 없다. 우리 코드에서
-        // yHeadRot 을 읽는 곳은 계측 덤프뿐이고 - 4.12 정면 각도 판정은 yBodyRot 기준이다 -
-        // 바닐라 쪽은 Boat.clampRotation 이 매 틱 yHeadRot = yRot 로 덮어쓰므로 결과가 같다.
     }
 
     /**
-     * 4.14 조사용. 탑승 중 서버의 {@code yHeadRot} 을 <b>두 지점에서</b> 찍는다.
+     * 4.12 킁킁 재생 시간. <b>클라이언트 표시 상태다.</b>
      *
-     * <p>{@code aiStep()} 직후는 Goal → {@code LookControl} 이 막 쓴 값이고,
-     * {@code tick()} 끝은 오프셋 386 의 {@code tickHeadTurn} 까지 지난 값이다. 둘을 비교하면
-     * "Goal 이 안 돈다"와 "돌지만 뒤에서 되돌린다"가 갈린다. <b>계측 전용이다.</b>
+     * <p>4.11 피격의 {@code hurtTime} 과 같은 규약 — 서버가 사건 하나를 방송하면 클라이언트가
+     * 카운터를 세팅하고 매 틱 줄인다. 동기화 필드도, 순번도, 전용 패킷도 아니다.
      */
-    private float headAfterAiStep = Float.NaN;
-    private boolean probeWanted;
-    private double probeX;
-    private double probeY;
-    private double probeZ;
-    private String probeGoals = "";
-    private int syncSeq = 0;
-    private final SitLookShadow shadow = new SitLookShadow();
-    private int shadowSeq = 0;
-    /** 직전 틱에 동기화한 FLOAT. 보간 시작점으로 그대로 보낸다. */
-    private float lastShadowYaw = 0.0F;
-    private float lastShadowPitch = 0.0F;
+    private int sniffTime;
 
-    /**
-     * 4.14 1-B-1. shadow 를 서버 틱당 한 번 전진시키고 최종각을 동기화한다.
-     *
-     * <p>{@code aiStep()} 직후에서만 불린다 — Goal 과 {@code LookControl} 이 막 끝났고
-     * {@code Boat.clampRotation} 은 아직 오지 않은 지점이다.
-     *
-     * <p><b>실행 중 Goal 은 인스턴스 동일성으로 판정한다.</b> 두 LOOK Goal 이 동시에 잡히는
-     * 경우가 있는지도 함께 센다 — 있으면 우선순위를 만들지 않고 값만 남긴다.
-     */
-    private void advanceShadow() {
-        boolean pRun = false;
-        boolean rRun = false;
-        java.util.Iterator<net.minecraft.world.entity.ai.goal.WrappedGoal> it =
-                this.goalSelector.getRunningGoals().iterator();
-        while (it.hasNext()) {
-            net.minecraft.world.entity.ai.goal.Goal g = it.next().getGoal();
-            if (g == this.lookAtPlayerGoal) {
-                pRun = true;
-            } else if (g == this.randomLookGoal) {
-                rRun = true;
-            }
-        }
-        SitLookShadow.Goal goal = pRun ? SitLookShadow.Goal.PLAYER
-                : (rRun ? SitLookShadow.Goal.RANDOM : SitLookShadow.Goal.NONE);
-        net.minecraft.world.entity.Entity target =
-                this.lookAtPlayerGoal == null ? null : this.lookAtPlayerGoal.getLookAt();
-        double dist = -1.0D;
-        if (goal == SitLookShadow.Goal.PLAYER && target != null) {
-            dist = distanceTo(target);
-        }
-        SitLookShadow.Step st = this.shadow.advance(getX(), getEyeY(), getZ(), this.yBodyRot,
-                this.probeWanted, this.probeX, this.probeY, this.probeZ, goal, dist);
-
-        // 계측: 동기화 필드에 실제로 들어가는 float 을 먼저 만들고, 그 변수의 raw bits 를
-        // 찍는다. double 을 %.9f 로 찍어 되파싱하면 float32 최근접값이 한 칸 어긋날 수 있어
-        // 비트 동일성을 주장할 수 없었다.
-        float shadowYaw = (float) st.outYaw;
-        float shadowPitch = (float) st.outPitch;
-        // prev -> current -> seq. prev 는 직전 틱에 실제로 보낸 FLOAT 그 자체다.
-        this.entityData.set(DATA_LOOK_SHADOW_PREV_YAW, this.lastShadowYaw);
-        this.entityData.set(DATA_LOOK_SHADOW_PREV_PITCH, this.lastShadowPitch);
-        this.entityData.set(DATA_LOOK_SHADOW_YAW, shadowYaw);
-        this.entityData.set(DATA_LOOK_SHADOW_PITCH, shadowPitch);
-        this.lastShadowYaw = shadowYaw;
-        this.lastShadowPitch = shadowPitch;
-        this.shadowSeq++;
-        this.entityData.set(DATA_LOOK_SHADOW_SEQ, this.shadowSeq);
-
-        com.wardengirl.WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
-                // recurrence 판정에 쓰는 컬럼은 %.9f 다. %.5f 로는 반올림 반폭(5e-6)이
-                // 허용 오차보다 커서 잔차를 잴 수 없었다. 단계별 각도도 같은 정밀도로 맞춘다.
-                "[shadow] uuid=%s gt=%d wanted=%b goal=%s both=%b tgtid=%s tgtplayer=%b "
-                        + "dist=%.9f wx=%.9f wy=%.9f wz=%.9f rawY=%.9f rawP=%.9f "
-                        + "prevY=%.9f prevP=%.9f limY=%.9f limP=%.9f bodyY=%.9f body=%.9f "
-                        + "boneY=%.9f boneP=%.9f clY=%.9f clP=%.9f k=%.9f "
-                        + "poutY=%.9f poutP=%.9f outY=%.9f outP=%.9f "
-                        + "yawbits=%08X pitchbits=%08X prevsyncY=%.9f prevsyncP=%.9f seq=%d",
-                getUUID(), level().getGameTime(), st.wanted, goal, pRun && rRun,
-                target == null ? "none" : String.valueOf(target.getId()),
-                target instanceof Player, dist,
-                st.wantX, st.wantY, st.wantZ, st.rawYaw, st.rawPitch,
-                st.prevHeadYaw, st.prevPitch, st.limitedHeadYaw, st.limitedPitch,
-                st.bodyClampedYaw, this.yBodyRot, st.boneYaw, st.bonePitch,
-                st.gainClampYaw, st.gainClampPitch, st.damping,
-                st.prevOutYaw, st.prevOutPitch, st.outYaw, st.outPitch,
-                Float.floatToRawIntBits(shadowYaw), Float.floatToRawIntBits(shadowPitch),
-                this.entityData.get(DATA_LOOK_SHADOW_PREV_YAW),
-                this.entityData.get(DATA_LOOK_SHADOW_PREV_PITCH),
-                this.shadowSeq));
+    public int getSniffTime() {
+        return this.sniffTime;
     }
-    private int probeLogged = 0;
 
     @Override
-    public void aiStep() {
-        super.aiStep();
-        if (!level().isClientSide && isPassenger()) {
-            // aiStep() 직후 = goalSelector -> lookControl.tick() 이 막 끝난 지점.
-            // hasWanted 는 매 틱 리셋되고 clampRotation 은 그 뒤(positionRider)에 오므로
-            // wanted 를 읽을 수 있는 유일한 시점이다.
-            this.headAfterAiStep = getYHeadRot();
-            net.minecraft.world.entity.ai.control.LookControl lc = getLookControl();
-            this.probeWanted = lc.isLookingAtTarget();
-            this.probeX = lc.getWantedX();
-            this.probeY = lc.getWantedY();
-            this.probeZ = lc.getWantedZ();
-            StringBuilder sb = new StringBuilder();
-            this.goalSelector.getRunningGoals().forEach(g -> {
-                if (sb.length() > 0) {
-                    sb.append('+');
-                }
-                sb.append(g.getGoal().getClass().getSimpleName());
-            });
-            this.probeGoals = sb.length() == 0 ? "none" : sb.toString();
-            // 1-A. 관문 측정을 통과한 이 지점에서만 쓴다. 다른 훅으로 옮기지 않는다.
-            boolean w0 = this.entityData.get(DATA_LOOK_WANTED);
-            float x0 = this.entityData.get(DATA_LOOK_X);
-            float y0 = this.entityData.get(DATA_LOOK_Y);
-            float z0 = this.entityData.get(DATA_LOOK_Z);
-            float xf = (float) this.probeX;
-            float yf = (float) this.probeY;
-            float zf = (float) this.probeZ;
-            this.entityData.set(DATA_LOOK_WANTED, this.probeWanted);
-            this.entityData.set(DATA_LOOK_X, xf);
-            this.entityData.set(DATA_LOOK_Y, yf);
-            this.entityData.set(DATA_LOOK_Z, zf);
-            advanceShadow();
-            if (w0 != this.probeWanted || x0 != xf || y0 != yf || z0 != zf) {
-                this.syncSeq++;
-                // 순번은 반드시 마지막에 올린다. 클라가 seq 변화를 본 순간 네 값이 이미 그
-                // seq 의 것이어야 한다.
-                this.entityData.set(DATA_LOOK_PROBE_SEQ, this.syncSeq);
-                com.wardengirl.WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
-                        "[syncsrv] id=%d uuid=%s seq=%d t=%d gt=%d wanted=%b x=%.7f y=%.7f "
-                                + "z=%.7f rawx=%.12f rawy=%.12f rawz=%.12f",
-                        getId(), getUUID(), this.syncSeq, this.tickCount,
-                        level().getGameTime(), this.probeWanted, xf, yf, zf,
-                        this.probeX, this.probeY, this.probeZ));
-            }
+    public void handleEntityEvent(byte id) {
+        if (id == EVENT_SNIFF) {
+            this.sniffTime = (int) Math.round(AnimRegistry.SNIFF_LENGTH_TICKS);
+        } else {
+            super.handleEntityEvent(id);
         }
-    }
-
-    /**
-     * 4.14 1-B-2 계측. 동기화된 shadow 각도를 <b>클라이언트 엔티티 틱마다</b> 확인한다.
-     *
-     * <h2>왜 모델에서 옮겼는가</h2>
-     *
-     * 직전 라운드에는 {@code WardenGirlModel.setCustomAnimations} 안에 있었고, 그것은 <b>렌더
-     * 경로</b>다. 몹이 프러스텀을 벗어나면 동기화 값을 받아도 로그가 남지 않는다. 실제로 이동
-     * 자극 300틱 동안 클라이언트 수신이 0건으로 기록돼 측정이 무효가 됐다.
-     * <b>네트워크 수신과 렌더는 다른 것</b>이므로 계측도 분리한다.
-     *
-     * <p>상태는 {@link #clientLastShadowSeq} — <b>엔티티 인스턴스별 필드</b>다. static 전역이면
-     * 다른 UUID 가 섞여 초기화 문제가 생긴다. 인스턴스 필드에는 그 문제가 없다.
-     *
-     * <p>{@code Minecraft.getInstance()} / 렌더 프레임 / {@code partialTick} / 모델 / 본 상태 /
-     * 프러스텀 / {@code BoneTrace} 를 쓰지 않는다.
-     */
-    private int clientLastShadowSeq = Integer.MIN_VALUE;
-
-    private void noteShadowReceiveClient() {
-        if (!level().isClientSide) {
-            return;
-        }
-        int seq = this.entityData.get(DATA_LOOK_SHADOW_SEQ);
-        if (seq == this.clientLastShadowSeq) {
-            return;
-        }
-        this.clientLastShadowSeq = seq;
-        float yaw = this.entityData.get(DATA_LOOK_SHADOW_YAW);
-        float pitch = this.entityData.get(DATA_LOOK_SHADOW_PITCH);
-        com.wardengirl.WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
-                "[shadowcli] id=%d uuid=%s seq=%d t=%d gt=%d yaw=%.9f pitch=%.9f "
-                        + "yawbits=%08X pitchbits=%08X",
-                getId(), getUUID(), seq, this.tickCount, level().getGameTime(), yaw, pitch,
-                Float.floatToRawIntBits(yaw), Float.floatToRawIntBits(pitch)));
     }
 
     @Override
     public void tick() {
         super.tick();
-        noteShadowReceiveClient();
-        if (!level().isClientSide && !isPassenger() && this.shadow.isRiding()) {
-            // 하차. shadow 상태를 버린다 - 다음 탑승은 몸통 정면 / pitch 0 에서 다시 시작한다.
-            this.shadow.reset();
+        if (isPassenger()) {
+            // super.rideTick() 안에서 불렸다면 positionRider 는 아직 오지 않았다. 지상에서는
+            // 이 분기가 그냥 최신값을 들고 있을 뿐이고 복원도 일어나지 않는다.
+            this.ridingHeadYaw = getYHeadRot();
         }
-        if (!level().isClientSide && isPassenger() && this.probeLogged < 1200) {
-            this.probeLogged++;
-            com.wardengirl.WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
-                    "[probe] id=%d uuid=%s t=%d aiStep=%.3f tickEnd=%.3f yRot=%.3f yBodyRot=%.3f "
-                            + "wanted=%s x=%.3f y=%.3f z=%.3f goals=%s follow=%.1f",
-                    getId(), getUUID(), this.tickCount, this.headAfterAiStep, getYHeadRot(),
-                    getYRot(), this.yBodyRot, this.probeWanted, this.probeX, this.probeY,
-                    this.probeZ, this.probeGoals, AnimParams.SIT_BODY_FOLLOW.get()));
+        if (level().isClientSide && this.sniffTime > 0) {
+            this.sniffTime--;
         }
     }
 
-    /** 1-A. 클라이언트가 수신값을 읽기만 하는 접근자. 계산에 쓰이지 않는다. */
-    public boolean syncedLookWanted() {
-        return this.entityData.get(DATA_LOOK_WANTED);
-    }
-
-    public float syncedLookX() {
-        return this.entityData.get(DATA_LOOK_X);
-    }
-
-    public float syncedLookY() {
-        return this.entityData.get(DATA_LOOK_Y);
-    }
-
-    public float syncedLookZ() {
-        return this.entityData.get(DATA_LOOK_Z);
-    }
-
-    /** 1-B-2 계측. 클라이언트는 읽기만 한다. */
-    public float syncedShadowYaw() {
-        return this.entityData.get(DATA_LOOK_SHADOW_YAW);
-    }
-
-    public float syncedShadowPitch() {
-        return this.entityData.get(DATA_LOOK_SHADOW_PITCH);
-    }
-
-    public float syncedShadowPrevYaw() {
-        return this.entityData.get(DATA_LOOK_SHADOW_PREV_YAW);
-    }
-
-    public float syncedShadowPrevPitch() {
-        return this.entityData.get(DATA_LOOK_SHADOW_PREV_PITCH);
-    }
-
-    public int syncedShadowSeq() {
-        return this.entityData.get(DATA_LOOK_SHADOW_SEQ);
-    }
-
-    /** 계측 전용 순번. 판정의 기본 키다 — 시간이나 tick 이 아니다. */
-    public int syncedLookProbeSeq() {
-        return this.entityData.get(DATA_LOOK_PROBE_SEQ);
-    }
 
     public boolean isWalkingForAnimation() {
         // 4.13. 탈것에 타면 몹 좌표가 탈것을 따라 움직여 이동으로 잡힌다. 별도 게이트를 두면

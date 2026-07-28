@@ -192,7 +192,6 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             for (HeadgearSpring spring : springsFor(animatable)) {
                 spring.reset();
             }
-            damperFor(animatable).reset();
             return;
         }
         // Every verifier in this method keeps its state in statics, and setCustomAnimations runs
@@ -214,7 +213,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         }
         ActionInfo action = applyActionMotion(animatable, walkOnly);
         applyStaticOffsets();
-        applyLook(animatable, animationState);
+        applyLook(animationState);
         applyTurnLean(animatable);
         applyHeadgearSpring(animatable);
         applyOverlayVisibility();
@@ -246,107 +245,11 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             BoneTrace.noteWalkState(animatable.walkStateForReport(),
                     animatable.rawMovingForReport(), animatable.lastMovingTickForReport(),
                     animatable.tickCount);
-            noteRideDiagnostic(animatable, animationState);
-            noteSyncReceive(animatable);
             BoneTrace.sample(readAllBones(), readAllPositions(), animatable.tickCount);
         }
     }
 
-    /**
-     * 4.14 1-A. 수신값을 <b>기록만</b> 한다. 계산도, 본 적용도, shadow 상태도 없다.
-     *
-     * <p>서버는 값이 바뀔 때만 {@code [syncsrv]} 를 찍고 여기서는 바뀔 때만 {@code [synccli]} 를
-     * 찍는다. 순번은 각자 자기 쪽 카운터이고, 대조는 <b>변경 순서와 최종 수렴</b>으로 한다 —
-     * 네트워크 지연 때문에 같은 틱의 동시 도착을 요구할 수 없기 때문이다.
-     */
-    private static boolean lastSyncWanted;
-    private static float lastSyncX = Float.NaN;
-    private static float lastSyncY = Float.NaN;
-    private static float lastSyncZ = Float.NaN;
-    private static int lastSyncTick = Integer.MIN_VALUE;
-    private static int syncCliSeq = 0;
-    private static boolean syncCliInit = false;
-    /**
-     * 계측 오염 방지. static 상태이므로 <b>대상 엔티티가 바뀌면 전부 초기화</b>한다.
-     * {@code EntityLock} 과 별개로 자체 ID 를 들고 비교하는 방식을 골랐다 — 이 계측만의
-     * 상태이므로 락의 수명에 묶지 않는 편이 지우기 쉽다. 제품 동작은 건드리지 않는다.
-     */
-    private static int syncCliEntityId = Integer.MIN_VALUE;
-    private static java.util.UUID syncCliUuid = null;
-    private static int syncCliLastSeq = Integer.MIN_VALUE;
 
-    private void noteSyncReceive(WardenGirlEntity animatable) {
-        if (syncCliEntityId != animatable.getId()
-                || !animatable.getUUID().equals(syncCliUuid)) {
-            WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
-                    "[synccli] --- 대상 변경, 계측 초기화. 이전 id=%d uuid=%s -> 새 id=%d uuid=%s",
-                    syncCliEntityId, String.valueOf(syncCliUuid), animatable.getId(),
-                    animatable.getUUID()));
-            syncCliEntityId = animatable.getId();
-            syncCliUuid = animatable.getUUID();
-            syncCliSeq = 0;
-            syncCliLastSeq = Integer.MIN_VALUE;
-        }
-        // 좌표를 폴링하지 않는다. 동기화된 순번이 바뀐 순간에만 한 건 기록한다.
-        int seq = animatable.syncedLookProbeSeq();
-        if (seq == syncCliLastSeq) {
-            return;
-        }
-        syncCliLastSeq = seq;
-        syncCliSeq++;
-        boolean w = animatable.syncedLookWanted();
-        float x = animatable.syncedLookX();
-        float y = animatable.syncedLookY();
-        float z = animatable.syncedLookZ();
-        WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
-                "[synccli] id=%d uuid=%s seq=%d n=%d t=%d gt=%d wanted=%b x=%.7f y=%.7f z=%.7f",
-                animatable.getId(), animatable.getUUID(), seq, syncCliSeq, animatable.tickCount,
-                animatable.level().getGameTime(), w, x, y, z));
-    }
-
-    /**
-     * 4.13 문제 3 조사용. 탑승 중 몸통이 왜 안 도는지를 값으로 잡는다.
-     *
-     * <p>세 각을 <b>같은 프레임에</b> 읽는다. 따로 재면 어느 것이 안 도는지 구분할 수 없다.
-     * 바닐라 비교는 같은 월드에 탑승한 다른 몹 한 마리를 함께 찍어서 한다 — 우리 렌더러를
-     * 거치지 않은 값이므로 우리 코드의 영향을 받지 않는다.
-     *
-     * <p>조사 전용이다. 결론이 나면 이 메서드와 {@code BoneTrace.noteRide} 를 함께 지운다.
-     */
-    private void noteRideDiagnostic(WardenGirlEntity animatable,
-                                    AnimationState<WardenGirlEntity> animationState) {
-        net.minecraft.world.entity.Entity vehicle = animatable.getVehicle();
-        EntityModelData look = animationState.getData(DataTickets.ENTITY_MODEL_DATA);
-        double headBoneYaw = getBone(Bones.HEAD)
-                .map(b -> AxisConvention.toDeg(b.getRotY())).orElse(Double.NaN);
-        String vanilla = "vanilla=없음";
-        for (net.minecraft.world.entity.LivingEntity other : animatable.level().getEntitiesOfClass(
-                net.minecraft.world.entity.LivingEntity.class,
-                animatable.getBoundingBox().inflate(16.0D))) {
-            if (other == animatable || !(other.getVehicle() instanceof net.minecraft.world.entity.vehicle.Boat)) {
-                continue;
-            }
-            vanilla = String.format(java.util.Locale.ROOT,
-                    "vanilla=%s yRot %+8.3f yBodyRot %+8.3f yHeadRot %+8.3f vehYRot %+8.3f",
-                    other.getType().toShortString(), other.getYRot(), other.yBodyRot,
-                    other.getYHeadRot(), other.getVehicle().getYRot());
-            break;
-        }
-        double playerAz = Double.NaN;
-        net.minecraft.client.player.LocalPlayer lp = Minecraft.getInstance().player;
-        if (lp != null) {
-            double toPlayer = Math.toDegrees(Math.atan2(lp.getZ() - animatable.getZ(),
-                    lp.getX() - animatable.getX())) - 90.0D;
-            playerAz = ((toPlayer - animatable.yBodyRot) % 360.0D + 540.0D) % 360.0D - 180.0D;
-        }
-        BoneTrace.noteRide(animatable.tickCount, animatable.isPassenger(),
-                vehicle == null ? "없음" : vehicle.getType().toShortString(),
-                vehicle == null ? Double.NaN : vehicle.getYRot(),
-                animatable.getYRot(), animatable.yBodyRot, animatable.yBodyRotO,
-                animatable.getYHeadRot(),
-                look == null ? Double.NaN : look.netHeadYaw(),
-                headBoneYaw, lastLookTargetYaw, lastLookOutYaw, playerAz, vanilla);
-    }
 
     // ---- 4.6 시선 (선택지 A: Java 가산) ----------------------------------------------------------
 
@@ -373,155 +276,31 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      * the 4.8.4 bytecode), i.e. GeckoLib has already put them in the bone convention this project
      * uses. Per 4.0.1 nothing is negated again anywhere.
      *
-     * <h2>4.6 감쇠 — clamp first, then damp</h2>
+     * <h2>4.14 — 여기서 다시 계산하지 않는다</h2>
      *
-     * The order matters. Damping the raw value and clamping the result would park the head at the
-     * limit for as long as the raw target stayed outside it, and the approach to the limit would be
-     * a straight line cut off at the top. Clamping first makes the limit the target, so the head
-     * eases onto it the same way it eases onto any other angle. It is also what keeps the damped
-     * value inside the clamp for free: a convex combination of two in-range values is in range.
+     * clamp 도 감쇠도 없다. 그 둘은 바닐라가 이미 한 일을 렌더 프레임에서 되풀이하는 것이었다:
+     * 야우 한계 75°는 {@code Mob.getMaxHeadYRot()} 기본값과 같은 수이고 {@code LookControl} 이
+     * 서버에서 이미 자르며, 감쇠는 {@code LookControl.rotateTowards}(틱당 10°)와
+     * {@code lerpHeadTo(f, 3)} 이 하는 일이다. 탑승 여부에 따른 별도 출처도 없다 —
+     * {@code WardenGirlEntity.rideTick} 이 {@code yHeadRot} 을 되살리므로
+     * {@code EntityModelData} 하나로 지상과 탑승이 같은 경로를 탄다.
      *
-     * <p>No angle wrapping. What arrives is already a <em>difference</em> (head minus body) that
-     * vanilla has wrapped into (−180, 180], and the clamp above narrows it to ±75 before the filter
-     * sees it. A sign flip across the back is therefore a sweep from +75 to −75 through zero, which
-     * is the path the head physically has to take anyway.
+     * <p>렌더 clamp 를 없애면 {@code netHeadYaw} 이 ±180 을 넘는 언랩 값일 때의 문제도 사라진다.
+     * 순수 회전이라 350°와 −10°가 같은 그림이고, 문제는 그 값을 <em>자를 때</em>만 생겼다.
+     *
+     * <p>{@code look_gain} 은 남는다. 배율 1.0 은 항등이지만 {@code BlendCheck} 가 head.yRot
+     * 잔차를 판정하려면 시선을 0 으로 끌 수 있어야 한다 — 그 유효 조건이 이 노브다.
      */
-    /** 4.14 조사용. 마지막 프레임의 시선 목표/출력 yaw. 계측 전용이다. */
-    private static double lastLookTargetYaw = Double.NaN;
-    private static double lastLookOutYaw = Double.NaN;
-
-    /**
-     * 4.14 (1). 탑승 중 시선 목표를 <b>엔티티를 거치지 않고</b> 직접 계산한다.
-     *
-     * <h2>왜 엔티티 yHeadRot 을 못 쓰는가</h2>
-     *
-     * {@code Boat.clampRotation} 이 매 틱 {@code setYHeadRot(passenger.getYRot())} 를 실행해
-     * 서버 {@code LookControl} 의 결과를 지운다. 측정: 플레이어가 몹 주위 8개 방위를 도는 700틱
-     * 동안 {@code netHeadYaw} 은 <b>+105.000 상수</b>였고 head 본의 고유값은 4개(74.596~75.000)
-     * 뿐이었다. 고개가 한 번도 움직이지 않았다는 뜻이다.
-     *
-     * <h2>같은 규약, 같은 감쇠</h2>
-     *
-     * 돌려주는 값은 {@code EntityModelData} 와 <b>같은 규약</b>이다 — GeckoLib 이 넘기는 것은
-     * {@code -(yHeadRot - yBodyRot)} 이므로 여기서도 {@code -(플레이어 방위 - yBodyRot)} 를
-     * 돌려준다. 그래야 호출부의 gain / clamp / {@link LookDamper} 를 그대로 통과해 4.6 과 같은
-     * 인상이 나온다.
-     *
-     * <p>기준 플레이어는 {@code Minecraft.getInstance().player} 다 — 4.12 킁킁과 같은 기준이고,
-     * 멀티플레이에서 각 클라이언트가 자기 플레이어를 본다는 성질도 4.12 와 같다.
-     *
-     * @return {yaw, pitch} 본 규약 원시값. 탑승이 아니거나 꺼져 있거나 플레이어가 없으면 null
-     */
-    private double[] sitLookRaw(WardenGirlEntity animatable) {
-        if (!animatable.isPassenger()) {
-            this.sitLooks.remove(animatable.getId());
-            return null;
-        }
-        double enable = AnimParams.SIT_LOOK_ENABLE.get();
-        if (enable <= 0.0D) {
-            // 꺼져 있으면 정면. netHeadYaw 로 되돌리면 죽은 상수(+105)가 그대로 실린다.
-            return new double[]{0.0D, 0.0D};
-        }
-        SitLook look = this.sitLooks.computeIfAbsent(animatable.getId(), k -> new SitLook());
-        if (this.sitLooks.size() > MAX_TRACKED_ENTITIES) {
-            this.sitLooks.clear();
-        }
-        double[] out = look.advance(animatable, animatable.tickCount);
-        net.minecraft.world.entity.player.Player lp = Minecraft.getInstance().player;
-        look.noteRange(lp != null && lp.distanceToSqr(animatable) <= 144.0D);
-        BoneTrace.noteSitLook(look, animatable.tickCount);
-        return new double[]{out[LookDamper.YAW] * enable, out[LookDamper.PITCH] * enable};
-    }
-
-    /** 4.14 (1) 엔티티별 탑승 시선 상태기계. 하차하면 버린다. */
-    private final java.util.Map<Integer, SitLook> sitLooks = new java.util.HashMap<>();
-
-    private static double wrapDeg(double deg) {
-        double d = deg % 360.0D;
-        if (d >= 180.0D) {
-            d -= 360.0D;
-        }
-        if (d < -180.0D) {
-            d += 360.0D;
-        }
-        return d;
-    }
-
-    /** 1-C 계측. 동기화 수신값과 본에 실제로 넘긴 값을 같은 행에 남긴다. 틱당 한 번. */
-    private static int shadowApplyTick = Integer.MIN_VALUE;
-
-    private void noteShadowApply(WardenGirlEntity animatable, double yaw, double pitch) {
-        // 프레임마다 남긴다 - 보간 검증에는 같은 틱의 여러 partialTick 표본이 필요하다.
-        WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
-                "[shadowapply] uuid=%s seq=%d t=%d pt=%.6f prevY=%.9f prevP=%.9f "
-                        + "curY=%.9f curP=%.9f appY=%.9f appP=%.9f",
-                animatable.getUUID(), animatable.syncedShadowSeq(), animatable.tickCount,
-                Minecraft.getInstance().getPartialTick(),
-                animatable.syncedShadowPrevYaw(), animatable.syncedShadowPrevPitch(),
-                animatable.syncedShadowYaw(), animatable.syncedShadowPitch(), yaw, pitch));
-    }
-
-    private void applyLook(WardenGirlEntity animatable,
-                           AnimationState<WardenGirlEntity> animationState) {
+    private void applyLook(AnimationState<WardenGirlEntity> animationState) {
         EntityModelData look = animationState.getData(DataTickets.ENTITY_MODEL_DATA);
         if (look == null) {
             return;
         }
-        // ---- 4.14 1-C. 서버 shadow 경로 -------------------------------------------------
-        // 서버가 목표각/속도 제한/몸통 제한/본 규약/gain/clamp/감쇠를 이미 끝냈다.
-        // 여기서 다시 하면 두 번 걸린다 - 부호 반전도, gain 도, clamp 도, 감쇠도 없다.
-        // 기존 SitLook 과 LookDamper 는 이 분기에서 호출되지 않으므로 출력에 기여하지 않는다.
-        if (animatable.isPassenger() && AnimParams.SIT_LOOK_SOURCE.get() >= 0.5D
-                && animatable.syncedShadowSeq() > 0) {
-            // 1-C-2. 서버가 준 두 endpoint 사이를 렌더 프레임 위치로만 선형 보간한다.
-            // 새 결정도, 새 감쇠도 아니다 - partialTick 은 위치를 고르는 데만 쓴다.
-            // 각도 wrapping 을 하지 않는다: 서버 출력은 이미 프로젝트 범위 안에서
-            // 물리적 경로를 따라오므로 두 endpoint 사이에 불연속이 없다.
-            float pt = Minecraft.getInstance().getPartialTick();
-            double prevYaw = animatable.syncedShadowPrevYaw();
-            double prevPitch = animatable.syncedShadowPrevPitch();
-            double curYaw = animatable.syncedShadowYaw();
-            double curPitch = animatable.syncedShadowPitch();
-            double shadowYaw = prevYaw + (curYaw - prevYaw) * pt;
-            double shadowPitch = prevPitch + (curPitch - prevPitch) * pt;
-            if (Double.isFinite(shadowYaw) && Double.isFinite(shadowPitch)) {
-                // 되돌릴 때 낡은 상태가 튀지 않게 비워 둔다. 이 분기에서는 쓰이지 않는다.
-                damperFor(animatable).reset();
-                noteShadowApply(animatable, shadowYaw, shadowPitch);
-                addRotY(Bones.HEAD, shadowYaw);
-                addRotX(Bones.HEAD, shadowPitch);
-                return;
-            }
-        }
         double gain = AnimParams.LOOK_GAIN.get();
-        // The clamp is NOT redundant with GeckoLib's. GeckoLib's Mth.clamp(..., -85, 85) sits
-        // inside the `shouldSit` branch of actuallyRender and never runs for a standing mob; the
-        // delivered value is the raw yHeadRot - yBodyRot difference. Measured range across 729
-        // samples: -88.280 .. +86.250. See Part 11.
-        double[] raw = sitLookRaw(animatable);
-        if (raw == null) {
-            raw = new double[]{look.netHeadYaw(), look.headPitch()};
-        }
-        double[] target = {
-                clampAbs(raw[LookDamper.YAW] * gain, AnimParams.LOOK_YAW_MAX.get()),
-                clampAbs(raw[LookDamper.PITCH] * gain, AnimParams.LOOK_PITCH_MAX.get())};
-
-        double distance = distanceToLocalPlayer(animatable);
-        double damping = LookDamper.dampingFor(distance);
-        LookDamper damper = damperFor(animatable);
-        damper.advanceTo(animatable.tickCount, target, damping);
-        float partialTick = Minecraft.getInstance().getPartialTick();
-        double yaw = damper.output(LookDamper.YAW, partialTick, target[LookDamper.YAW]);
-        double pitch = damper.output(LookDamper.PITCH, partialTick, target[LookDamper.PITCH]);
-
-        BoneTrace.noteLook(target, new double[]{yaw, pitch}, damping, distance,
-                animatable.tickCount);
-        // 4.14 조사용. 시선이 계산한 목표각과 감쇠 출력을 탑승 덤프와 같은 행에 싣는다.
-        lastLookTargetYaw = target[LookDamper.YAW];
-        lastLookOutYaw = yaw;
-        addRotY(Bones.HEAD, yaw);
-        addRotX(Bones.HEAD, pitch);
+        addRotY(Bones.HEAD, look.netHeadYaw() * gain);
+        addRotX(Bones.HEAD, look.headPitch() * gain);
     }
+
 
     // ---- 4.4.3 방향 전환 기울임 --------------------------------------------------------------
 
@@ -553,37 +332,6 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
                 animatable.getDeltaMovement().horizontalDistanceSqr() > 1.0E-6D, partialTick);
         BoneTrace.noteTurnLean(deg, lean.rawRate());
         addRotZ(Bones.HIP, deg);
-    }
-
-    /**
-     * Distance in blocks to the client's own player, or −1 when there is none.
-     *
-     * <p>The local player, not "the entity's look target": 4.6 근거리 반응 exists so that walking up
-     * to the companion changes how it moves, and the person walking up is the one holding the
-     * screen. Using the AI's target would make the effect invisible to anyone but that target.
-     */
-    private static double distanceToLocalPlayer(WardenGirlEntity animatable) {
-        var player = Minecraft.getInstance().player;
-        return player == null ? -1.0D : animatable.distanceTo(player);
-    }
-
-    /**
-     * One damper per entity, for the same reason as {@link #springsFor} — the model instance is
-     * shared by every WardenGirl on screen, so a single filter would have them all driving one
-     * neck angle.
-     */
-    private final Map<Integer, LookDamper> dampers = new HashMap<>();
-
-    private LookDamper damperFor(WardenGirlEntity animatable) {
-        if (this.dampers.size() > MAX_TRACKED_ENTITIES) {
-            this.dampers.clear();
-        }
-        return this.dampers.computeIfAbsent(animatable.getId(), k -> new LookDamper());
-    }
-
-    private static double clampAbs(double value, double limit) {
-        double max = Math.abs(limit);
-        return Math.max(-max, Math.min(max, value));
     }
 
     // ---- 4.5 headgear 스프링 -------------------------------------------------------------------
@@ -883,12 +631,13 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     private final Map<Integer, ActionMotion> actions = new HashMap<>();
     /** Previous frame's hurtTime, per entity — 4.11's trigger is its rising edge. */
     private final Map<Integer, Integer> lastHurtTime = new HashMap<>();
-    /** T6 반응형 idle 의 트리거 상태. 폐기 시 이 필드도 함께 지운다. */
-    private final Map<Integer, IdleReaction> reactions = new HashMap<>();
+    /**
+     * 직전 프레임의 {@code sniffTime}, 엔티티별. 4.11 피격의 {@link #lastHurtTime} 과 같은 규약 —
+     * 서버가 올린 값의 <b>상승 에지</b>가 재생 시작이다. 거리·각도·확률은 여기서 보지 않는다.
+     */
+    private final Map<Integer, Integer> lastSniffTime = new HashMap<>();
     /** 중단이 시작된 시각(틱). 있으면 페이드 아웃 중이다. */
     private final Map<Integer, Double> sniffInterrupt = new HashMap<>();
-    /** 소리를 터뜨릴 재생 나이(틱). 0.746초 클립 안에 킁킁 2회가 있으므로 두 번 튼다. */
-    private static final double[] SNIFF_SOUND_AT = {4.0D, 22.0D};
 
     /** The four axes where C2 and C3 both write. Order is fixed; see {@link #applyWalkBlend}. */
     private double[] readBlendAxes() {
@@ -952,51 +701,36 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         if (this.lastHurtTime.size() > MAX_TRACKED_ENTITIES) {
             this.lastHurtTime.clear();
         }
-        // ===== T6 반응형 idle. 폐기 시 이 블록과 IdleReaction / ModSounds 만 지우면 된다 =====
-        IdleReaction reaction = this.reactions.computeIfAbsent(animatable.getId(),
-                k -> new IdleReaction());
-        if (this.reactions.size() > MAX_TRACKED_ENTITIES) {
-            this.reactions.clear();
+        // ===== T6 반응형 idle. 판정은 서버 WardenGirlSniffGoal 이 한다 =====================
+        // 여기는 표시만 한다 - 거리도, 정면각도, 확률도 보지 않는다. 서버가 방송한 엔티티 사건이
+        // sniffTime 을 올렸고, 그 상승 에지가 재생 시작이다.
+        int sniff = animatable.getSniffTime();
+        Integer prevSniffBoxed = this.lastSniffTime.put(animatable.getId(), sniff);
+        if (this.lastSniffTime.size() > MAX_TRACKED_ENTITIES) {
+            this.lastSniffTime.clear();
         }
-        net.minecraft.world.entity.player.Player near = Minecraft.getInstance().player;
-        double playerDist = near == null ? Double.NaN : near.distanceTo(animatable);
-        // 정면 기준 각도. 몹이 보는 방향(yBodyRot)과 플레이어 방향의 차, 절대값.
-        double frontAngle = Double.NaN;
-        if (near != null) {
-            double toPlayer = Math.toDegrees(Math.atan2(near.getZ() - animatable.getZ(),
-                    near.getX() - animatable.getX())) - 90.0D;
-            double diff = (toPlayer - animatable.yBodyRot) % 360.0D;
-            if (diff >= 180.0D) {
-                diff -= 360.0D;
-            }
-            if (diff < -180.0D) {
-                diff += 360.0D;
-            }
-            frontAngle = Math.abs(diff);
-        }
-        // 킁킁은 C3 에서 가장 낮은 우선순위다. 다른 클립이 돌거나 맞는 중이면 발동하지 않고,
-        // 이미 돌고 있었다면 페이드로 끊는다. 전체 우선순위 체계는 나중에 정한다.
+        boolean sniffStarted = sniff > (prevSniffBoxed == null ? 0 : prevSniffBoxed);
+        // 킁킁은 C3 에서 가장 낮은 우선순위다. 이미 돌고 있는데 다른 클립이나 피격이 오면
+        // 페이드로 끊는다. 서버 Goal 도 같은 조건에서 종료하고 남은 소리를 취소한다 - 두 값
+        // 모두 동기화된 것이므로 모든 클라이언트가 같은 순간에 같은 판단을 한다.
         boolean sniffRunning = AnimRegistry.IDLE_SNIFF.equals(action.clip()) && action.isPlaying();
-        boolean otherAction = !animatable.getActionClip().isEmpty();
-        boolean blocked = otherAction || animatable.hurtTime != 0;
-        if (sniffRunning && blocked) {
-            reaction.noteInterrupt();
-            reaction.cancelRemainingSounds(SNIFF_SOUND_AT.length);
+        if (sniffRunning && (!animatable.getActionClip().isEmpty() || animatable.hurtTime != 0)) {
             this.sniffInterrupt.put(animatable.getId(), now);
-        }
-        boolean sniffStarted = !animatable.isSignTest()
-                && reaction.tickSniff(playerDist, frontAngle, blocked, animatable.tickCount);
-        if (BoneTrace.isRunning() && EntityLock.isSubject(animatable.getId())) {
-            BoneTrace.noteReaction(reaction, sniffStarted);
         }
         if (sniffStarted) {
             software.bernie.geckolib.core.animation.Animation sniffClip =
                     getAnimation(animatable, AnimRegistry.IDLE_SNIFF);
-            if (sniffClip != null) {
+            // 재생 머리를 서버가 말한 위치에 놓는다. 프레임률이 틱보다 느려 시작 틱을 놓쳤거나
+            // 몹이 재생 도중 화면에 들어와도 어긋나지 않는다 - 0 에서 다시 시작하면 서버가
+            // 내는 소리와 화면이 벌어진다.
+            double elapsed = Math.max(0.0D, AnimRegistry.SNIFF_LENGTH_TICKS - sniff);
+            if (sniffClip != null && elapsed < sniffClip.length()) {
                 this.sniffInterrupt.remove(animatable.getId());
-                reaction.resetSounds();
                 action.syncTo(-animatable.tickCount - 1, AnimRegistry.IDLE_SNIFF,
-                        sniffClip.length(), now);
+                        sniffClip.length(), now - elapsed);
+                if (BoneTrace.isRunning() && EntityLock.isSubject(animatable.getId())) {
+                    BoneTrace.noteSniffStart();
+                }
             }
         }
         // ===== T6 끝 =====
@@ -1049,28 +783,9 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
                         double fade = AnimParams.SNIFF_INTERRUPT_FADE.get();
                         double u = fade <= 0.0D ? 1.0D : (now - cut) / fade;
                         amp *= Math.max(0.0D, 1.0D - u);
-                    } else {
-                        // 소리는 우리가 직접 발화한다 - C3 는 직접 평가 경로라 GeckoLib 의
-                        // 사운드 키프레임을 타지 않는다. 재생당 정확히 2회, 중복 없이.
-                        IdleReaction r = this.reactions.get(animatable.getId());
-                        int which = r == null ? -1 : r.soundsFired();
-                        if (r != null && AnimParams.SNIFF_DISTANCE.get() > 0.0D
-                                && r.claimSound(age, SNIFF_SOUND_AT)) {
-                            double vol = AnimParams.SNIFF_SOUND_VOLUME.get()
-                                    * (which == 0 ? 1.0D
-                                            : AnimParams.SNIFF_SOUND_VOLUME_2ND.get());
-                            animatable.level().playLocalSound(animatable.getX(),
-                                    animatable.getY(), animatable.getZ(),
-                                    com.wardengirl.registry.ModSounds.SNIFF.get(),
-                                    net.minecraft.sounds.SoundSource.NEUTRAL,
-                                    (float) vol,
-                                    (float) AnimParams.SNIFF_SOUND_PITCH.get(), false);
-                            // 계측: 어느 재생의 몇 번째 문턱을 어느 나이에 먹었는가.
-                            // 2회 초과의 원인을 값으로 잡기 위한 것이다.
-                            BoneTrace.noteSniffSound(age, which,
-                                    System.identityHashCode(this));
-                        }
                     }
+                    // 소리는 여기서 내지 않는다. 서버 WardenGirlSniffGoal 이 mob.playSound 로
+                    // 월드 사운드를 내므로 주변 플레이어 전원이 거리만큼 감쇠해 같이 듣는다.
                 }
                 boolean hurtClip = AnimRegistry.IDLE_HURT.equals(action.clip());
                 // 4.13: 탑승 중에는 앉기가 팔을 앞으로 보내므로 킁킁이 상쇄될 수 있다.

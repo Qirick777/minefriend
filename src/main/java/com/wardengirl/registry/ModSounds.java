@@ -11,10 +11,13 @@ import net.minecraftforge.registries.RegistryObject;
 /**
  * T6 4.12 킁킁 소리. <b>폐기 가능하다.</b>
  *
- * <p>{@code IdleReaction} 과 함께 지워질 수 있도록 따로 뒀다. 지울 때는 이 클래스,
+ * <p>{@code WardenGirlSniffGoal} 과 함께 지워질 수 있도록 따로 뒀다. 지울 때는 이 클래스,
  * {@code sounds.json}, {@code assets/wardengirl/sounds/sniff.ogg}, 그리고 {@code WardenGirlMod}
  * 안의 등록 한 줄이다. {@code sniff_distance} 가 0 이면 발화 자체가 없으므로 코드를 안 지워도
  * 소리는 나지 않는다.
+ *
+ * <p>4.14 부터 발화는 <b>서버</b>다 — {@code mob.playSound} 가 월드 사운드를 내므로 주변
+ * 플레이어 전원이 거리 감쇠에 따라 같은 소리를 듣는다.
  *
  * <p>카테고리는 {@code neutral} 이다 — {@code SoundSource.NEUTRAL} 은 바닐라가 적대적이지 않은
  * 몹의 발성에 쓰는 채널이고, 플레이어가 음량 슬라이더에서 "우호적 생물" 로 조절한다. 킁킁은

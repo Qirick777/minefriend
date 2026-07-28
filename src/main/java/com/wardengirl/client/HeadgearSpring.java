@@ -139,7 +139,7 @@ public final class HeadgearSpring {
     /**
      * Sanity bound on the integrated angle, in degrees.
      *
-     * <p>The head can reach {@code LOOK_YAW_MAX + 그 밖의 항} ≈ 105°, and a healthy underdamped
+     * <p>The head can reach 바닐라 시선 한계 + 그 밖의 항 ≈ 105°, and a healthy underdamped
      * spring overshoots that by roughly a quarter. 1000° is therefore about eight times any value
      * this can legitimately hold — but it is a decisive distance from any value a <em>diverging</em>
      * one holds.

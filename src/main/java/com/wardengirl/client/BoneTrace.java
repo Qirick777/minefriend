@@ -201,106 +201,9 @@ public final class BoneTrace {
     private static final double[][] SPRING_LAG_SUMSQ = new double[SIDES][3];
     private static final int[][] SPRING_LAG_N = new int[SIDES][3];
 
-    // ---- 4.6 시선 감쇠 --------------------------------------------------------------------------
-
-    /**
-     * Target and damped output, one row per {@link #sample} call.
-     *
-     * <p>A time series, not just extremes. "감쇠가 실제 작동하는가" cannot be answered by min/max:
-     * a filter that is doing nothing and a filter that is working both produce the same range once
-     * the input has been held long enough. What distinguishes them is whether {@code current}
-     * arrives <em>after</em> {@code target} — which needs the two side by side, in order.
-     */
-    private static final int LOOK_CAPACITY = 2400;
-    private static final double[] LOOK_TARGET_YAW = new double[LOOK_CAPACITY];
-    private static final double[] LOOK_CURRENT_YAW = new double[LOOK_CAPACITY];
-    private static final double[] LOOK_TARGET_PITCH = new double[LOOK_CAPACITY];
-    private static final double[] LOOK_CURRENT_PITCH = new double[LOOK_CAPACITY];
-    /**
-     * The entity tick each row was taken at.
-     *
-     * <p>Needed because samples are per frame and frames do not arrive evenly — when the mob leaves
-     * the screen no frame renders it at all, so a run's <em>average</em> frames-per-tick can be far
-     * from the rate in any particular stretch. Converting a lag measured in samples into ticks with
-     * that average is then wrong by whatever the burstiness was. With the tick on every row the
-     * conversion is exact, and the recurrence itself becomes checkable off the log:
-     * {@code error} must fall by {@code (1-k)^Δtick} between consecutive rows while target is held.
-     */
-    private static final int[] LOOK_TICK = new int[LOOK_CAPACITY];
-    private static int lookSamples = 0;
-
-    private static final double[] LOOK_ERR_MAX = new double[2];
-    private static final double[] LOOK_DAMPING_MIN = new double[2];
-    private static final double[] LOOK_DAMPING_MAX = new double[2];
-    private static double lookDistanceMin = Double.POSITIVE_INFINITY;
-    private static double lookDistanceMax = Double.NEGATIVE_INFINITY;
-
-    private static final double[] LOOK_PENDING = new double[4];
-    private static int lookPendingTick = 0;
-    private static boolean lookPendingValid = false;
-    private static int lookFirstTick = Integer.MIN_VALUE;
-    private static int lookLastTick = Integer.MIN_VALUE;
-
-    /**
-     * Called by the model once per frame, before {@link #sample}.
-     *
-     * <p>Stashed rather than appended, so the series gets exactly one row per sample no matter how
-     * many frames the model draws between them. Appending here instead would silently make the
-     * "series" framerate-dependent and its row spacing meaningless.
-     */
-    public static void noteLook(double[] target, double[] current, double damping,
-                                double distance, int tickCount) {
-        if (remainingTicks <= 0) {
-            return;
-        }
-        // sample() runs per FRAME — `remainingTicks` counts frames despite the name, so
-        // sampleCount/totalTicks is identically 1 and says nothing. The entity's own tick counter
-        // is the only clock here that actually ticks, so the frames-per-tick ratio comes from it.
-        if (lookFirstTick == Integer.MIN_VALUE) {
-            lookFirstTick = tickCount;
-        }
-        lookLastTick = tickCount;
-        LOOK_PENDING[0] = target[0];
-        LOOK_PENDING[1] = current[0];
-        LOOK_PENDING[2] = target[1];
-        LOOK_PENDING[3] = current[1];
-        lookPendingTick = tickCount;
-        lookPendingValid = true;
-        for (int i = 0; i < 2; i++) {
-            LOOK_ERR_MAX[i] = Math.max(LOOK_ERR_MAX[i], Math.abs(target[i] - current[i]));
-        }
-        // Both slots hold the same value today; kept as a pair so a future per-axis coefficient
-        // does not need the report rewritten.
-        for (int i = 0; i < 2; i++) {
-            LOOK_DAMPING_MIN[i] = Math.min(LOOK_DAMPING_MIN[i], damping);
-            LOOK_DAMPING_MAX[i] = Math.max(LOOK_DAMPING_MAX[i], damping);
-        }
-        if (distance >= 0) {
-            lookDistanceMin = Math.min(lookDistanceMin, distance);
-            lookDistanceMax = Math.max(lookDistanceMax, distance);
-        }
-    }
 
     public static void start(int ticks) {
         EntityLock.reset();
-        rideRows = 0;
-        rideLastTick = Integer.MIN_VALUE;
-        sitLook = null;
-        sitLookTicks = 0;
-        sitLookLastTick = Integer.MIN_VALUE;
-        rideTicksRiding = 0;
-        rideTicksStanding = 0;
-        rideDismounts = 0;
-        rideVehicleTurns = 0;
-        rideVehLast = Double.NaN;
-        rideWasRiding = null;
-        rideBodyDiffMax = 0.0D;
-        rideBodyDiffSum = 0.0D;
-        rideBodyDiffN = 0;
-        rideNetSettled = Double.NaN;
-        rideDismountJump = 0.0D;
-        rideDismountAt = Integer.MIN_VALUE;
-        rideBodyLast = Double.NaN;
         remainingTicks = ticks;
         totalTicks = ticks;
         startTick = Integer.MIN_VALUE;
@@ -315,7 +218,6 @@ public final class BoneTrace {
             java.util.Arrays.fill(SPRING_LAG_SUMSQ[side], 0.0D);
             java.util.Arrays.fill(SPRING_LAG_N[side], 0);
         }
-        lookSamples = 0;
         walkFrames = 0;
         fadeCount = 0;
         moveSumBlocks = 0.0D;
@@ -342,19 +244,8 @@ public final class BoneTrace {
         sniffMaxWeight = 0.0D;
         SNIFF_BONES.clear();
         SNIFF_MAX.clear();
-        sniffDistMin = Double.POSITIVE_INFINITY;
-        sniffDistMax = Double.NEGATIVE_INFINITY;
-        sniffFlips = 0;
-        sniffBlocked = 0;
         sniffFirstVal = Double.NaN;
         sniffLastVal = Double.NaN;
-        sniffFrontRejected = 0;
-        sniffBlockedRejected = 0;
-        sniffInterrupts = 0;
-        sniffFrontFlips = 0;
-        sniffSounds = 0;
-        sniffRolls = 0;
-        sndRows = 0;
         ridingFrames = 0;
         standingFrames = 0;
         rideTransitions = 0;
@@ -374,19 +265,11 @@ public final class BoneTrace {
         lastRawMoving = null;
         graceCount = 0;
         rawFallingEdges = 0;
-        lookPendingValid = false;
-        lookFirstTick = Integer.MIN_VALUE;
-        lookLastTick = Integer.MIN_VALUE;
         seriesCount = 0;
         turnLeanMin = Double.POSITIVE_INFINITY;
         turnLeanMax = Double.NEGATIVE_INFINITY;
         turnRateMin = Double.POSITIVE_INFINITY;
         turnRateMax = Double.NEGATIVE_INFINITY;
-        java.util.Arrays.fill(LOOK_ERR_MAX, 0.0D);
-        java.util.Arrays.fill(LOOK_DAMPING_MIN, Double.POSITIVE_INFINITY);
-        java.util.Arrays.fill(LOOK_DAMPING_MAX, Double.NEGATIVE_INFINITY);
-        lookDistanceMin = Double.POSITIVE_INFINITY;
-        lookDistanceMax = Double.NEGATIVE_INFINITY;
         MIN.clear();
         MAX.clear();
         FIRST.clear();
@@ -457,15 +340,6 @@ public final class BoneTrace {
             SERIES_TICK[seriesCount] = tickCount;
             SERIES_WALK[seriesCount] = Boolean.TRUE.equals(lastWalkState);
             seriesCount++;
-        }
-
-        if (lookPendingValid && lookSamples < LOOK_CAPACITY) {
-            LOOK_TARGET_YAW[lookSamples] = LOOK_PENDING[0];
-            LOOK_CURRENT_YAW[lookSamples] = LOOK_PENDING[1];
-            LOOK_TARGET_PITCH[lookSamples] = LOOK_PENDING[2];
-            LOOK_CURRENT_PITCH[lookSamples] = LOOK_PENDING[3];
-            LOOK_TICK[lookSamples] = lookPendingTick;
-            lookSamples++;
         }
 
         accumulateFoot(Bones.LEG_RIGHT, rotations, positions);
@@ -672,8 +546,15 @@ public final class BoneTrace {
                 Expect.band(0, swayBodyZ + weight, Math.max(pSway, pWeight))});
         // head now carries 4.6's look on top of C1: xRot = 정적 오프셋 + 호흡 + headPitch,
         // yRot = look only (C1 writes a literal 0 there). Both bands widen by the look clamp.
-        double lookYaw = AnimParams.LOOK_YAW_MAX.get();
-        double lookPitch = AnimParams.LOOK_PITCH_MAX.get();
+        // 4.14. 렌더 clamp 를 없앴으므로 밴드는 바닐라 상한에서 온다. LookControl 은 틱 끝에서
+        // 머리를 몸통 대비 getMaxHeadYRot()=75° / getMaxHeadXRot()=40° 로 자르지만, 그려지는 값은
+        // rotLerp(pt, headO, head) - rotLerp(pt, bodyO, body) 라 머리와 몸통이 서로 반대로 도는
+        // 프레임에서 그보다 커진다. 실측: 킁킁 off 창에서 -88.650 .. +89.062, C3 킁킁이 겹치면
+        // head.y 로 3.4° 가 더 얹혀 +91.345. 그래서 밴드는 75(바닐라 클램프) + 10(틱당 머리
+        // 회전 상한 getHeadRotSpeed) + 몸통 회전분 ≈ 105° 로 잡는다 - HeadgearSpring 이 같은
+        // 양을 두고 이미 쓰던 수와 같다.
+        double lookYaw = 105.0D;
+        double lookPitch = 40.0D;
         m.put(Bones.HEAD, new Expect[]{
                 Expect.aperiodic(AnimParams.OFFSET_HEAD_X.get(), breathHead + lookPitch),
                 Expect.aperiodic(0, lookYaw),
@@ -1307,167 +1188,7 @@ public final class BoneTrace {
 
     private static final int[] LAST_TICK = new int[1];
 
-    // ---- 4.13 문제 3. 탑승 중 회전 3종 덤프. 조사용이고 결론이 나면 지운다 ------------------
-    private static final int RIDE_CAP = 800;
-    private static final String[] RIDE_ROW = new String[RIDE_CAP];
-    private static int rideRows = 0;
-    private static int rideLastTick = Integer.MIN_VALUE;
 
-    /**
-     * 틱당 한 행. 프레임마다 부르면 같은 값이 프레임 수만큼 쌓여 회전 변화가 묻힌다.
-     *
-     * <p>세 각을 <b>함께</b> 찍는 것이 핵심이다 — 하나만 보면 어느 것이 안 도는지 알 수 없다.
-     */
-    // 검증 통계. 행 상한과 무관하게 창 전체를 센다.
-    private static int rideTicksRiding;
-    private static int rideTicksStanding;
-    private static int rideDismounts;
-    private static int rideVehicleTurns;
-    private static double rideVehLast = Double.NaN;
-    private static Boolean rideWasRiding;
-    private static double rideBodyDiffMax;
-    private static double rideBodyDiffSum;
-    private static int rideBodyDiffN;
-    private static double rideNetSettled = Double.NaN;
-    private static double rideDismountJump;
-    private static int rideDismountAt = Integer.MIN_VALUE;
-    private static double rideBodyLast = Double.NaN;
-
-    public static void noteRide(int tick, boolean riding, String vehicle, double vehYRot,
-                                double yRot, double yBodyRot, double yBodyRotO,
-                                double yHeadRot, double netHeadYaw, double headBoneYaw,
-                                double lookTarget, double lookOut, double playerAz,
-                                String vanilla) {
-        if (remainingTicks <= 0 || tick == rideLastTick) {
-            return;
-        }
-        if (riding) {
-            rideTicksRiding++;
-        } else {
-            rideTicksStanding++;
-        }
-        if (rideWasRiding != null && rideWasRiding && !riding) {
-            rideDismounts++;
-            rideDismountAt = tick;
-        }
-        rideWasRiding = riding;
-        if (!Double.isNaN(vehYRot) && !Double.isNaN(rideVehLast)
-                && Math.abs(wrap180(vehYRot - rideVehLast)) > 1.0E-4D) {
-            rideVehicleTurns++;
-        }
-        rideVehLast = vehYRot;
-        // 보간 부드러움. 몸통 yaw 의 틱당 1차 차분, 탑승 중만.
-        if (!Double.isNaN(rideBodyLast) && riding) {
-            double d = Math.abs(wrap180(yBodyRot - rideBodyLast));
-            rideBodyDiffMax = Math.max(rideBodyDiffMax, d);
-            rideBodyDiffSum += d;
-            rideBodyDiffN++;
-        }
-        // 하차 직후 6틱 안의 최대 몸통 차분. 튐이 있으면 여기 잡힌다.
-        if (!Double.isNaN(rideBodyLast) && rideDismountAt != Integer.MIN_VALUE
-                && tick - rideDismountAt <= 6) {
-            rideDismountJump = Math.max(rideDismountJump,
-                    Math.abs(wrap180(yBodyRot - rideBodyLast)));
-        }
-        rideBodyLast = yBodyRot;
-        if (riding && !Double.isNaN(netHeadYaw)) {
-            rideNetSettled = Math.abs(wrap180(netHeadYaw));
-        }
-        if (rideRows >= RIDE_CAP) {
-            rideLastTick = tick;
-            return;
-        }
-        rideLastTick = tick;
-        RIDE_ROW[rideRows++] = String.format(Locale.ROOT,
-                "t=%6d %s vehYRot %+8.3f | yRot %+8.3f yBodyRot %+8.3f yHeadRot %+8.3f "
-                        + "| netHeadYaw %+8.3f lookTgt %+8.3f lookOut %+8.3f head.yRot %+8.3f "
-                        + "| playerAz %+8.3f | %s",
-                tick, riding ? "TAM" : "---", vehYRot, yRot, yBodyRot,
-                yHeadRot, netHeadYaw, lookTarget, lookOut, headBoneYaw, playerAz, vanilla);
-    }
-
-    private static double wrap180(double deg) {
-        double d = deg % 360.0D;
-        if (d >= 180.0D) {
-            d -= 360.0D;
-        }
-        if (d < -180.0D) {
-            d += 360.0D;
-        }
-        return d;
-    }
-
-    // ---- 4.14 (1) 탑승 시선. 지상 대조를 위해 같은 통계를 양쪽에서 낸다 ------------------
-    private static SitLook sitLook;
-    private static int sitLookTicks;
-    private static int sitLookLastTick = Integer.MIN_VALUE;
-
-    public static void noteSitLook(SitLook look, int tick) {
-        if (remainingTicks <= 0 || tick == sitLookLastTick) {
-            return;
-        }
-        sitLookLastTick = tick;
-        sitLook = look;
-        sitLookTicks++;
-    }
-
-    private static void reportSitLook() {
-        WardenGirlMod.LOGGER.info("[trace] --- 4.14 탑승 시선 (바닐라 Goal 재현) ---");
-        if (sitLook == null || sitLookTicks == 0) {
-            WardenGirlMod.LOGGER.info("[trace]   표본 0 — **측정 불가** (탑승하지 않았거나 꺼져 있다)");
-            return;
-        }
-        int total = sitLook.playerTicks() + sitLook.randomTicks() + sitLook.idleTicks();
-        if (total == 0 || sitLook.inRangeTicks() + sitLook.outRangeTicks() == 0) {
-            WardenGirlMod.LOGGER.info("[trace]   전이 없음 — **측정 불가**");
-            return;
-        }
-        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                "[trace]   틱 %d | 거리 12 안 %d / 밖 %d | 플레이어 시선 발동 %d회 %d틱 (%.1f%%) | "
-                        + "랜덤 시선 발동 %d회 %d틱 (%.1f%%) | 유휴 %d틱 (%.1f%%)",
-                total, sitLook.inRangeTicks(), sitLook.outRangeTicks(),
-                sitLook.playerStarts(), sitLook.playerTicks(), 100.0 * sitLook.playerTicks() / total,
-                sitLook.randomStarts(), sitLook.randomTicks(), 100.0 * sitLook.randomTicks() / total,
-                sitLook.idleTicks(), 100.0 * sitLook.idleTicks() / total));
-    }
-
-    private static void reportRide() {
-        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                "[trace] --- 4.13 문제 3. 탑승 중 회전 덤프 (%d행, 표시 상한 %d) ---",
-                rideRows, RIDE_CAP));
-        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                "[trace]   유효 조건: 탑승 틱 %d, 하차 틱 %d, 탈것 회전 %d회, 하차 %d회",
-                rideTicksRiding, rideTicksStanding, rideVehicleTurns, rideDismounts));
-        // 탑승 통계는 못 내도 시선 시계열은 유효하다. 조기 반환으로 행까지 막았던 것이
-        // 이 파일에서 두 번째로 낸 같은 결함이다 - 이제 항목별로만 막는다.
-        if (rideTicksRiding == 0) {
-            WardenGirlMod.LOGGER.info("[trace]   탑승 프레임 0 — 탑승 통계 **측정 불가** (지상 창)");
-        }
-        // 항목별로 나눠 판정한다. 탈것을 안 돌린 창에서 회전 추종을 못 재는 것이지,
-        // 그 창의 시선 시계열까지 버릴 이유는 없다 - 한 덩어리로 막았던 것이 결함이었다.
-        if (rideTicksRiding > 0 && rideVehicleTurns == 0) {
-            WardenGirlMod.LOGGER.info("[trace]   탈것 회전 0회 — 회전 추종 **측정 불가**");
-        }
-        if (rideTicksRiding > 0 && rideDismounts == 0) {
-            WardenGirlMod.LOGGER.info("[trace]   하차 0회 — 하차 튐 **측정 불가**");
-        }
-        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                "[trace]   정렬: netHeadYaw 최종 |%.4f|° (0 에 수렴해야 한다) | "
-                        + "몸통 yaw 차분 최대 %.4f°/틱, 평균 %.4f°/틱 | 하차 직후 6틱 최대 차분 %.4f° | "
-                        + "sit_body_follow %.2f, rate %.2f",
-                Double.isNaN(rideNetSettled) ? Double.NaN : rideNetSettled,
-                rideBodyDiffMax, rideBodyDiffN == 0 ? 0.0D : rideBodyDiffSum / rideBodyDiffN,
-                rideDismountJump, AnimParams.SIT_BODY_FOLLOW.get(),
-                AnimParams.SIT_BODY_FOLLOW_RATE.get()));
-        if (rideRows == 0) {
-            WardenGirlMod.LOGGER.info("[trace]   행 없음 — **측정 불가**");
-            return;
-        }
-        int rideStep = Math.max(1, rideRows / 160);
-        for (int i = 0; i < rideRows; i += rideStep) {
-            WardenGirlMod.LOGGER.info("[trace]   " + RIDE_ROW[i]);
-        }
-    }
 
     private static void reportSit() {
         WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
@@ -1492,67 +1213,18 @@ public final class BoneTrace {
     private static double sniffMaxWeight = 0.0D;
     private static final java.util.Set<String> SNIFF_BONES = new java.util.TreeSet<>();
     private static final Map<String, double[]> SNIFF_MAX = new LinkedHashMap<>();
-    private static double sniffDistMin = Double.POSITIVE_INFINITY;
-    private static double sniffDistMax = Double.NEGATIVE_INFINITY;
-    private static int sniffFlips = 0;
-    private static int sniffBlocked = 0;
     private static double sniffFirstVal = Double.NaN;
     private static double sniffLastVal = Double.NaN;
-    private static int sniffFrontRejected = 0;
-    private static int sniffBlockedRejected = 0;
-    private static int sniffInterrupts = 0;
-    private static int sniffFrontFlips = 0;
-    private static int sniffSounds = 0;
-    private static int sniffRolls = 0;
-
-    private static final int SND_CAP = 40;
-    private static final double[] SND_AGE = new double[SND_CAP];
-    private static final int[] SND_WHICH = new int[SND_CAP];
-    private static final int[] SND_MODEL = new int[SND_CAP];
-    private static final int[] SND_FIRE = new int[SND_CAP];
-    private static int sndRows = 0;
 
     /**
-     * 소리 한 발화.
-     *
-     * <p>재생당 2회여야 하는데 실측이 2.50 이 나왔다. 원인을 좁히려면 <b>어느 모델 인스턴스가</b>
-     * <b>몇 번째 발동의</b> <b>몇 번째 문턱을</b> <b>어느 나이에</b> 먹었는지가 모두 필요하다 —
-     * 같은 문턱이 두 번 나오면 중복이고, 모델 해시가 둘이면 인스턴스가 둘이다.
+     * 재생 시작 한 건. 4.14 부터 발동 판정은 서버 {@code WardenGirlSniffGoal} 이 하므로 여기서는
+     * 거리·확률·히스테리시스를 세지 않는다 — 그 상태기계가 클라이언트에 더 이상 없다.
      */
-    public static void noteSniffSound(double age, int which, int modelId) {
+    public static void noteSniffStart() {
         if (remainingTicks <= 0) {
             return;
         }
-        sniffSounds++;
-        if (sndRows < SND_CAP) {
-            SND_AGE[sndRows] = age;
-            SND_WHICH[sndRows] = which;
-            SND_MODEL[sndRows] = modelId;
-            SND_FIRE[sndRows] = sniffStarts;
-            sndRows++;
-        }
-    }
-
-    /** Trigger-side state, sampled per frame. Does not advance the state machine. */
-    public static void noteReaction(IdleReaction r, boolean started) {
-        if (remainingTicks <= 0) {
-            return;
-        }
-        if (started) {
-            sniffStarts++;
-        }
-        double d = r.lastDistance();
-        if (!Double.isNaN(d)) {
-            sniffDistMin = Math.min(sniffDistMin, d);
-            sniffDistMax = Math.max(sniffDistMax, d);
-        }
-        sniffFlips = r.hysteresisFlips();
-        sniffBlocked = r.cooldownBlocked();
-        sniffFrontRejected = r.frontRejected();
-        sniffBlockedRejected = r.blockedRejected();
-        sniffInterrupts = r.interrupts();
-        sniffFrontFlips = r.frontFlips();
-        sniffRolls = r.rolls();
+        sniffStarts++;
     }
 
     /** Pose side. {@code age} lets the 0-tick / last-tick requirement be checked by value. */
@@ -1586,32 +1258,14 @@ public final class BoneTrace {
                         + "(sniff_distance %.2f, dwell %.0f, cooldown %.0f) ---",
                 sniffStarts, sniffFrames, sniffMaxWeight, AnimParams.SNIFF_DISTANCE.get(),
                 AnimParams.SNIFF_DWELL.get(), AnimParams.SNIFF_COOLDOWN.get()));
-        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                "[trace]   거리 관측 %.3f ~ %.3f 블록 (진입 %.2f, 이탈 %.2f), 히스테리시스 전환 %d회, "
-                        + "쿨다운이 막은 프레임 %d",
-                sniffDistMin, sniffDistMax, AnimParams.SNIFF_DISTANCE.get(),
-                AnimParams.SNIFF_DISTANCE.get() * IdleReaction.EXIT_FACTOR,
-                sniffFlips, sniffBlocked));
-        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                "[trace]   거부: 정면각(%.0f°) %d회, 공격·피격 %d회 | 각도 히스테리시스 전환 %d회 "
-                        + "| 중단 %d회 | 소리 발화 %d회 (발동당 %.2f, 2.00 이어야 한다)",
-                AnimParams.SNIFF_FRONT_ANGLE.get(), sniffFrontRejected, sniffBlockedRejected,
-                sniffFrontFlips, sniffInterrupts, sniffSounds,
-                sniffStarts > 0 ? (double) sniffSounds / sniffStarts : 0.0D));
         double p = AnimParams.SNIFF_ROLL_CHANCE.get();
         double iv = AnimParams.SNIFF_ROLL_INTERVAL.get();
         WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                "[trace]   확률: 판정 %d회, 성공(=발동) %d회, 실측 성공률 %.4f (설정 %.2f) | "
+                "[trace]   발동 조건은 서버 판정이다 (정면각 %.0f°, 확률 %.2f/%.0f틱) | "
                         + "기대 발동 간격 = 쿨다운 %.0f + %.0f/%.2f = %.0f틱",
-                sniffRolls, sniffStarts,
-                sniffRolls > 0 ? (double) sniffStarts / sniffRolls : 0.0D, p,
+                AnimParams.SNIFF_FRONT_ANGLE.get(), p, iv,
                 AnimParams.SNIFF_COOLDOWN.get(), iv, p,
                 AnimParams.SNIFF_COOLDOWN.get() + (p > 0 ? iv / p : 0.0D)));
-        for (int i = 0; i < sndRows; i++) {
-            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                    "[trace]     소리 %2d: 발동#%d 문턱#%d 나이 %.3f 모델 %08x",
-                    i + 1, SND_FIRE[i], SND_WHICH[i], SND_AGE[i], SND_MODEL[i]));
-        }
         if (sniffStarts == 0) {
             WardenGirlMod.LOGGER.info("[trace]   발동 0회 — **측정 불가**");
             return;
@@ -1721,14 +1375,6 @@ public final class BoneTrace {
         WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
                 "[trace]   idle<->걷기 전이 : %d회   %s",
                 walkTransitions, walkTransitions == 0 ? "전이 판정은 측정 불가" : "전이 관측됨"));
-        double yawSpan = range(LOOK_TARGET_YAW, lookSamples);
-        double pitchSpan = range(LOOK_TARGET_PITCH, lookSamples);
-        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                "[trace]   시선 목표 변화폭 : yaw %.3f°  pitch %.3f°   %s",
-                yawSpan, pitchSpan,
-                Math.max(yawSpan, pitchSpan) < 1.0D
-                        ? "시선이 거의 움직이지 않았다 — 4.6 감쇠 판정은 측정 불가"
-                        : "시선 관측됨"));
         WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
                 "[trace]   원시 이동판정 하강 : %d회   (히스테리시스 이전. 이것이 %d회 걷기 종료로 걸러졌다)",
                 rawFallingEdges, graceCount));
@@ -1811,12 +1457,11 @@ public final class BoneTrace {
 
         reportSeries();
         reportTurnLean();
-        fails += reportLook();
         fails += reportSpring();
         fails += reportFeet();
 
         if (fails == 0) {
-            WardenGirlMod.LOGGER.info("[trace] === 판정: 전 항목 통과 (회전 30 + 시선 + 스프링 좌우 + 발끝 2) ===");
+            WardenGirlMod.LOGGER.info("[trace] === 판정: 전 항목 통과 (회전 30 + 스프링 좌우 + 발끝 2) ===");
         } else {
             WardenGirlMod.LOGGER.error("[trace] === 판정: 실패 {}개 ===", fails);
         }
@@ -2087,8 +1732,6 @@ public final class BoneTrace {
         reportHurt();
         reportSniff();
         reportSit();
-        reportRide();
-        reportSitLook();
         reportFade();
         reportByPhase();
         reportPhaseAudit();
@@ -2118,188 +1761,6 @@ public final class BoneTrace {
                 turnRateMin, turnRateMax));
     }
 
-    /**
-     * 4.6 시선 감쇠 — does the filter actually lag, and by how much.
-     *
-     * <h2>The lag is measured, not asserted</h2>
-     *
-     * A coefficient being set is not evidence that anything is being smoothed; Part 6.2 wants the
-     * observation. So the series is searched for the shift {@code d} that best aligns
-     * {@code current[t]} with {@code target[t-d]}, and that shift is reported in ticks. A filter
-     * that is doing nothing reports 0. A working first-order lag reports something near its time
-     * constant, and the analytic prediction {@code 1/damping − 1} is printed alongside so the two
-     * can be compared rather than trusted.
-     *
-     * <p>The search is over the sample index, and samples are one per frame — so the unit is
-     * "samples", converted to ticks with the measured samples-per-tick ratio. Reporting raw frames
-     * would make the number change with the framerate while the behaviour did not.
-     */
-    private static int reportLook() {
-        if (lookSamples < 4) {
-            WardenGirlMod.LOGGER.warn("[trace] 4.6 시선 표본 없음 ({}개) — 시선 감쇠가 돌지 않았다",
-                    lookSamples);
-            return 1;
-        }
-        double damping = LOOK_DAMPING_MAX[0];
-        boolean bypass = damping >= 1.0D;
-        int tickSpan = lookLastTick - lookFirstTick;
-        double samplesPerTick = tickSpan > 0 ? (double) lookSamples / tickSpan : 1.0D;
-
-        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                "[trace] --- 4.6 시선 감쇠: 실효계수 %.4f ~ %.4f (거리 %.2f ~ %.2f 블록), "
-                        + "표본 %d개 / 엔티티 %d틱 = %.2f 프레임/틱 ---",
-                LOOK_DAMPING_MIN[0], LOOK_DAMPING_MAX[0],
-                Double.isInfinite(lookDistanceMin) ? -1 : lookDistanceMin,
-                Double.isInfinite(lookDistanceMax) ? -1 : lookDistanceMax,
-                lookSamples, tickSpan, samplesPerTick));
-
-        int fails = 0;
-        String[] name = {"yaw ", "pitch"};
-        double[][] tgt = {LOOK_TARGET_YAW, LOOK_TARGET_PITCH};
-        double[][] cur = {LOOK_CURRENT_YAW, LOOK_CURRENT_PITCH};
-        for (int a = 0; a < 2; a++) {
-            int bestShift = bestLagShift(tgt[a], cur[a], lookSamples);
-            double lagTicks = lagInTicks(bestShift);
-            double predicted = bypass ? 0.0D : 1.0D / damping - 1.0D;
-            double span = range(tgt[a], lookSamples);
-            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                    "[trace] 시선 %s  target 진폭 %.3f도  최대 |target-current| %.4f도  "
-                            + "실측 지연 %d표본 = %.2f틱  (1차 지연 예측 1/k-1 = %.2f틱)",
-                    name[a], span, LOOK_ERR_MAX[a], bestShift, lagTicks, predicted));
-            if (bypass && LOOK_ERR_MAX[a] > 1e-9) {
-                WardenGirlMod.LOGGER.error(String.format(Locale.ROOT,
-                        "[trace] FAIL 시선 %s — 우회(계수 1.0)인데 target 과 current 가 %.6f도 다르다. "
-                                + "T3 와 동일해야 한다", name[a], LOOK_ERR_MAX[a]));
-                fails++;
-            }
-            if (!bypass && span > 1.0D && LOOK_ERR_MAX[a] < 1e-6) {
-                WardenGirlMod.LOGGER.error(String.format(Locale.ROOT,
-                        "[trace] FAIL 시선 %s — target 이 %.3f도 움직였는데 지연이 0이다. "
-                                + "감쇠가 걸리지 않았다", name[a], span));
-                fails++;
-            }
-        }
-
-        // target 과 current 를 나란히. 지연은 요약값이 아니라 이 표에서 눈으로도 보여야 한다.
-        int rows = Math.min(30, lookSamples);
-        int step = Math.max(1, lookSamples / rows);
-        WardenGirlMod.LOGGER.info("[trace] 시계열 (표본 {}개 중 {}개 간격으로, t=엔티티 틱):",
-                lookSamples, step);
-        for (int i = 0; i < lookSamples; i += step) {
-            logLookRow(i);
-        }
-        // 연속 구간도 하나 남긴다. 간격을 띄운 표로는 점화식을 검산할 수 없다 —
-        // 두 행 사이에 틱이 몇 번 지났는지가 행마다 다르기 때문이다.
-        int burstFrom = findLargestStepIndex();
-        WardenGirlMod.LOGGER.info("[trace] 연속 구간 (가장 큰 target 변화 직후 40행):");
-        for (int i = burstFrom; i < Math.min(lookSamples, burstFrom + 40); i++) {
-            logLookRow(i);
-        }
-
-        // 3. 근거리 전환이 계단식이 아닌지 — 거리를 직접 넣어 실효값을 뽑는다.
-        StringBuilder sb = new StringBuilder("[trace] 거리별 실효 감쇠: ");
-        for (double d : new double[]{0.0D, 1.0D, 2.0D, 2.5D, 3.0D, 3.5D, 4.0D, 8.0D}) {
-            sb.append(String.format(Locale.ROOT, "%.1f=%.4f  ", d, LookDamper.dampingFor(d)));
-        }
-        WardenGirlMod.LOGGER.info(sb.toString());
-        double prevK = LookDamper.dampingFor(0.0D);
-        double maxJump = 0;
-        for (double d = 0.05D; d <= 6.0001D; d += 0.05D) {
-            double k = LookDamper.dampingFor(d);
-            maxJump = Math.max(maxJump, Math.abs(k - prevK));
-            prevK = k;
-        }
-        // 계단이라면 경계 한 칸에서 두 계수의 차 전체가 한꺼번에 나타난다. 선형 보간이면
-        // 한 칸 변화는 (차이 / 구간길이) x 칸 크기 로 나뉜다.
-        double gap = Math.abs(AnimParams.LOOK_DAMPING.get() - AnimParams.LOOK_DAMPING_NEAR.get());
-        double linearStep = gap * 0.05D / Math.max(1e-9, AnimParams.LOOK_NEAR_DISTANCE.get());
-        boolean smooth = maxJump <= linearStep * 1.5D + 1e-9;
-        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                "[trace] 0.05블록 간격 최대 변화 %.6f (선형 예측 %.6f, 계단이면 %.6f) — %s",
-                maxJump, linearStep, gap, smooth ? "OK 연속 (계단 없음)" : "FAIL 계단식 전환"));
-        if (!smooth) {
-            fails++;
-        }
-        return fails;
-    }
-
-    private static void logLookRow(int i) {
-        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                "[trace]   #%4d t=%d  yaw target %+8.3f -> current %+8.3f (차 %+7.3f)   "
-                        + "pitch target %+8.3f -> current %+8.3f (차 %+7.3f)",
-                i, LOOK_TICK[i], LOOK_TARGET_YAW[i], LOOK_CURRENT_YAW[i],
-                LOOK_CURRENT_YAW[i] - LOOK_TARGET_YAW[i],
-                LOOK_TARGET_PITCH[i], LOOK_CURRENT_PITCH[i],
-                LOOK_CURRENT_PITCH[i] - LOOK_TARGET_PITCH[i]));
-    }
-
-    /** Index of the sample where the yaw target jumped hardest — the most informative burst. */
-    private static int findLargestStepIndex() {
-        int best = 0;
-        double bestJump = -1;
-        for (int i = 1; i < lookSamples; i++) {
-            double jump = Math.abs(LOOK_TARGET_YAW[i] - LOOK_TARGET_YAW[i - 1]);
-            if (jump > bestJump) {
-                bestJump = jump;
-                best = i;
-            }
-        }
-        return Math.max(0, best - 2);
-    }
-
-    /**
-     * Converts a shift measured in samples into ticks using the tick stamps themselves.
-     *
-     * <p>Not {@code shift / averageFramesPerTick}: the average is taken over the whole window
-     * including any stretch where the mob was off screen and no frame sampled it, so it can be
-     * several times off from the rate during the motion being measured.
-     */
-    private static double lagInTicks(int shiftSamples) {
-        if (shiftSamples <= 0 || lookSamples <= shiftSamples) {
-            return 0.0D;
-        }
-        long sum = 0;
-        int n = 0;
-        for (int i = shiftSamples; i < lookSamples; i++) {
-            sum += LOOK_TICK[i] - LOOK_TICK[i - shiftSamples];
-            n++;
-        }
-        return n == 0 ? 0.0D : (double) sum / n;
-    }
-
-    /**
-     * The shift {@code d} minimising sum |current[t] − target[t−d]| over the series.
-     *
-     * <p>Absolute error rather than correlation: correlation is scale-free and would report a
-     * confident alignment even for a filter whose output amplitude had collapsed, which is the very
-     * failure this is meant to catch.
-     */
-    private static int bestLagShift(double[] target, double[] current, int n) {
-        int maxShift = Math.min(120, n / 3);
-        int best = 0;
-        double bestErr = Double.POSITIVE_INFINITY;
-        for (int d = 0; d <= maxShift; d++) {
-            double err = 0;
-            for (int t = maxShift; t < n; t++) {
-                err += Math.abs(current[t] - target[t - d]);
-            }
-            if (err < bestErr - 1e-12) {
-                bestErr = err;
-                best = d;
-            }
-        }
-        return best;
-    }
-
-    private static double range(double[] v, int n) {
-        double mn = Double.POSITIVE_INFINITY;
-        double mx = Double.NEGATIVE_INFINITY;
-        for (int i = 0; i < n; i++) {
-            mn = Math.min(mn, v[i]);
-            mx = Math.max(mx, v[i]);
-        }
-        return mx - mn;
-    }
 
     /**
      * 4.5 spring convergence.
