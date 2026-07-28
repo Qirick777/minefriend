@@ -310,6 +310,56 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         return isPassenger() ? AnimParams.SIT_RIDING_OFFSET.get() : super.getMyRidingOffset();
     }
 
+    /**
+     * 4.13 문제 3. 탑승 중 방향을 탈것에 맞춘다. <b>클라이언트에서만 돈다.</b>
+     *
+     * <h2>왜 super 뒤인가</h2>
+     *
+     * {@code Entity.rideTick} 은 {@code tick()} → {@code getVehicle().positionRider(this)} 순서다
+     * (바이트코드 확인). {@code tick()} 안에서 서버가 보낸 {@code lerpYRot} 보간이 {@code yRot} 을
+     * 되돌리고, 그 뒤 {@code Boat.clampRotation} 이 {@code yBodyRot = 탈것yaw},
+     * {@code yHeadRot = yRot} 을 쓴다. 그래서 <b>둘 다 끝난 뒤</b>에 밀어야 우리 값이 살아남는다.
+     * 매 틱 다시 밀리므로 한 번 쓰고 마는 것이 아니라 계속 보간이 이어진다.
+     *
+     * <h2>왜 yRot 인가 — 측정 결과</h2>
+     *
+     * 보트를 0°→45°→90° 로 돌린 900틱 창에서 {@code yBodyRot} 은 탈것 {@code yRot} 과 모든 행에서
+     * 일치했고(보간 중인 +31.5 / +63.0 포함), {@code yRot} 은 +0.000 에 얼어 있었다. 화면에서
+     * 옆을 보는 것은 몸통이 아니라 고개이고, 그 각도는
+     * {@code netHeadYaw = yHeadRot − yBodyRot = yRot − 탈것yaw} 라는 <b>상수</b>였다. 그래서
+     * {@code yRot} 을 탈것 쪽으로 밀면 그 상수가 0 으로 수렴한다. {@code yBodyRot} 을 밀면 이미
+     * 같은 값이라 아무 일도 일어나지 않는다.
+     *
+     * <h2>서버 판정 무영향</h2>
+     *
+     * 몹의 회전은 서버 → 클라이언트 단방향이다. 클라이언트가 쓴 {@code yRot} / {@code yHeadRot} 은
+     * 어떤 패킷으로도 서버에 올라가지 않으므로 서버의 {@code getViewVector}, 넉백 방향,
+     * {@code clampRotation} 의 ±105 기준은 전부 그대로다.
+     */
+    @Override
+    public void rideTick() {
+        super.rideTick();
+        if (!level().isClientSide || !isPassenger()) {
+            return;
+        }
+        double follow = AnimParams.SIT_BODY_FOLLOW.get();
+        if (follow <= 0.0D) {
+            return;
+        }
+        net.minecraft.world.entity.Entity vehicle = getVehicle();
+        if (vehicle == null) {
+            return;
+        }
+        // 탈것 종류를 가리지 않는다. 보트는 자체 yRot 을 갖고, 말/마인카트도 Entity.getYRot() 이
+        // 진행 방향이다. 다만 말처럼 LivingEntity 인 탈것은 GeckoLib 이 렌더 단계에서 몸통을
+        // 탈것의 yBodyRot 으로 따로 덮으므로 이 보정과 겹친다 - 보트에서 통과한 뒤 본다.
+        float rate = (float) (AnimParams.SIT_BODY_FOLLOW_RATE.get() * follow);
+        float next = getYRot()
+                + net.minecraft.util.Mth.wrapDegrees(vehicle.getYRot() - getYRot()) * rate;
+        setYRot(next);
+        setYHeadRot(next);
+    }
+
     public boolean isWalkingForAnimation() {
         // 4.13. 탈것에 타면 몹 좌표가 탈것을 따라 움직여 이동으로 잡힌다. 별도 게이트를 두면
         // 조건이 둘로 갈라져 어긋나므로 여기 하나로 막는다.

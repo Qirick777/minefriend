@@ -285,6 +285,19 @@ public final class BoneTrace {
         EntityLock.reset();
         rideRows = 0;
         rideLastTick = Integer.MIN_VALUE;
+        rideTicksRiding = 0;
+        rideTicksStanding = 0;
+        rideDismounts = 0;
+        rideVehicleTurns = 0;
+        rideVehLast = Double.NaN;
+        rideWasRiding = null;
+        rideBodyDiffMax = 0.0D;
+        rideBodyDiffSum = 0.0D;
+        rideBodyDiffN = 0;
+        rideNetSettled = Double.NaN;
+        rideDismountJump = 0.0D;
+        rideDismountAt = Integer.MIN_VALUE;
+        rideBodyLast = Double.NaN;
         remainingTicks = ticks;
         totalTicks = ticks;
         startTick = Integer.MIN_VALUE;
@@ -1292,7 +1305,7 @@ public final class BoneTrace {
     private static final int[] LAST_TICK = new int[1];
 
     // ---- 4.13 문제 3. 탑승 중 회전 3종 덤프. 조사용이고 결론이 나면 지운다 ------------------
-    private static final int RIDE_CAP = 400;
+    private static final int RIDE_CAP = 800;
     private static final String[] RIDE_ROW = new String[RIDE_CAP];
     private static int rideRows = 0;
     private static int rideLastTick = Integer.MIN_VALUE;
@@ -1302,11 +1315,62 @@ public final class BoneTrace {
      *
      * <p>세 각을 <b>함께</b> 찍는 것이 핵심이다 — 하나만 보면 어느 것이 안 도는지 알 수 없다.
      */
+    // 검증 통계. 행 상한과 무관하게 창 전체를 센다.
+    private static int rideTicksRiding;
+    private static int rideTicksStanding;
+    private static int rideDismounts;
+    private static int rideVehicleTurns;
+    private static double rideVehLast = Double.NaN;
+    private static Boolean rideWasRiding;
+    private static double rideBodyDiffMax;
+    private static double rideBodyDiffSum;
+    private static int rideBodyDiffN;
+    private static double rideNetSettled = Double.NaN;
+    private static double rideDismountJump;
+    private static int rideDismountAt = Integer.MIN_VALUE;
+    private static double rideBodyLast = Double.NaN;
+
     public static void noteRide(int tick, boolean riding, String vehicle, double vehYRot,
                                 double yRot, double yBodyRot, double yBodyRotO,
                                 double yHeadRot, double netHeadYaw, double headBoneYaw,
                                 String vanilla) {
-        if (remainingTicks <= 0 || tick == rideLastTick || rideRows >= RIDE_CAP) {
+        if (remainingTicks <= 0 || tick == rideLastTick) {
+            return;
+        }
+        if (riding) {
+            rideTicksRiding++;
+        } else {
+            rideTicksStanding++;
+        }
+        if (rideWasRiding != null && rideWasRiding && !riding) {
+            rideDismounts++;
+            rideDismountAt = tick;
+        }
+        rideWasRiding = riding;
+        if (!Double.isNaN(vehYRot) && !Double.isNaN(rideVehLast)
+                && Math.abs(wrap180(vehYRot - rideVehLast)) > 1.0E-4D) {
+            rideVehicleTurns++;
+        }
+        rideVehLast = vehYRot;
+        // 보간 부드러움. 몸통 yaw 의 틱당 1차 차분, 탑승 중만.
+        if (!Double.isNaN(rideBodyLast) && riding) {
+            double d = Math.abs(wrap180(yBodyRot - rideBodyLast));
+            rideBodyDiffMax = Math.max(rideBodyDiffMax, d);
+            rideBodyDiffSum += d;
+            rideBodyDiffN++;
+        }
+        // 하차 직후 6틱 안의 최대 몸통 차분. 튐이 있으면 여기 잡힌다.
+        if (!Double.isNaN(rideBodyLast) && rideDismountAt != Integer.MIN_VALUE
+                && tick - rideDismountAt <= 6) {
+            rideDismountJump = Math.max(rideDismountJump,
+                    Math.abs(wrap180(yBodyRot - rideBodyLast)));
+        }
+        rideBodyLast = yBodyRot;
+        if (riding && !Double.isNaN(netHeadYaw)) {
+            rideNetSettled = Math.abs(wrap180(netHeadYaw));
+        }
+        if (rideRows >= RIDE_CAP) {
+            rideLastTick = tick;
             return;
         }
         rideLastTick = tick;
@@ -1317,14 +1381,42 @@ public final class BoneTrace {
                 yHeadRot, netHeadYaw, headBoneYaw, vanilla);
     }
 
+    private static double wrap180(double deg) {
+        double d = deg % 360.0D;
+        if (d >= 180.0D) {
+            d -= 360.0D;
+        }
+        if (d < -180.0D) {
+            d += 360.0D;
+        }
+        return d;
+    }
+
     private static void reportRide() {
         WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                "[trace] --- 4.13 문제 3. 탑승 중 회전 덤프 (%d행) ---", rideRows));
+                "[trace] --- 4.13 문제 3. 탑승 중 회전 덤프 (%d행, 표시 상한 %d) ---",
+                rideRows, RIDE_CAP));
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   유효 조건: 탑승 틱 %d, 하차 틱 %d, 탈것 회전 %d회, 하차 %d회",
+                rideTicksRiding, rideTicksStanding, rideVehicleTurns, rideDismounts));
+        if (rideTicksRiding == 0 || rideVehicleTurns == 0 || rideDismounts == 0) {
+            WardenGirlMod.LOGGER.info("[trace]   조건 미달 — **측정 불가**");
+            return;
+        }
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   정렬: netHeadYaw 최종 |%.4f|° (0 에 수렴해야 한다) | "
+                        + "몸통 yaw 차분 최대 %.4f°/틱, 평균 %.4f°/틱 | 하차 직후 6틱 최대 차분 %.4f° | "
+                        + "sit_body_follow %.2f, rate %.2f",
+                Double.isNaN(rideNetSettled) ? Double.NaN : rideNetSettled,
+                rideBodyDiffMax, rideBodyDiffN == 0 ? 0.0D : rideBodyDiffSum / rideBodyDiffN,
+                rideDismountJump, AnimParams.SIT_BODY_FOLLOW.get(),
+                AnimParams.SIT_BODY_FOLLOW_RATE.get()));
         if (rideRows == 0) {
             WardenGirlMod.LOGGER.info("[trace]   행 없음 — **측정 불가**");
             return;
         }
-        for (int i = 0; i < rideRows; i++) {
+        int rideStep = Math.max(1, rideRows / 160);
+        for (int i = 0; i < rideRows; i += rideStep) {
             WardenGirlMod.LOGGER.info("[trace]   " + RIDE_ROW[i]);
         }
     }

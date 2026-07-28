@@ -296,6 +296,30 @@ public final class AnimParams {
     public static final Param SIT_RIDING_OFFSET =
             addShape("sit_riding_offset", -0.35D, -2.0D, 0.5D,
                     "block", "T6", "탑승 시 좌석 높이 보정 (getMyRidingOffset)", "root");
+    /**
+     * 4.13 문제 3. 탑승 중 몸통 방향을 탈것에 맞춘다. 0 이면 기능 끔.
+     *
+     * <p><b>맞추는 축은 {@code yRot} 이지 {@code yBodyRot} 이 아니다.</b> 측정에서
+     * {@code yBodyRot} 은 이미 탈것 {@code yRot} 과 소수점까지 일치했다 — {@code Boat.clampRotation}
+     * 의 첫 명령이 {@code passenger.setYBodyRot(boat.getYRot())} 이기 때문이다. 옆을 보게 만드는
+     * 것은 몸통이 아니라 <b>고개</b>이고, 그 원인은 같은 메서드의 마지막 줄
+     * {@code setYHeadRot(passenger.getYRot())} 과 탑승 중 얼어붙는 {@code yRot} 이다.
+     * 그래서 {@code yRot} 을 탈것 쪽으로 밀면 {@code netHeadYaw = yHeadRot − yBodyRot} 이 0 으로
+     * 수렴하고 고개가 정면을 본다. {@code yBodyRot} 을 밀면 항등 연산이라 아무 일도 일어나지 않는다.
+     */
+    public static final Param SIT_BODY_FOLLOW =
+            addShape("sit_body_follow", 1.0D, 0.0D, 1.0D,
+                    "ratio", "T6", "탑승 중 몸통 방향 정렬 강도 (0 = 끔)", "head");
+    /**
+     * 정렬 보간율. 매 틱 {@code yRot += wrapDegrees(탈것yaw − yRot) × rate} 다.
+     *
+     * <p>기본 0.3 은 {@code LivingEntity.tickHeadTurn} 의
+     * {@code yBodyRot += wrapDegrees(yHeadRot − yBodyRot) * 0.3F} 에서 온 값이다. 즉시 스냅하면
+     * 탑승 첫 틱에 고개가 한 프레임 만에 최대 105° 돌아 튄다.
+     */
+    public static final Param SIT_BODY_FOLLOW_RATE =
+            addShape("sit_body_follow_rate", 0.3D, 0.05D, 1.0D,
+                    "ratio", "T6", "탑승 중 몸통 방향 정렬 보간율", "head");
     /** 탑승 중에만 킁킁 진폭에 곱한다. 0 이면 탑승 중 킁킁 없음. */
     public static final Param SNIFF_RIDING_SCALE =
             addShape("sniff_riding_scale", 1.0D, 0.0D, 1.0D,
