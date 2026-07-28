@@ -248,6 +248,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
                     animatable.tickCount);
             noteRideDiagnostic(animatable, animationState);
             noteSyncReceive(animatable);
+            noteShadowReceive(animatable);
             BoneTrace.sample(readAllBones(), readAllPositions(), animatable.tickCount);
         }
     }
@@ -274,6 +275,37 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     private static int syncCliEntityId = Integer.MIN_VALUE;
     private static java.util.UUID syncCliUuid = null;
     private static int syncCliLastSeq = Integer.MIN_VALUE;
+
+    /**
+     * 4.14 1-B-2. 서버가 계산한 최종 shadow 각도를 <b>기록만</b> 한다.
+     *
+     * <p>본에 적용하지 않는다. 계산도 하지 않는다 — seq 가 바뀐 순간의 두 값을 그대로 찍는다.
+     * 대상이 ID 또는 UUID 기준으로 바뀌면 상태를 초기화한다.
+     */
+    private static int shadowCliId = Integer.MIN_VALUE;
+    private static java.util.UUID shadowCliUuid = null;
+    private static int shadowCliLastSeq = Integer.MIN_VALUE;
+
+    private void noteShadowReceive(WardenGirlEntity animatable) {
+        if (shadowCliId != animatable.getId()
+                || !animatable.getUUID().equals(shadowCliUuid)) {
+            shadowCliId = animatable.getId();
+            shadowCliUuid = animatable.getUUID();
+            shadowCliLastSeq = Integer.MIN_VALUE;
+            WardenGirlMod.LOGGER.info("[shadowcli] --- 대상 변경, 계측 초기화 id="
+                    + animatable.getId() + " uuid=" + animatable.getUUID());
+        }
+        int seq = animatable.syncedShadowSeq();
+        if (seq == shadowCliLastSeq) {
+            return;
+        }
+        shadowCliLastSeq = seq;
+        WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
+                "[shadowcli] id=%d uuid=%s seq=%d t=%d gt=%d yaw=%.9f pitch=%.9f",
+                animatable.getId(), animatable.getUUID(), seq, animatable.tickCount,
+                animatable.level().getGameTime(), animatable.syncedShadowYaw(),
+                animatable.syncedShadowPitch()));
+    }
 
     private void noteSyncReceive(WardenGirlEntity animatable) {
         if (syncCliEntityId != animatable.getId()

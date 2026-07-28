@@ -592,6 +592,19 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         return this.entityData.get(DATA_LOOK_Z);
     }
 
+    /** 1-B-2 계측. 클라이언트는 읽기만 한다. */
+    public float syncedShadowYaw() {
+        return this.entityData.get(DATA_LOOK_SHADOW_YAW);
+    }
+
+    public float syncedShadowPitch() {
+        return this.entityData.get(DATA_LOOK_SHADOW_PITCH);
+    }
+
+    public int syncedShadowSeq() {
+        return this.entityData.get(DATA_LOOK_SHADOW_SEQ);
+    }
+
     /** 계측 전용 순번. 판정의 기본 키다 — 시간이나 tick 이 아니다. */
     public int syncedLookProbeSeq() {
         return this.entityData.get(DATA_LOOK_PROBE_SEQ);
