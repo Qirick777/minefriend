@@ -337,6 +337,64 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     private static double lastLookTargetYaw = Double.NaN;
     private static double lastLookOutYaw = Double.NaN;
 
+    /**
+     * 4.14 (1). 탑승 중 시선 목표를 <b>엔티티를 거치지 않고</b> 직접 계산한다.
+     *
+     * <h2>왜 엔티티 yHeadRot 을 못 쓰는가</h2>
+     *
+     * {@code Boat.clampRotation} 이 매 틱 {@code setYHeadRot(passenger.getYRot())} 를 실행해
+     * 서버 {@code LookControl} 의 결과를 지운다. 측정: 플레이어가 몹 주위 8개 방위를 도는 700틱
+     * 동안 {@code netHeadYaw} 은 <b>+105.000 상수</b>였고 head 본의 고유값은 4개(74.596~75.000)
+     * 뿐이었다. 고개가 한 번도 움직이지 않았다는 뜻이다.
+     *
+     * <h2>같은 규약, 같은 감쇠</h2>
+     *
+     * 돌려주는 값은 {@code EntityModelData} 와 <b>같은 규약</b>이다 — GeckoLib 이 넘기는 것은
+     * {@code -(yHeadRot - yBodyRot)} 이므로 여기서도 {@code -(플레이어 방위 - yBodyRot)} 를
+     * 돌려준다. 그래야 호출부의 gain / clamp / {@link LookDamper} 를 그대로 통과해 4.6 과 같은
+     * 인상이 나온다.
+     *
+     * <p>기준 플레이어는 {@code Minecraft.getInstance().player} 다 — 4.12 킁킁과 같은 기준이고,
+     * 멀티플레이에서 각 클라이언트가 자기 플레이어를 본다는 성질도 4.12 와 같다.
+     *
+     * @return {yaw, pitch} 본 규약 원시값. 탑승이 아니거나 꺼져 있거나 플레이어가 없으면 null
+     */
+    private double[] sitLookRaw(WardenGirlEntity animatable) {
+        if (!animatable.isPassenger()) {
+            return null;
+        }
+        double enable = AnimParams.SIT_LOOK_ENABLE.get();
+        if (enable <= 0.0D) {
+            // 꺼져 있으면 정면. netHeadYaw 로 되돌리면 죽은 상수(+105)가 그대로 실린다.
+            return new double[]{0.0D, 0.0D};
+        }
+        net.minecraft.world.entity.player.Player near = Minecraft.getInstance().player;
+        if (near == null) {
+            return null;
+        }
+        double dx = near.getX() - animatable.getX();
+        double dz = near.getZ() - animatable.getZ();
+        double toPlayer = Math.toDegrees(Math.atan2(dz, dx)) - 90.0D;
+        double yaw = -wrapDeg(toPlayer - animatable.yBodyRot);
+        // 피치는 바닐라 LookControl.getXRotD 와 같은 식이다: 목표 눈높이 - 내 눈높이 를
+        // 수평거리로 나눈 각. 본 규약은 그것의 부호 반전이다 (+x = 위를 봄).
+        double dy = near.getEyeY() - animatable.getEyeY();
+        double horiz = Math.sqrt(dx * dx + dz * dz);
+        double pitch = horiz < 1.0E-6D ? 0.0D : Math.toDegrees(Math.atan2(dy, horiz));
+        return new double[]{yaw * enable, pitch * enable};
+    }
+
+    private static double wrapDeg(double deg) {
+        double d = deg % 360.0D;
+        if (d >= 180.0D) {
+            d -= 360.0D;
+        }
+        if (d < -180.0D) {
+            d += 360.0D;
+        }
+        return d;
+    }
+
     private void applyLook(WardenGirlEntity animatable,
                            AnimationState<WardenGirlEntity> animationState) {
         EntityModelData look = animationState.getData(DataTickets.ENTITY_MODEL_DATA);
@@ -348,9 +406,13 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         // inside the `shouldSit` branch of actuallyRender and never runs for a standing mob; the
         // delivered value is the raw yHeadRot - yBodyRot difference. Measured range across 729
         // samples: -88.280 .. +86.250. See Part 11.
+        double[] raw = sitLookRaw(animatable);
+        if (raw == null) {
+            raw = new double[]{look.netHeadYaw(), look.headPitch()};
+        }
         double[] target = {
-                clampAbs(look.netHeadYaw() * gain, AnimParams.LOOK_YAW_MAX.get()),
-                clampAbs(look.headPitch() * gain, AnimParams.LOOK_PITCH_MAX.get())};
+                clampAbs(raw[LookDamper.YAW] * gain, AnimParams.LOOK_YAW_MAX.get()),
+                clampAbs(raw[LookDamper.PITCH] * gain, AnimParams.LOOK_PITCH_MAX.get())};
 
         double distance = distanceToLocalPlayer(animatable);
         double damping = LookDamper.dampingFor(distance);

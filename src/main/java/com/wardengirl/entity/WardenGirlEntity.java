@@ -363,7 +363,10 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         float next = net.minecraft.util.Mth.wrapDegrees(getYRot()
                 + net.minecraft.util.Mth.wrapDegrees(vehicle.getYRot() - getYRot()) * rate);
         setYRot(next);
-        setYHeadRot(next);
+        // 4.14 (1). setYHeadRot(next) 를 뺐다. 그것이 (2) 의 증상을 만든 경로였고, 이제 head 본을
+        // 우리가 직접 쓰므로 엔티티 yHeadRot 을 몸통에 정렬시킬 이유가 없다. 우리 코드에서
+        // yHeadRot 을 읽는 곳은 계측 덤프뿐이고 - 4.12 정면 각도 판정은 yBodyRot 기준이다 -
+        // 바닐라 쪽은 Boat.clampRotation 이 매 틱 yHeadRot = yRot 로 덮어쓰므로 결과가 같다.
     }
 
     public boolean isWalkingForAnimation() {

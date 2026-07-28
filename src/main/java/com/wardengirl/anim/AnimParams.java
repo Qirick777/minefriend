@@ -320,6 +320,20 @@ public final class AnimParams {
     public static final Param SIT_BODY_FOLLOW_RATE =
             addShape("sit_body_follow_rate", 0.3D, 0.05D, 1.0D,
                     "ratio", "T6", "탑승 중 몸통 방향 정렬 보간율", "head");
+    /**
+     * 4.14 (1). 탑승 중 시선 추적. 0 이면 끔.
+     *
+     * <p>탑승하면 {@code Boat.clampRotation} 이 매 틱 {@code yHeadRot = yRot} 로 덮어써서
+     * 서버 {@code LookControl} 의 결과가 지워진다 — 측정에서 플레이어 방위 8개 전부에 대해
+     * {@code netHeadYaw} 이 +105.000 상수였다. 그래서 탑승 중에는 엔티티의 {@code yHeadRot} 을
+     * 쓰지 않고 <b>클라이언트에서 플레이어 방향 − yBodyRot 을 직접 계산</b>해 head 본에 넣는다.
+     *
+     * <p>0~1 사이 값은 진폭 배율로도 동작한다. 감쇠와 클램프는 4.6 과 같은 것을 쓴다 —
+     * 탑승 중이라고 다른 값을 쓰면 인상이 달라진다.
+     */
+    public static final Param SIT_LOOK_ENABLE =
+            addShape("sit_look_enable", 1.0D, 0.0D, 1.0D,
+                    "ratio", "T6", "탑승 중 시선 추적 (0 = 끔)", "head");
     /** 탑승 중에만 킁킁 진폭에 곱한다. 0 이면 탑승 중 킁킁 없음. */
     public static final Param SNIFF_RIDING_SCALE =
             addShape("sniff_riding_scale", 1.0D, 0.0D, 1.0D,
