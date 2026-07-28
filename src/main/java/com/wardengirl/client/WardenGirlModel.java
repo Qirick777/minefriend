@@ -451,16 +451,14 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     private static int shadowApplyTick = Integer.MIN_VALUE;
 
     private void noteShadowApply(WardenGirlEntity animatable, double yaw, double pitch) {
-        if (animatable.tickCount == shadowApplyTick) {
-            return;
-        }
-        shadowApplyTick = animatable.tickCount;
+        // 프레임마다 남긴다 - 보간 검증에는 같은 틱의 여러 partialTick 표본이 필요하다.
         WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
-                "[shadowapply] uuid=%s seq=%d t=%d syncY=%.9f syncP=%.9f appY=%.9f appP=%.9f "
-                        + "dY=%.9f dP=%.9f",
+                "[shadowapply] uuid=%s seq=%d t=%d pt=%.6f prevY=%.9f prevP=%.9f "
+                        + "curY=%.9f curP=%.9f appY=%.9f appP=%.9f",
                 animatable.getUUID(), animatable.syncedShadowSeq(), animatable.tickCount,
-                animatable.syncedShadowYaw(), animatable.syncedShadowPitch(), yaw, pitch,
-                yaw - animatable.syncedShadowYaw(), pitch - animatable.syncedShadowPitch()));
+                Minecraft.getInstance().getPartialTick(),
+                animatable.syncedShadowPrevYaw(), animatable.syncedShadowPrevPitch(),
+                animatable.syncedShadowYaw(), animatable.syncedShadowPitch(), yaw, pitch));
     }
 
     private void applyLook(WardenGirlEntity animatable,
@@ -475,8 +473,17 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         // 기존 SitLook 과 LookDamper 는 이 분기에서 호출되지 않으므로 출력에 기여하지 않는다.
         if (animatable.isPassenger() && AnimParams.SIT_LOOK_SOURCE.get() >= 0.5D
                 && animatable.syncedShadowSeq() > 0) {
-            double shadowYaw = animatable.syncedShadowYaw();
-            double shadowPitch = animatable.syncedShadowPitch();
+            // 1-C-2. 서버가 준 두 endpoint 사이를 렌더 프레임 위치로만 선형 보간한다.
+            // 새 결정도, 새 감쇠도 아니다 - partialTick 은 위치를 고르는 데만 쓴다.
+            // 각도 wrapping 을 하지 않는다: 서버 출력은 이미 프로젝트 범위 안에서
+            // 물리적 경로를 따라오므로 두 endpoint 사이에 불연속이 없다.
+            float pt = Minecraft.getInstance().getPartialTick();
+            double prevYaw = animatable.syncedShadowPrevYaw();
+            double prevPitch = animatable.syncedShadowPrevPitch();
+            double curYaw = animatable.syncedShadowYaw();
+            double curPitch = animatable.syncedShadowPitch();
+            double shadowYaw = prevYaw + (curYaw - prevYaw) * pt;
+            double shadowPitch = prevPitch + (curPitch - prevPitch) * pt;
             if (Double.isFinite(shadowYaw) && Double.isFinite(shadowPitch)) {
                 // 되돌릴 때 낡은 상태가 튀지 않게 비워 둔다. 이 분기에서는 쓰이지 않는다.
                 damperFor(animatable).reset();

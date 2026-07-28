@@ -103,6 +103,20 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
             SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Float> DATA_LOOK_SHADOW_PITCH =
             SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.FLOAT);
+    /**
+     * 4.14 1-C-2. <b>직전 서버 틱</b>의 최종 shadow 각도. 렌더 보간의 시작점이다.
+     *
+     * <p>서버 double 이 아니라 <b>직전 틱에 실제로 동기화한 FLOAT</b> 를 그대로 보낸다. 그래야
+     * 클라이언트가 두 endpoint 사이를 보간할 때 시작점이 이전 프레임의 도착점과 정확히 같다.
+     *
+     * <p>동기화 순서는 prev → current → seq 다. seq 가 마지막이어야 클라가 새 seq 를 본 순간
+     * 두 endpoint 가 이미 그 seq 의 것이다.
+     */
+    private static final EntityDataAccessor<Float> DATA_LOOK_SHADOW_PREV_YAW =
+            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Float> DATA_LOOK_SHADOW_PREV_PITCH =
+            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.FLOAT);
+
     private static final EntityDataAccessor<Integer> DATA_LOOK_SHADOW_SEQ =
             SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.INT);
 
@@ -206,6 +220,8 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         this.entityData.define(DATA_LOOK_PROBE_SEQ, 0);
         this.entityData.define(DATA_LOOK_SHADOW_YAW, 0.0F);
         this.entityData.define(DATA_LOOK_SHADOW_PITCH, 0.0F);
+        this.entityData.define(DATA_LOOK_SHADOW_PREV_YAW, 0.0F);
+        this.entityData.define(DATA_LOOK_SHADOW_PREV_PITCH, 0.0F);
         this.entityData.define(DATA_LOOK_SHADOW_SEQ, 0);
     }
 
@@ -450,6 +466,9 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     private int syncSeq = 0;
     private final SitLookShadow shadow = new SitLookShadow();
     private int shadowSeq = 0;
+    /** 직전 틱에 동기화한 FLOAT. 보간 시작점으로 그대로 보낸다. */
+    private float lastShadowYaw = 0.0F;
+    private float lastShadowPitch = 0.0F;
 
     /**
      * 4.14 1-B-1. shadow 를 서버 틱당 한 번 전진시키고 최종각을 동기화한다.
@@ -489,8 +508,13 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         // 비트 동일성을 주장할 수 없었다.
         float shadowYaw = (float) st.outYaw;
         float shadowPitch = (float) st.outPitch;
+        // prev -> current -> seq. prev 는 직전 틱에 실제로 보낸 FLOAT 그 자체다.
+        this.entityData.set(DATA_LOOK_SHADOW_PREV_YAW, this.lastShadowYaw);
+        this.entityData.set(DATA_LOOK_SHADOW_PREV_PITCH, this.lastShadowPitch);
         this.entityData.set(DATA_LOOK_SHADOW_YAW, shadowYaw);
         this.entityData.set(DATA_LOOK_SHADOW_PITCH, shadowPitch);
+        this.lastShadowYaw = shadowYaw;
+        this.lastShadowPitch = shadowPitch;
         this.shadowSeq++;
         this.entityData.set(DATA_LOOK_SHADOW_SEQ, this.shadowSeq);
 
@@ -502,7 +526,7 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
                         + "prevY=%.9f prevP=%.9f limY=%.9f limP=%.9f bodyY=%.9f body=%.9f "
                         + "boneY=%.9f boneP=%.9f clY=%.9f clP=%.9f k=%.9f "
                         + "poutY=%.9f poutP=%.9f outY=%.9f outP=%.9f "
-                        + "yawbits=%08X pitchbits=%08X seq=%d",
+                        + "yawbits=%08X pitchbits=%08X prevsyncY=%.9f prevsyncP=%.9f seq=%d",
                 getUUID(), level().getGameTime(), st.wanted, goal, pRun && rRun,
                 target == null ? "none" : String.valueOf(target.getId()),
                 target instanceof Player, dist,
@@ -512,6 +536,8 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
                 st.gainClampYaw, st.gainClampPitch, st.damping,
                 st.prevOutYaw, st.prevOutPitch, st.outYaw, st.outPitch,
                 Float.floatToRawIntBits(shadowYaw), Float.floatToRawIntBits(shadowPitch),
+                this.entityData.get(DATA_LOOK_SHADOW_PREV_YAW),
+                this.entityData.get(DATA_LOOK_SHADOW_PREV_PITCH),
                 this.shadowSeq));
     }
     private int probeLogged = 0;
@@ -644,6 +670,14 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
 
     public float syncedShadowPitch() {
         return this.entityData.get(DATA_LOOK_SHADOW_PITCH);
+    }
+
+    public float syncedShadowPrevYaw() {
+        return this.entityData.get(DATA_LOOK_SHADOW_PREV_YAW);
+    }
+
+    public float syncedShadowPrevPitch() {
+        return this.entityData.get(DATA_LOOK_SHADOW_PREV_PITCH);
     }
 
     public int syncedShadowSeq() {
