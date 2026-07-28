@@ -242,12 +242,17 @@ public final class AnimParams {
      * 이고 우리 ±18° 는 그 4.5분의 1이라, <b>배율 4.5 가 바닐라와 같아지는 지점</b>이다.
      * 실루엣 판정은 사람이 한다.
      */
-    public static final Param WALK_LEG_AMP_SCALE = addShape("walk_leg_amp_scale", 1.0D, 0.25D, 4.0D,
-            "ratio", "T5", "걷기 다리 진폭 배율. 4.5 면 바닐라와 같다 (범위 상한은 4.0)",
+    public static final Param WALK_LEG_AMP_SCALE = addShape("walk_leg_amp_scale", 4.0D, 0.25D, 4.0D,
+            "ratio", "T5", "걷기 다리 진폭 배율. 확정 4.0 = 유효 ±72°, 바닐라의 90%",
             "leg_right", "leg_left");
-    /** 팔 진폭 배율. 다리를 키우면 팔도 같이 봐야 한다. */
-    public static final Param WALK_ARM_AMP_SCALE = addShape("walk_arm_amp_scale", 1.0D, 0.25D, 4.0D,
-            "ratio", "T5", "걷기 팔 진폭 배율", "arm_right", "arm_left");
+    /**
+     * 팔 진폭 배율. 확정 3.15 = 유효 ±31.5°, 바닐라 팔(57.296°)의 55%.
+     *
+     * <p>다리와 같은 배율이 아니다. 사람이 화면에서 골랐다 — 다리는 성큼, 팔은 얌전한 쪽이다.
+     */
+    public static final Param WALK_ARM_AMP_SCALE = addShape("walk_arm_amp_scale", 3.15D, 0.25D, 4.0D,
+            "ratio", "T5", "걷기 팔 진폭 배율. 확정 3.15 = 유효 ±31.5°, 바닐라의 55%",
+            "arm_right", "arm_left");
 
     /**
      * {@code walk_force} 가 위상에 먹이는 합성 속도, 블록/틱. 0 이면 위상이 멈춘다.
