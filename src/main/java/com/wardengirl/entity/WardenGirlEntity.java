@@ -61,6 +61,23 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     private static final EntityDataAccessor<Integer> DATA_ACTION_SEQ =
             SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.INT);
 
+    /**
+     * 4.14 1단계. 탑승 중 <b>서버가 정한</b> 시선 각도. 바닐라 각도 패킷과 같은 byte 양자화다.
+     *
+     * <p>{@code Boat.clampRotation} 이 지우는 것은 엔티티의 {@code yHeadRot} 필드 하나뿐이고,
+     * 그것을 나르는 {@code ClientboundRotateHeadPacket} 만 막힌다. {@code SynchedEntityData} 는
+     * 그 코드가 건드리지 않으므로 <b>지워지지 않는 통로</b>다. 그리고
+     * {@code ServerEntity.sendChanges()} 가 {@code entityData.isDirty()} 일 때만 보내므로
+     * 값이 멈춰 있는 동안에는 대역폭이 0 이고, 스폰 패킷에도 실려 늦게 접속한 사람도 받는다.
+     *
+     * <p>해상도 {@code 360/256 = 1.406°} 는 바닐라가 몹 회전에 쓰는 것과 같다
+     * ({@code ClientboundMoveEntityPacket.Rot}, {@code ClientboundRotateHeadPacket} 전부 byte).
+     */
+    private static final EntityDataAccessor<Byte> DATA_LOOK_YAW =
+            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.BYTE);
+    private static final EntityDataAccessor<Byte> DATA_LOOK_PITCH =
+            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.BYTE);
+
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
     public WardenGirlEntity(EntityType<? extends PathfinderMob> type, Level level) {
@@ -142,6 +159,8 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         this.entityData.define(DATA_SIGN_TEST, false);
         this.entityData.define(DATA_ACTION_CLIP, "");
         this.entityData.define(DATA_ACTION_SEQ, 0);
+        this.entityData.define(DATA_LOOK_YAW, (byte) 0);
+        this.entityData.define(DATA_LOOK_PITCH, (byte) 0);
     }
 
     // ---- axis verification harness (T1 only) -------------------------------------------------
@@ -367,6 +386,51 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         // 우리가 직접 쓰므로 엔티티 yHeadRot 을 몸통에 정렬시킬 이유가 없다. 우리 코드에서
         // yHeadRot 을 읽는 곳은 계측 덤프뿐이고 - 4.12 정면 각도 판정은 yBodyRot 기준이다 -
         // 바닐라 쪽은 Boat.clampRotation 이 매 틱 yHeadRot = yRot 로 덮어쓰므로 결과가 같다.
+    }
+
+    /**
+     * 4.14 1단계. 탑승 중 시선을 <b>서버 결과</b>로 바꾼다.
+     *
+     * <h2>재현을 지웠다</h2>
+     *
+     * 클라이언트의 {@code SitLook}(바닐라 Goal 두 개 + LookControl 재현, 약 280줄)이 사라진다.
+     * 지상과 탑승이 <b>같은 바닐라 Goal 하나</b>를 쓰므로 값이 두 벌이 되지 않는다.
+     *
+     * <h2>왜 tick() 끝인가</h2>
+     *
+     * {@code LivingEntity.tick()} 오프셋 179 에서 {@code aiStep()} 이 호출되고 그 안에서
+     * {@code goalSelector.tick()} → {@code lookControl.tick()} 이 {@code yHeadRot} 을 확정한다.
+     * {@code Entity.rideTick()} 은 {@code tick()} <b>다음에</b> {@code positionRider} 를 부르고
+     * 거기서 {@code clampRotation} 이 지운다. 그래서 여기가 지워지기 전 유일한 지점이다.
+     *
+     * <p>탑승 중에만 쓴다 — 지상에서는 클라이언트가 이미 같은 값을 각도 패킷으로 받으므로
+     * 필드를 건드리지 않아 dirty 가 생기지 않고 대역폭이 0 이다.
+     */
+    @Override
+    public void tick() {
+        super.tick();
+        if (!level().isClientSide && isPassenger()) {
+            this.entityData.set(DATA_LOOK_YAW, packAngle(getYHeadRot()));
+            this.entityData.set(DATA_LOOK_PITCH, packAngle(getXRot()));
+        }
+    }
+
+    private static byte packAngle(float deg) {
+        return (byte) net.minecraft.util.Mth.floor(deg * 256.0F / 360.0F);
+    }
+
+    private static float unpackAngle(byte packed) {
+        return packed * 360.0F / 256.0F;
+    }
+
+    /** 서버가 정한 절대 {@code yHeadRot}. 탑승 중에만 갱신된다. */
+    public float syncedLookYaw() {
+        return unpackAngle(this.entityData.get(DATA_LOOK_YAW));
+    }
+
+    /** 서버가 정한 {@code xRot} (바닐라 부호: + 가 아래). */
+    public float syncedLookPitch() {
+        return unpackAngle(this.entityData.get(DATA_LOOK_PITCH));
     }
 
     public boolean isWalkingForAnimation() {

@@ -361,7 +361,6 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      */
     private double[] sitLookRaw(WardenGirlEntity animatable) {
         if (!animatable.isPassenger()) {
-            this.sitLooks.remove(animatable.getId());
             return null;
         }
         double enable = AnimParams.SIT_LOOK_ENABLE.get();
@@ -369,19 +368,12 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             // 꺼져 있으면 정면. netHeadYaw 로 되돌리면 죽은 상수(+105)가 그대로 실린다.
             return new double[]{0.0D, 0.0D};
         }
-        SitLook look = this.sitLooks.computeIfAbsent(animatable.getId(), k -> new SitLook());
-        if (this.sitLooks.size() > MAX_TRACKED_ENTITIES) {
-            this.sitLooks.clear();
-        }
-        double[] out = look.advance(animatable, animatable.tickCount);
-        net.minecraft.world.entity.player.Player lp = Minecraft.getInstance().player;
-        look.noteRange(lp != null && lp.distanceToSqr(animatable) <= 144.0D);
-        BoneTrace.noteSitLook(look, animatable.tickCount);
-        return new double[]{out[LookDamper.YAW] * enable, out[LookDamper.PITCH] * enable};
+        // 서버가 정한 값을 그대로 본 규약으로 바꾼다. 판정도 난수도 여기 없다.
+        double yaw = -wrapDeg(animatable.syncedLookYaw() - animatable.yBodyRot);
+        double pitch = -animatable.syncedLookPitch();
+        BoneTrace.noteSyncLook(yaw, pitch, animatable.tickCount);
+        return new double[]{yaw * enable, pitch * enable};
     }
-
-    /** 4.14 (1) 엔티티별 탑승 시선 상태기계. 하차하면 버린다. */
-    private final java.util.Map<Integer, SitLook> sitLooks = new java.util.HashMap<>();
 
     private static double wrapDeg(double deg) {
         double d = deg % 360.0D;

@@ -285,9 +285,15 @@ public final class BoneTrace {
         EntityLock.reset();
         rideRows = 0;
         rideLastTick = Integer.MIN_VALUE;
-        sitLook = null;
-        sitLookTicks = 0;
-        sitLookLastTick = Integer.MIN_VALUE;
+        syncLookTicks = 0;
+        syncLookLastTick = Integer.MIN_VALUE;
+        syncYawMin = Double.POSITIVE_INFINITY;
+        syncYawMax = Double.NEGATIVE_INFINITY;
+        syncYawLast = Double.NaN;
+        syncYawStepMax = 0.0D;
+        syncYawReversals = 0;
+        syncYawDir = 0;
+        SYNC_YAW_VALUES.clear();
         rideTicksRiding = 0;
         rideTicksStanding = 0;
         rideDismounts = 0;
@@ -1398,37 +1404,51 @@ public final class BoneTrace {
     }
 
     // ---- 4.14 (1) 탑승 시선. 지상 대조를 위해 같은 통계를 양쪽에서 낸다 ------------------
-    private static SitLook sitLook;
-    private static int sitLookTicks;
-    private static int sitLookLastTick = Integer.MIN_VALUE;
+    private static int syncLookTicks;
+    private static int syncLookLastTick = Integer.MIN_VALUE;
+    private static double syncYawMin = Double.POSITIVE_INFINITY;
+    private static double syncYawMax = Double.NEGATIVE_INFINITY;
+    private static double syncYawLast = Double.NaN;
+    private static double syncYawStepMax;
+    private static int syncYawReversals;
+    private static int syncYawDir;
+    private static final java.util.Set<Long> SYNC_YAW_VALUES = new java.util.TreeSet<>();
 
-    public static void noteSitLook(SitLook look, int tick) {
-        if (remainingTicks <= 0 || tick == sitLookLastTick) {
+    /** 4.14 1단계. 서버가 보낸 시선 각도만 본다 — 클라에는 판정이 없다. */
+    public static void noteSyncLook(double yaw, double pitch, int tick) {
+        if (remainingTicks <= 0 || tick == syncLookLastTick) {
             return;
         }
-        sitLookLastTick = tick;
-        sitLook = look;
-        sitLookTicks++;
+        syncLookLastTick = tick;
+        syncLookTicks++;
+        syncYawMin = Math.min(syncYawMin, yaw);
+        syncYawMax = Math.max(syncYawMax, yaw);
+        SYNC_YAW_VALUES.add(Math.round(yaw * 10.0D));
+        if (!Double.isNaN(syncYawLast)) {
+            double d = yaw - syncYawLast;
+            syncYawStepMax = Math.max(syncYawStepMax, Math.abs(d));
+            int dir = d > 0.05D ? 1 : (d < -0.05D ? -1 : 0);
+            if (dir != 0) {
+                if (syncYawDir != 0 && dir != syncYawDir) {
+                    syncYawReversals++;
+                }
+                syncYawDir = dir;
+            }
+        }
+        syncYawLast = yaw;
     }
 
-    private static void reportSitLook() {
-        WardenGirlMod.LOGGER.info("[trace] --- 4.14 탑승 시선 (바닐라 Goal 재현) ---");
-        if (sitLook == null || sitLookTicks == 0) {
+    private static void reportSyncLook() {
+        WardenGirlMod.LOGGER.info("[trace] --- 4.14 1단계. 탑승 시선 = 서버 판정 (동기화 수신값) ---");
+        if (syncLookTicks == 0) {
             WardenGirlMod.LOGGER.info("[trace]   표본 0 — **측정 불가** (탑승하지 않았거나 꺼져 있다)");
             return;
         }
-        int total = sitLook.playerTicks() + sitLook.randomTicks() + sitLook.idleTicks();
-        if (total == 0 || sitLook.inRangeTicks() + sitLook.outRangeTicks() == 0) {
-            WardenGirlMod.LOGGER.info("[trace]   전이 없음 — **측정 불가**");
-            return;
-        }
         WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                "[trace]   틱 %d | 거리 12 안 %d / 밖 %d | 플레이어 시선 발동 %d회 %d틱 (%.1f%%) | "
-                        + "랜덤 시선 발동 %d회 %d틱 (%.1f%%) | 유휴 %d틱 (%.1f%%)",
-                total, sitLook.inRangeTicks(), sitLook.outRangeTicks(),
-                sitLook.playerStarts(), sitLook.playerTicks(), 100.0 * sitLook.playerTicks() / total,
-                sitLook.randomStarts(), sitLook.randomTicks(), 100.0 * sitLook.randomTicks() / total,
-                sitLook.idleTicks(), 100.0 * sitLook.idleTicks() / total));
+                "[trace]   틱 %d | head 목표 yaw %+.3f ~ %+.3f, 고유값 %d | 틱당 최대 변화 %.3f° "
+                        + "(바닐라 상한 10) | 방향 전환 %d회",
+                syncLookTicks, syncYawMin, syncYawMax, SYNC_YAW_VALUES.size(),
+                syncYawStepMax, syncYawReversals));
     }
 
     private static void reportRide() {
@@ -2088,7 +2108,7 @@ public final class BoneTrace {
         reportSniff();
         reportSit();
         reportRide();
-        reportSitLook();
+        reportSyncLook();
         reportFade();
         reportByPhase();
         reportPhaseAudit();
