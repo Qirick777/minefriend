@@ -657,6 +657,10 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     private final Map<Integer, Integer> lastHurtTime = new HashMap<>();
     /** T6 반응형 idle 의 트리거 상태. 폐기 시 이 필드도 함께 지운다. */
     private final Map<Integer, IdleReaction> reactions = new HashMap<>();
+    /** 중단이 시작된 시각(틱). 있으면 페이드 아웃 중이다. */
+    private final Map<Integer, Double> sniffInterrupt = new HashMap<>();
+    /** 소리를 터뜨릴 재생 나이(틱). 0.746초 클립 안에 킁킁 2회가 있으므로 두 번 튼다. */
+    private static final double[] SNIFF_SOUND_AT = {4.0D, 16.0D};
 
     /** The four axes where C2 and C3 both write. Order is fixed; see {@link #applyWalkBlend}. */
     private double[] readBlendAxes() {
@@ -720,33 +724,40 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         if (this.lastHurtTime.size() > MAX_TRACKED_ENTITIES) {
             this.lastHurtTime.clear();
         }
-        // ===== T6 반응형 idle. 폐기 시 이 블록과 IdleReaction 만 지우면 된다 =====
+        // ===== T6 반응형 idle. 폐기 시 이 블록과 IdleReaction / ModSounds 만 지우면 된다 =====
         IdleReaction reaction = this.reactions.computeIfAbsent(animatable.getId(),
                 k -> new IdleReaction());
         if (this.reactions.size() > MAX_TRACKED_ENTITIES) {
             this.reactions.clear();
         }
-        net.minecraft.world.entity.player.Player near =
-                Minecraft.getInstance().player;
+        net.minecraft.world.entity.player.Player near = Minecraft.getInstance().player;
         double playerDist = near == null ? Double.NaN : near.distanceTo(animatable);
-        boolean sniffStarted = !animatable.isSignTest()
-                && reaction.tickSniff(playerDist, animatable.tickCount);
-        // 목표 각도 계산. 적용과 분리돼 있다 - A 안으로 갈 때 이 값을 setYRot 에 넘기면 된다.
-        double desiredYaw = Double.NaN;
+        // 정면 기준 각도. 몹이 보는 방향(yBodyRot)과 플레이어 방향의 차, 절대값.
+        double frontAngle = Double.NaN;
         if (near != null) {
-            desiredYaw = Math.toDegrees(Math.atan2(near.getZ() - animatable.getZ(),
+            double toPlayer = Math.toDegrees(Math.atan2(near.getZ() - animatable.getZ(),
                     near.getX() - animatable.getX())) - 90.0D;
+            double diff = (toPlayer - animatable.yBodyRot) % 360.0D;
+            if (diff >= 180.0D) {
+                diff -= 360.0D;
+            }
+            if (diff < -180.0D) {
+                diff += 360.0D;
+            }
+            frontAngle = Math.abs(diff);
         }
-        boolean sniffPlaying = AnimRegistry.IDLE_SNIFF.equals(action.clip()) && action.isPlaying();
-        reaction.setTurnReady(reaction.tickTurn(desiredYaw, animatable.yBodyRot,
-                reaction.inside(), sniffPlaying, animatable.walkStateForReport(),
-                animatable.tickCount));
-        // D 안의 적용부. 본 +yRot 은 앞점을 몹의 왼쪽(+X)으로 보내고, MC yaw 는 커질수록 앞을
-        // +Z 에서 -X(몹의 오른쪽)로 돌리므로 부호가 반대다.  root 세 축은 다른 누구도 쓰지 않는다.
-        double turnYaw = reaction.turnYawDeg();
-        if (Math.abs(turnYaw) > 1.0E-6D) {
-            addRotY(Bones.ROOT, -turnYaw);
+        // 킁킁은 C3 에서 가장 낮은 우선순위다. 다른 클립이 돌거나 맞는 중이면 발동하지 않고,
+        // 이미 돌고 있었다면 페이드로 끊는다. 전체 우선순위 체계는 나중에 정한다.
+        boolean sniffRunning = AnimRegistry.IDLE_SNIFF.equals(action.clip()) && action.isPlaying();
+        boolean otherAction = !animatable.getActionClip().isEmpty();
+        boolean blocked = otherAction || animatable.hurtTime != 0;
+        if (sniffRunning && blocked) {
+            reaction.noteInterrupt();
+            reaction.cancelRemainingSounds(SNIFF_SOUND_AT.length);
+            this.sniffInterrupt.put(animatable.getId(), now);
         }
+        boolean sniffStarted = !animatable.isSignTest()
+                && reaction.tickSniff(playerDist, frontAngle, blocked, animatable.tickCount);
         if (BoneTrace.isRunning() && EntityLock.isSubject(animatable.getId())) {
             BoneTrace.noteReaction(reaction, sniffStarted);
         }
@@ -754,6 +765,8 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             software.bernie.geckolib.core.animation.Animation sniffClip =
                     getAnimation(animatable, AnimRegistry.IDLE_SNIFF);
             if (sniffClip != null) {
+                this.sniffInterrupt.remove(animatable.getId());
+                reaction.resetSounds();
                 action.syncTo(-animatable.tickCount - 1, AnimRegistry.IDLE_SNIFF,
                         sniffClip.length(), now);
             }
@@ -801,6 +814,29 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
                 // ActionCheck's actiontest comparison is untouched.
                 double amp = weight * (AnimRegistry.IDLE_HURT.equals(action.clip())
                         ? AnimParams.HURT_AMP_SCALE.get() : 1.0D);
+                if (AnimRegistry.IDLE_SNIFF.equals(action.clip())) {
+                    // 중단 페이드. 한 프레임에 끊으면 튄다.
+                    Double cut = this.sniffInterrupt.get(animatable.getId());
+                    if (cut != null) {
+                        double fade = AnimParams.SNIFF_INTERRUPT_FADE.get();
+                        double u = fade <= 0.0D ? 1.0D : (now - cut) / fade;
+                        amp *= Math.max(0.0D, 1.0D - u);
+                    } else {
+                        // 소리는 우리가 직접 발화한다 - C3 는 직접 평가 경로라 GeckoLib 의
+                        // 사운드 키프레임을 타지 않는다. 재생당 정확히 2회, 중복 없이.
+                        IdleReaction r = this.reactions.get(animatable.getId());
+                        if (r != null && r.claimSound(age, SNIFF_SOUND_AT)
+                                && AnimParams.SNIFF_DISTANCE.get() > 0.0D) {
+                            animatable.level().playLocalSound(animatable.getX(),
+                                    animatable.getY(), animatable.getZ(),
+                                    com.wardengirl.registry.ModSounds.SNIFF.get(),
+                                    net.minecraft.sounds.SoundSource.NEUTRAL,
+                                    (float) AnimParams.SNIFF_SOUND_VOLUME.get(),
+                                    (float) AnimParams.SNIFF_SOUND_PITCH.get(), false);
+                            BoneTrace.noteSniffSound();
+                        }
+                    }
+                }
                 for (Map.Entry<String, double[]> e : pose.rotationsDeg().entrySet()) {
                     addRotX(e.getKey(), e.getValue()[0] * amp);
                     addRotY(e.getKey(), e.getValue()[1] * amp);

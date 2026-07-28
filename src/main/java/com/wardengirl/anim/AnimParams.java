@@ -253,13 +253,19 @@ public final class AnimParams {
     /** 그 거리 안에 머물러야 하는 시간. */
     public static final Param SNIFF_DWELL = addShape("sniff_dwell", 40.0D, 0.0D, 200.0D,
             "tick", "T6", "킁킁 발동까지 근접 유지 시간", "body", "head", "arm_right", "arm_left");
-    /** 몸통을 플레이어 쪽으로 붙이는 데 걸리는 시간. */
-    public static final Param SNIFF_TURN_TICKS = addShape("sniff_turn_ticks", 8.0D, 0.0D, 30.0D,
-            "tick", "T6", "킁킁 전 몸통 회전 시간", "root");
-    /** 이 각도를 넘으면 발동을 포기한다. 발이 크게 제자리 회전하는 그림을 피한다. */
-    public static final Param SNIFF_TURN_MAX_ANGLE =
-            addShape("sniff_turn_max_angle", 120.0D, 0.0D, 180.0D,
-                    "deg", "T6", "이 각도를 넘으면 킁킁을 포기한다", "root");
+    /** 정면 기준 이 각도 안에 플레이어가 있어야 발동한다. 180 이면 제한 없음. */
+    public static final Param SNIFF_FRONT_ANGLE =
+            addShape("sniff_front_angle", 60.0D, 0.0D, 180.0D,
+                    "deg", "T6", "킁킁 발동 정면 각도. 180 = 제한 없음",
+                    "body", "head", "arm_right", "arm_left");
+    /** 공격·피격이 오면 이 시간에 걸쳐 킁킁을 끊는다. */
+    public static final Param SNIFF_INTERRUPT_FADE =
+            addShape("sniff_interrupt_fade", 3.0D, 0.0D, 10.0D,
+                    "tick", "T6", "킁킁 중단 페이드 아웃", "body", "head", "arm_right", "arm_left");
+    public static final Param SNIFF_SOUND_VOLUME =
+            addShape("sniff_sound_volume", 0.6D, 0.0D, 2.0D, "ratio", "T6", "킁킁 소리 볼륨");
+    public static final Param SNIFF_SOUND_PITCH =
+            addShape("sniff_sound_pitch", 1.0D, 0.5D, 2.0D, "ratio", "T6", "킁킁 소리 피치");
     /** 재발동 금지 시간. */
     public static final Param SNIFF_COOLDOWN = addShape("sniff_cooldown", 200.0D, 0.0D, 600.0D,
             "tick", "T6", "킁킁 재발동 쿨다운", "body", "head", "arm_right", "arm_left");

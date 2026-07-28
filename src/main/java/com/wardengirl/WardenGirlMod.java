@@ -34,6 +34,8 @@ public class WardenGirlMod {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
 
         ModEntities.register(modEventBus);
+        // T6 4.12. 폐기 시 이 한 줄과 ModSounds / sounds.json / sniff.ogg 를 지운다.
+        com.wardengirl.registry.ModSounds.register(modEventBus);
 
         // Part 3.6: config/wardengirl-client.toml. Client type because every value in it feeds the
         // renderer and nothing else.

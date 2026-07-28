@@ -127,6 +127,6 @@ public final class AnimRegistry {
      */
     public static final String IDLE_SNIFF = "idle_sniff";
 
-    /** json {@code animation_length: 2.2} 초 × 20. */
-    public static final double SNIFF_LENGTH_TICKS = 44.0D;
+    /** json {@code animation_length: 1.6} 초 × 20. */
+    public static final double SNIFF_LENGTH_TICKS = 32.0D;
 }

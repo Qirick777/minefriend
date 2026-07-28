@@ -1,0 +1,9 @@
+{
+  "entity.warden_girl.sniff": {
+    "category": "neutral",
+    "subtitle": "subtitles.wardengirl.sniff",
+    "sounds": [
+      { "name": "wardengirl:sniff", "stream": false }
+    ]
+  }
+}
