@@ -1049,6 +1049,8 @@ public final class BoneTrace {
      * without that being decidable from the mean alone.
      */
     private static void reportStopDetail() {
+        WardenGirlMod.LOGGER.info("[trace]   판정은 '이동량 / 시작값' 과 '소요 틱' 으로 한다."
+                + " 이동량 자체는 정지 순간의 걷기 위상에 따라 3배 넘게 흔들리므로 비교에 못 쓴다");
         int runs = 0;
         for (int k = 1; k < seriesCount && runs < 3; k++) {
             if (SERIES_WALK[k] || !SERIES_WALK[k - 1]) {
@@ -1065,12 +1067,26 @@ public final class BoneTrace {
                 lo = Math.min(lo, SERIES[0][j]);
                 hi = Math.max(hi, SERIES[0][j]);
             }
+            // Phase-independent: how far it went as a FRACTION of where it started, and how long
+            // that took. The raw distance depends on the walk phase at the moment of the stop and
+            // varies threefold between events - averaging four of those cannot separate two code
+            // paths, which is exactly the trap the earlier A/B fell into.
+            double start = SERIES[0][k - 1];
+            int settleTick = SERIES_TICK[end];
+            for (int j = k; j <= end; j++) {
+                if (Math.abs(SERIES[0][j]) < 1.0E-6D) {
+                    settleTick = SERIES_TICK[j];
+                    break;
+                }
+            }
             WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
-                    "[trace]   정지 %d: t=%d 에서 시작. leg_right.xRot %+8.4f -> %+8.4f "
-                            + "(구간 폭 %.4f, 총 이동 %.4f, %d틱, 프레임 %d개)",
-                    runs, SERIES_TICK[k], SERIES[0][k - 1], SERIES[0][end], hi - lo,
-                    Math.abs(SERIES[0][end] - SERIES[0][k - 1]),
-                    SERIES_TICK[end] - SERIES_TICK[k - 1], end - k + 2));
+                    "[trace]   정지 %d: t=%d. leg_right.xRot %+8.4f -> %+8.4f | "
+                            + "이동/시작값 %.4f (1.0 이어야 한다) | 0 도달까지 %d틱 (6 이어야 한다) | "
+                            + "프레임 %d개",
+                    runs, SERIES_TICK[k], start, SERIES[0][end],
+                    Math.abs(start) < 1.0E-6D ? 0.0D
+                            : Math.abs(SERIES[0][end] - start) / Math.abs(start),
+                    settleTick - SERIES_TICK[k - 1], end - k + 2));
             for (int j = k - 1; j <= end; j++) {
                 WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
                         "[trace]      t=%6d  leg_r.x %+9.4f  d%+8.4f",
@@ -1079,6 +1095,76 @@ public final class BoneTrace {
             }
             k = end;
         }
+    }
+
+    /**
+     * Audits {@link #phaseOf} itself: what each edge actually collected, event by event.
+     *
+     * <p>The aggregate said the stop transition averaged 0.1424 °/frame; the raw trajectory across
+     * the same kind of event averaged about 0.79. A five-fold disagreement between an aggregate and
+     * the values it aggregates means the aggregate is not measuring what its label says. Until that
+     * is located by value, neither number can be used — and several T5 verdicts rest on this
+     * classifier.
+     *
+     * <p>Prints, per edge: the tick it was detected at, how many samples landed in its window, the
+     * tick span they covered, and the total travel. Cross-check against the raw dump below it.
+     */
+    private static void reportPhaseAudit() {
+        WardenGirlMod.LOGGER.info("[trace] --- 분류기 감사: 에지별로 무엇이 담겼나 ---");
+        int edges = 0;
+        int classifiedStop = 0;
+        int classifiedStart = 0;
+        int classifiedSteady = 0;
+        int classifiedNone = 0;
+        for (int j = 1; j < seriesCount; j++) {
+            int p = phaseOf(j);
+            if (p == 0) {
+                classifiedStop++;
+            } else if (p == 1) {
+                classifiedStart++;
+            } else if (p == 2) {
+                classifiedSteady++;
+            } else {
+                classifiedNone++;
+            }
+        }
+        for (int k = 1; k < seriesCount && edges < 8; k++) {
+            if (SERIES_WALK[k] == SERIES_WALK[k - 1]) {
+                continue;
+            }
+            edges++;
+            int edgeTick = SERIES_TICK[k];
+            int count = 0;
+            int lo = Integer.MAX_VALUE;
+            int hi = Integer.MIN_VALUE;
+            double sum = 0.0D;
+            int mine = 0;
+            for (int j = 1; j < seriesCount; j++) {
+                int t = SERIES_TICK[j];
+                if (t < edgeTick || t > edgeTick + PHASE_WINDOW_TICKS) {
+                    continue;
+                }
+                count++;
+                lo = Math.min(lo, t);
+                hi = Math.max(hi, t);
+                sum += Math.abs(SERIES[0][j] - SERIES[0][j - 1]);
+                // Did phaseOf actually award this sample to THIS edge, or to an earlier one?
+                if (phaseOf(j) == (SERIES_WALK[k] ? 1 : 0)) {
+                    mine++;
+                }
+            }
+            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                    "[trace]   에지 %d (%s) t=%d: 창 안 표본 %d개, 틱 %d..%d, |차분| 합 %.4f, 평균 %.4f"
+                            + "  (그중 이 구간으로 분류된 것 %d개)",
+                    edges, SERIES_WALK[k] ? "시작" : "정지", edgeTick, count, lo, hi, sum,
+                    count > 0 ? sum / count : 0.0D, mine));
+        }
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   에지 %d개. 분류 결과 정지 %d / 시작 %d / 정상걷기 %d / 미분류(정지상태) %d"
+                        + "  합 %d, 표본 %d",
+                edges, classifiedStop, classifiedStart, classifiedSteady, classifiedNone,
+                classifiedStop + classifiedStart + classifiedSteady + classifiedNone,
+                seriesCount - 1));
     }
 
     /** 0 = stop transition, 1 = start transition, 2 = steady walk, -1 = steady idle (ignored). */
@@ -1142,6 +1228,7 @@ public final class BoneTrace {
         reportMovement();
         reportFade();
         reportByPhase();
+        reportPhaseAudit();
         WardenGirlMod.LOGGER.info("[trace] --- 정지 전이 상세 (leg_right.xRot) ---");
         reportStopDetail();
         int step = Math.max(1, seriesCount / 260);
