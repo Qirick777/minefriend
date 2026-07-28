@@ -377,13 +377,34 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
      * "Goal 이 안 돈다"와 "돌지만 뒤에서 되돌린다"가 갈린다. <b>계측 전용이다.</b>
      */
     private float headAfterAiStep = Float.NaN;
+    private boolean probeWanted;
+    private double probeX;
+    private double probeY;
+    private double probeZ;
+    private String probeGoals = "";
     private int probeLogged = 0;
 
     @Override
     public void aiStep() {
         super.aiStep();
         if (!level().isClientSide && isPassenger()) {
+            // aiStep() 직후 = goalSelector -> lookControl.tick() 이 막 끝난 지점.
+            // hasWanted 는 매 틱 리셋되고 clampRotation 은 그 뒤(positionRider)에 오므로
+            // wanted 를 읽을 수 있는 유일한 시점이다.
             this.headAfterAiStep = getYHeadRot();
+            net.minecraft.world.entity.ai.control.LookControl lc = getLookControl();
+            this.probeWanted = lc.isLookingAtTarget();
+            this.probeX = lc.getWantedX();
+            this.probeY = lc.getWantedY();
+            this.probeZ = lc.getWantedZ();
+            StringBuilder sb = new StringBuilder();
+            this.goalSelector.getRunningGoals().forEach(g -> {
+                if (sb.length() > 0) {
+                    sb.append('+');
+                }
+                sb.append(g.getGoal().getClass().getSimpleName());
+            });
+            this.probeGoals = sb.length() == 0 ? "none" : sb.toString();
         }
     }
 
@@ -393,9 +414,11 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         if (!level().isClientSide && isPassenger() && this.probeLogged < 200) {
             this.probeLogged++;
             com.wardengirl.WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
-                    "[probe] t=%d aiStep=%.3f tickEnd=%.3f yRot=%.3f yBodyRot=%.3f vehYRot=%.3f",
+                    "[probe] t=%d aiStep=%.3f tickEnd=%.3f yRot=%.3f yBodyRot=%.3f "
+                            + "wanted=%s x=%.3f y=%.3f z=%.3f goals=%s follow=%.1f",
                     this.tickCount, this.headAfterAiStep, getYHeadRot(), getYRot(), this.yBodyRot,
-                    getVehicle() == null ? Float.NaN : getVehicle().getYRot()));
+                    this.probeWanted, this.probeX, this.probeY, this.probeZ, this.probeGoals,
+                    AnimParams.SIT_BODY_FOLLOW.get()));
         }
     }
 
