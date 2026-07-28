@@ -447,11 +447,44 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         return d;
     }
 
+    /** 1-C 계측. 동기화 수신값과 본에 실제로 넘긴 값을 같은 행에 남긴다. 틱당 한 번. */
+    private static int shadowApplyTick = Integer.MIN_VALUE;
+
+    private void noteShadowApply(WardenGirlEntity animatable, double yaw, double pitch) {
+        if (animatable.tickCount == shadowApplyTick) {
+            return;
+        }
+        shadowApplyTick = animatable.tickCount;
+        WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
+                "[shadowapply] uuid=%s seq=%d t=%d syncY=%.9f syncP=%.9f appY=%.9f appP=%.9f "
+                        + "dY=%.9f dP=%.9f",
+                animatable.getUUID(), animatable.syncedShadowSeq(), animatable.tickCount,
+                animatable.syncedShadowYaw(), animatable.syncedShadowPitch(), yaw, pitch,
+                yaw - animatable.syncedShadowYaw(), pitch - animatable.syncedShadowPitch()));
+    }
+
     private void applyLook(WardenGirlEntity animatable,
                            AnimationState<WardenGirlEntity> animationState) {
         EntityModelData look = animationState.getData(DataTickets.ENTITY_MODEL_DATA);
         if (look == null) {
             return;
+        }
+        // ---- 4.14 1-C. 서버 shadow 경로 -------------------------------------------------
+        // 서버가 목표각/속도 제한/몸통 제한/본 규약/gain/clamp/감쇠를 이미 끝냈다.
+        // 여기서 다시 하면 두 번 걸린다 - 부호 반전도, gain 도, clamp 도, 감쇠도 없다.
+        // 기존 SitLook 과 LookDamper 는 이 분기에서 호출되지 않으므로 출력에 기여하지 않는다.
+        if (animatable.isPassenger() && AnimParams.SIT_LOOK_SOURCE.get() >= 0.5D
+                && animatable.syncedShadowSeq() > 0) {
+            double shadowYaw = animatable.syncedShadowYaw();
+            double shadowPitch = animatable.syncedShadowPitch();
+            if (Double.isFinite(shadowYaw) && Double.isFinite(shadowPitch)) {
+                // 되돌릴 때 낡은 상태가 튀지 않게 비워 둔다. 이 분기에서는 쓰이지 않는다.
+                damperFor(animatable).reset();
+                noteShadowApply(animatable, shadowYaw, shadowPitch);
+                addRotY(Bones.HEAD, shadowYaw);
+                addRotX(Bones.HEAD, shadowPitch);
+                return;
+            }
         }
         double gain = AnimParams.LOOK_GAIN.get();
         // The clamp is NOT redundant with GeckoLib's. GeckoLib's Mth.clamp(..., -85, 85) sits

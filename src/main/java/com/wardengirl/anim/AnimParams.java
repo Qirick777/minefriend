@@ -334,6 +334,20 @@ public final class AnimParams {
     public static final Param SIT_LOOK_ENABLE =
             addShape("sit_look_enable", 1.0D, 0.0D, 1.0D,
                     "ratio", "T6", "탑승 중 시선 추적 (0 = 끔)", "head");
+    /**
+     * 4.14 1-C. 탑승 시선의 출처. <b>계측·A/B 시험용</b>이다.
+     *
+     * <ul>
+     *   <li>{@code 0} — 기존 클라이언트 {@code SitLook} + {@code LookDamper} (기본값)</li>
+     *   <li>{@code 1} — 서버 권위 shadow ({@code DATA_LOOK_SHADOW_YAW/PITCH})</li>
+     * </ul>
+     *
+     * <p>기본을 아직 서버 shadow 로 확정하지 않는다 — 사람의 화면 판정 전이다.
+     * 시험은 {@code /wardengirl param set sit_look_source 1} 로 켠다.
+     */
+    public static final Param SIT_LOOK_SOURCE =
+            addShape("sit_look_source", 0.0D, 0.0D, 1.0D,
+                    "flag", "T6", "탑승 시선 출처 (0 = SitLook, 1 = 서버 shadow)", "head");
     /** 탑승 중에만 킁킁 진폭에 곱한다. 0 이면 탑승 중 킁킁 없음. */
     public static final Param SNIFF_RIDING_SCALE =
             addShape("sniff_riding_scale", 1.0D, 0.0D, 1.0D,
