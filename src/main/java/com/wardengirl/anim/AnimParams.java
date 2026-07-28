@@ -255,9 +255,14 @@ public final class AnimParams {
             "tick", "T6", "킁킁 발동까지 근접 유지 시간", "body", "head", "arm_right", "arm_left");
     // ---- 4.13 탑승 앉기 (C2 세 번째 상태) -----------------------------------------------------
 
-    /** 넓적다리를 접는 각. 본 공간. 바닐라 riding 은 −81°, 사람이 −90 으로 정했다. */
-    public static final Param SIT_LEG_X = addShape("sit_leg_x", -90.0D, -120.0D, 0.0D,
-            "deg", "T6", "탑승 앉기 다리 xRot", "leg_right", "leg_left");
+    /**
+     * 넓적다리를 접는 각. 본 공간. <b>+ 가 앞이다 — 화면 실측으로 확정했다.</b>
+     *
+     * <p>−90 으로 두었더니 다리가 뒤로 꺾였다. 4.0.2 의 {@code arm / leg xRot: + = 앞으로} 가
+     * 옳았고 내가 부호를 뒤집어 넣은 것이었다.
+     */
+    public static final Param SIT_LEG_X = addShape("sit_leg_x", 90.0D, 0.0D, 120.0D,
+            "deg", "T6", "탑승 앉기 다리 xRot. + 가 앞이다 (실측)", "leg_right", "leg_left");
     /** 다리를 좌우로 벌리는 각. 오른다리 +, 왼다리 −. */
     public static final Param SIT_LEG_Y = addShape("sit_leg_y", 10.0D, 0.0D, 30.0D,
             "deg", "T6", "탑승 앉기 다리 yRot (오른쪽 +, 왼쪽 −)", "leg_right", "leg_left");
