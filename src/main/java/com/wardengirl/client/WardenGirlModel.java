@@ -272,41 +272,36 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      * 상태이므로 락의 수명에 묶지 않는 편이 지우기 쉽다. 제품 동작은 건드리지 않는다.
      */
     private static int syncCliEntityId = Integer.MIN_VALUE;
+    private static java.util.UUID syncCliUuid = null;
+    private static int syncCliLastSeq = Integer.MIN_VALUE;
 
     private void noteSyncReceive(WardenGirlEntity animatable) {
-        if (syncCliEntityId != animatable.getId()) {
+        if (syncCliEntityId != animatable.getId()
+                || !animatable.getUUID().equals(syncCliUuid)) {
+            WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
+                    "[synccli] --- 대상 변경, 계측 초기화. 이전 id=%d uuid=%s -> 새 id=%d uuid=%s",
+                    syncCliEntityId, String.valueOf(syncCliUuid), animatable.getId(),
+                    animatable.getUUID()));
             syncCliEntityId = animatable.getId();
-            syncCliInit = false;
+            syncCliUuid = animatable.getUUID();
             syncCliSeq = 0;
-            lastSyncTick = Integer.MIN_VALUE;
-            lastSyncX = Float.NaN;
-            lastSyncY = Float.NaN;
-            lastSyncZ = Float.NaN;
-            WardenGirlMod.LOGGER.info("[synccli] --- 대상 엔티티 변경, 계측 초기화 id="
-                    + animatable.getId() + " uuid=" + animatable.getUUID());
+            syncCliLastSeq = Integer.MIN_VALUE;
         }
-        if (animatable.tickCount == lastSyncTick) {
+        // 좌표를 폴링하지 않는다. 동기화된 순번이 바뀐 순간에만 한 건 기록한다.
+        int seq = animatable.syncedLookProbeSeq();
+        if (seq == syncCliLastSeq) {
             return;
         }
-        lastSyncTick = animatable.tickCount;
+        syncCliLastSeq = seq;
+        syncCliSeq++;
         boolean w = animatable.syncedLookWanted();
         float x = animatable.syncedLookX();
         float y = animatable.syncedLookY();
         float z = animatable.syncedLookZ();
-        if (syncCliInit && w == lastSyncWanted && x == lastSyncX && y == lastSyncY
-                && z == lastSyncZ) {
-            return;
-        }
-        syncCliInit = true;
-        lastSyncWanted = w;
-        lastSyncX = x;
-        lastSyncY = y;
-        lastSyncZ = z;
-        syncCliSeq++;
         WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
-                "[synccli] id=%d uuid=%s seq=%d t=%d wanted=%b x=%.7f y=%.7f z=%.7f",
-                animatable.getId(), animatable.getUUID(), syncCliSeq, animatable.tickCount,
-                w, x, y, z));
+                "[synccli] id=%d uuid=%s seq=%d n=%d t=%d gt=%d wanted=%b x=%.7f y=%.7f z=%.7f",
+                animatable.getId(), animatable.getUUID(), seq, syncCliSeq, animatable.tickCount,
+                animatable.level().getGameTime(), w, x, y, z));
     }
 
     /**

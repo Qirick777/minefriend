@@ -82,6 +82,17 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     private static final EntityDataAccessor<Float> DATA_LOOK_Z =
             SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.FLOAT);
 
+    /**
+     * <b>계측 전용.</b> 네 상태값이 바뀔 때마다 마지막에 1 증가한다.
+     *
+     * <p>좌표 폴링으로 이벤트를 만들면 서버 스냅숏과 클라 스냅숏을 짝지을 키가 없다 — 지난
+     * 라운드에 클라 183건이 서버 열과 하나도 대응되지 않은 것이 그 때문이다. 순번을
+     * <b>마지막에</b> 올리므로, 클라가 새 seq 를 본 시점에는 네 값이 이미 그 seq 의 것이다.
+     * 검증이 끝나기 전에는 제거하지 않는다.
+     */
+    private static final EntityDataAccessor<Integer> DATA_LOOK_PROBE_SEQ =
+            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.INT);
+
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
     public WardenGirlEntity(EntityType<? extends PathfinderMob> type, Level level) {
@@ -167,6 +178,7 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         this.entityData.define(DATA_LOOK_X, 0.0F);
         this.entityData.define(DATA_LOOK_Y, 0.0F);
         this.entityData.define(DATA_LOOK_Z, 0.0F);
+        this.entityData.define(DATA_LOOK_PROBE_SEQ, 0);
     }
 
     // ---- axis verification harness (T1 only) -------------------------------------------------
@@ -445,11 +457,15 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
             this.entityData.set(DATA_LOOK_Z, zf);
             if (w0 != this.probeWanted || x0 != xf || y0 != yf || z0 != zf) {
                 this.syncSeq++;
+                // 순번은 반드시 마지막에 올린다. 클라가 seq 변화를 본 순간 네 값이 이미 그
+                // seq 의 것이어야 한다.
+                this.entityData.set(DATA_LOOK_PROBE_SEQ, this.syncSeq);
                 com.wardengirl.WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
-                        "[syncsrv] id=%d uuid=%s seq=%d t=%d wanted=%b x=%.7f y=%.7f z=%.7f "
-                                + "rawx=%.12f rawy=%.12f rawz=%.12f",
-                        getId(), getUUID(), this.syncSeq, this.tickCount, this.probeWanted,
-                        xf, yf, zf, this.probeX, this.probeY, this.probeZ));
+                        "[syncsrv] id=%d uuid=%s seq=%d t=%d gt=%d wanted=%b x=%.7f y=%.7f "
+                                + "z=%.7f rawx=%.12f rawy=%.12f rawz=%.12f",
+                        getId(), getUUID(), this.syncSeq, this.tickCount,
+                        level().getGameTime(), this.probeWanted, xf, yf, zf,
+                        this.probeX, this.probeY, this.probeZ));
             }
         }
     }
@@ -483,6 +499,11 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
 
     public float syncedLookZ() {
         return this.entityData.get(DATA_LOOK_Z);
+    }
+
+    /** 계측 전용 순번. 판정의 기본 키다 — 시간이나 tick 이 아니다. */
+    public int syncedLookProbeSeq() {
+        return this.entityData.get(DATA_LOOK_PROBE_SEQ);
     }
 
     public boolean isWalkingForAnimation() {
