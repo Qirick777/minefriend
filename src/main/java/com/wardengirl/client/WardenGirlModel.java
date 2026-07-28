@@ -247,8 +247,48 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
                     animatable.rawMovingForReport(), animatable.lastMovingTickForReport(),
                     animatable.tickCount);
             noteRideDiagnostic(animatable, animationState);
+            noteSyncReceive(animatable);
             BoneTrace.sample(readAllBones(), readAllPositions(), animatable.tickCount);
         }
+    }
+
+    /**
+     * 4.14 1-A. 수신값을 <b>기록만</b> 한다. 계산도, 본 적용도, shadow 상태도 없다.
+     *
+     * <p>서버는 값이 바뀔 때만 {@code [syncsrv]} 를 찍고 여기서는 바뀔 때만 {@code [synccli]} 를
+     * 찍는다. 순번은 각자 자기 쪽 카운터이고, 대조는 <b>변경 순서와 최종 수렴</b>으로 한다 —
+     * 네트워크 지연 때문에 같은 틱의 동시 도착을 요구할 수 없기 때문이다.
+     */
+    private static boolean lastSyncWanted;
+    private static float lastSyncX = Float.NaN;
+    private static float lastSyncY = Float.NaN;
+    private static float lastSyncZ = Float.NaN;
+    private static int lastSyncTick = Integer.MIN_VALUE;
+    private static int syncCliSeq = 0;
+    private static boolean syncCliInit = false;
+
+    private void noteSyncReceive(WardenGirlEntity animatable) {
+        if (animatable.tickCount == lastSyncTick) {
+            return;
+        }
+        lastSyncTick = animatable.tickCount;
+        boolean w = animatable.syncedLookWanted();
+        float x = animatable.syncedLookX();
+        float y = animatable.syncedLookY();
+        float z = animatable.syncedLookZ();
+        if (syncCliInit && w == lastSyncWanted && x == lastSyncX && y == lastSyncY
+                && z == lastSyncZ) {
+            return;
+        }
+        syncCliInit = true;
+        lastSyncWanted = w;
+        lastSyncX = x;
+        lastSyncY = y;
+        lastSyncZ = z;
+        syncCliSeq++;
+        WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
+                "[synccli] seq=%d t=%d wanted=%b x=%.7f y=%.7f z=%.7f",
+                syncCliSeq, animatable.tickCount, w, x, y, z));
     }
 
     /**

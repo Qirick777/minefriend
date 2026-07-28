@@ -61,6 +61,27 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     private static final EntityDataAccessor<Integer> DATA_ACTION_SEQ =
             SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.INT);
 
+    /**
+     * 4.14 1-A. 서버 시선 정책 결과. <b>가시 경로에 연결돼 있지 않다</b> — 이번 라운드는 전달만이다.
+     *
+     * <h2>자료형은 descriptor 로 정했다</h2>
+     *
+     * {@code LookControl.getWantedX/Y/Z()} 의 descriptor 는 <b>{@code ()D}</b> — Java {@code double}
+     * 이다. 그런데 {@code EntityDataSerializers} 에 {@code DOUBLE} 이 <b>없다</b>(BYTE INT LONG FLOAT
+     * STRING … VECTOR3 QUATERNION, 전부 확인). 그래서 {@code FLOAT} 를 쓰며 <b>double → float 축소가
+     * 일어난다.</b> 오차는 실측해 보고한다.
+     *
+     * <p>{@code isLookingAtTarget()} 는 {@code ()Z} 이므로 {@code BOOLEAN} 이 정확히 맞는다.
+     */
+    private static final EntityDataAccessor<Boolean> DATA_LOOK_WANTED =
+            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Float> DATA_LOOK_X =
+            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Float> DATA_LOOK_Y =
+            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Float> DATA_LOOK_Z =
+            SynchedEntityData.defineId(WardenGirlEntity.class, EntityDataSerializers.FLOAT);
+
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
     public WardenGirlEntity(EntityType<? extends PathfinderMob> type, Level level) {
@@ -142,6 +163,10 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         this.entityData.define(DATA_SIGN_TEST, false);
         this.entityData.define(DATA_ACTION_CLIP, "");
         this.entityData.define(DATA_ACTION_SEQ, 0);
+        this.entityData.define(DATA_LOOK_WANTED, false);
+        this.entityData.define(DATA_LOOK_X, 0.0F);
+        this.entityData.define(DATA_LOOK_Y, 0.0F);
+        this.entityData.define(DATA_LOOK_Z, 0.0F);
     }
 
     // ---- axis verification harness (T1 only) -------------------------------------------------
@@ -382,6 +407,7 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     private double probeY;
     private double probeZ;
     private String probeGoals = "";
+    private int syncSeq = 0;
     private int probeLogged = 0;
 
     @Override
@@ -405,6 +431,26 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
                 sb.append(g.getGoal().getClass().getSimpleName());
             });
             this.probeGoals = sb.length() == 0 ? "none" : sb.toString();
+            // 1-A. 관문 측정을 통과한 이 지점에서만 쓴다. 다른 훅으로 옮기지 않는다.
+            boolean w0 = this.entityData.get(DATA_LOOK_WANTED);
+            float x0 = this.entityData.get(DATA_LOOK_X);
+            float y0 = this.entityData.get(DATA_LOOK_Y);
+            float z0 = this.entityData.get(DATA_LOOK_Z);
+            float xf = (float) this.probeX;
+            float yf = (float) this.probeY;
+            float zf = (float) this.probeZ;
+            this.entityData.set(DATA_LOOK_WANTED, this.probeWanted);
+            this.entityData.set(DATA_LOOK_X, xf);
+            this.entityData.set(DATA_LOOK_Y, yf);
+            this.entityData.set(DATA_LOOK_Z, zf);
+            if (w0 != this.probeWanted || x0 != xf || y0 != yf || z0 != zf) {
+                this.syncSeq++;
+                com.wardengirl.WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
+                        "[syncsrv] seq=%d t=%d wanted=%b x=%.7f y=%.7f z=%.7f "
+                                + "rawx=%.12f rawy=%.12f rawz=%.12f",
+                        this.syncSeq, this.tickCount, this.probeWanted, xf, yf, zf,
+                        this.probeX, this.probeY, this.probeZ));
+            }
         }
     }
 
@@ -420,6 +466,23 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
                     this.probeWanted, this.probeX, this.probeY, this.probeZ, this.probeGoals,
                     AnimParams.SIT_BODY_FOLLOW.get()));
         }
+    }
+
+    /** 1-A. 클라이언트가 수신값을 읽기만 하는 접근자. 계산에 쓰이지 않는다. */
+    public boolean syncedLookWanted() {
+        return this.entityData.get(DATA_LOOK_WANTED);
+    }
+
+    public float syncedLookX() {
+        return this.entityData.get(DATA_LOOK_X);
+    }
+
+    public float syncedLookY() {
+        return this.entityData.get(DATA_LOOK_Y);
+    }
+
+    public float syncedLookZ() {
+        return this.entityData.get(DATA_LOOK_Z);
     }
 
     public boolean isWalkingForAnimation() {
