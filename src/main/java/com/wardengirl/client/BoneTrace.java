@@ -283,6 +283,8 @@ public final class BoneTrace {
 
     public static void start(int ticks) {
         EntityLock.reset();
+        rideRows = 0;
+        rideLastTick = Integer.MIN_VALUE;
         remainingTicks = ticks;
         totalTicks = ticks;
         startTick = Integer.MIN_VALUE;
@@ -1289,6 +1291,44 @@ public final class BoneTrace {
 
     private static final int[] LAST_TICK = new int[1];
 
+    // ---- 4.13 문제 3. 탑승 중 회전 3종 덤프. 조사용이고 결론이 나면 지운다 ------------------
+    private static final int RIDE_CAP = 400;
+    private static final String[] RIDE_ROW = new String[RIDE_CAP];
+    private static int rideRows = 0;
+    private static int rideLastTick = Integer.MIN_VALUE;
+
+    /**
+     * 틱당 한 행. 프레임마다 부르면 같은 값이 프레임 수만큼 쌓여 회전 변화가 묻힌다.
+     *
+     * <p>세 각을 <b>함께</b> 찍는 것이 핵심이다 — 하나만 보면 어느 것이 안 도는지 알 수 없다.
+     */
+    public static void noteRide(int tick, boolean riding, String vehicle, double vehYRot,
+                                double yRot, double yBodyRot, double yBodyRotO,
+                                double yHeadRot, double netHeadYaw, double headBoneYaw,
+                                String vanilla) {
+        if (remainingTicks <= 0 || tick == rideLastTick || rideRows >= RIDE_CAP) {
+            return;
+        }
+        rideLastTick = tick;
+        RIDE_ROW[rideRows++] = String.format(Locale.ROOT,
+                "t=%6d %s vehicle=%-10s vehYRot %+8.3f | yRot %+8.3f  yBodyRot %+8.3f "
+                        + "(O %+8.3f)  yHeadRot %+8.3f | netHeadYaw %+8.3f  head.yRot %+8.3f | %s",
+                tick, riding ? "TAM" : "---", vehicle, vehYRot, yRot, yBodyRot, yBodyRotO,
+                yHeadRot, netHeadYaw, headBoneYaw, vanilla);
+    }
+
+    private static void reportRide() {
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace] --- 4.13 문제 3. 탑승 중 회전 덤프 (%d행) ---", rideRows));
+        if (rideRows == 0) {
+            WardenGirlMod.LOGGER.info("[trace]   행 없음 — **측정 불가**");
+            return;
+        }
+        for (int i = 0; i < rideRows; i++) {
+            WardenGirlMod.LOGGER.info("[trace]   " + RIDE_ROW[i]);
+        }
+    }
+
     private static void reportSit() {
         WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
                 "[trace] --- 4.13 탑승 앉기. 탑승 프레임 %d, 하차 프레임 %d, 전이 %d회 ---",
@@ -1907,6 +1947,7 @@ public final class BoneTrace {
         reportHurt();
         reportSniff();
         reportSit();
+        reportRide();
         reportFade();
         reportByPhase();
         reportPhaseAudit();

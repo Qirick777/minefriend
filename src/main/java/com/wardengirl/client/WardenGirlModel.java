@@ -246,8 +246,46 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             BoneTrace.noteWalkState(animatable.walkStateForReport(),
                     animatable.rawMovingForReport(), animatable.lastMovingTickForReport(),
                     animatable.tickCount);
+            noteRideDiagnostic(animatable, animationState);
             BoneTrace.sample(readAllBones(), readAllPositions(), animatable.tickCount);
         }
+    }
+
+    /**
+     * 4.13 문제 3 조사용. 탑승 중 몸통이 왜 안 도는지를 값으로 잡는다.
+     *
+     * <p>세 각을 <b>같은 프레임에</b> 읽는다. 따로 재면 어느 것이 안 도는지 구분할 수 없다.
+     * 바닐라 비교는 같은 월드에 탑승한 다른 몹 한 마리를 함께 찍어서 한다 — 우리 렌더러를
+     * 거치지 않은 값이므로 우리 코드의 영향을 받지 않는다.
+     *
+     * <p>조사 전용이다. 결론이 나면 이 메서드와 {@code BoneTrace.noteRide} 를 함께 지운다.
+     */
+    private void noteRideDiagnostic(WardenGirlEntity animatable,
+                                    AnimationState<WardenGirlEntity> animationState) {
+        net.minecraft.world.entity.Entity vehicle = animatable.getVehicle();
+        EntityModelData look = animationState.getData(DataTickets.ENTITY_MODEL_DATA);
+        double headBoneYaw = getBone(Bones.HEAD)
+                .map(b -> AxisConvention.toDeg(b.getRotY())).orElse(Double.NaN);
+        String vanilla = "vanilla=없음";
+        for (net.minecraft.world.entity.LivingEntity other : animatable.level().getEntitiesOfClass(
+                net.minecraft.world.entity.LivingEntity.class,
+                animatable.getBoundingBox().inflate(16.0D))) {
+            if (other == animatable || !(other.getVehicle() instanceof net.minecraft.world.entity.vehicle.Boat)) {
+                continue;
+            }
+            vanilla = String.format(java.util.Locale.ROOT,
+                    "vanilla=%s yRot %+8.3f yBodyRot %+8.3f yHeadRot %+8.3f vehYRot %+8.3f",
+                    other.getType().toShortString(), other.getYRot(), other.yBodyRot,
+                    other.getYHeadRot(), other.getVehicle().getYRot());
+            break;
+        }
+        BoneTrace.noteRide(animatable.tickCount, animatable.isPassenger(),
+                vehicle == null ? "없음" : vehicle.getType().toShortString(),
+                vehicle == null ? Double.NaN : vehicle.getYRot(),
+                animatable.getYRot(), animatable.yBodyRot, animatable.yBodyRotO,
+                animatable.getYHeadRot(),
+                look == null ? Double.NaN : look.netHeadYaw(),
+                headBoneYaw, vanilla);
     }
 
     // ---- 4.6 시선 (선택지 A: Java 가산) ----------------------------------------------------------
