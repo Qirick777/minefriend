@@ -285,6 +285,9 @@ public final class BoneTrace {
         EntityLock.reset();
         rideRows = 0;
         rideLastTick = Integer.MIN_VALUE;
+        sitLook = null;
+        sitLookTicks = 0;
+        sitLookLastTick = Integer.MIN_VALUE;
         rideTicksRiding = 0;
         rideTicksStanding = 0;
         rideDismounts = 0;
@@ -1394,6 +1397,40 @@ public final class BoneTrace {
         return d;
     }
 
+    // ---- 4.14 (1) 탑승 시선. 지상 대조를 위해 같은 통계를 양쪽에서 낸다 ------------------
+    private static SitLook sitLook;
+    private static int sitLookTicks;
+    private static int sitLookLastTick = Integer.MIN_VALUE;
+
+    public static void noteSitLook(SitLook look, int tick) {
+        if (remainingTicks <= 0 || tick == sitLookLastTick) {
+            return;
+        }
+        sitLookLastTick = tick;
+        sitLook = look;
+        sitLookTicks++;
+    }
+
+    private static void reportSitLook() {
+        WardenGirlMod.LOGGER.info("[trace] --- 4.14 탑승 시선 (바닐라 Goal 재현) ---");
+        if (sitLook == null || sitLookTicks == 0) {
+            WardenGirlMod.LOGGER.info("[trace]   표본 0 — **측정 불가** (탑승하지 않았거나 꺼져 있다)");
+            return;
+        }
+        int total = sitLook.playerTicks() + sitLook.randomTicks() + sitLook.idleTicks();
+        if (total == 0 || sitLook.inRangeTicks() + sitLook.outRangeTicks() == 0) {
+            WardenGirlMod.LOGGER.info("[trace]   전이 없음 — **측정 불가**");
+            return;
+        }
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   틱 %d | 거리 12 안 %d / 밖 %d | 플레이어 시선 발동 %d회 %d틱 (%.1f%%) | "
+                        + "랜덤 시선 발동 %d회 %d틱 (%.1f%%) | 유휴 %d틱 (%.1f%%)",
+                total, sitLook.inRangeTicks(), sitLook.outRangeTicks(),
+                sitLook.playerStarts(), sitLook.playerTicks(), 100.0 * sitLook.playerTicks() / total,
+                sitLook.randomStarts(), sitLook.randomTicks(), 100.0 * sitLook.randomTicks() / total,
+                sitLook.idleTicks(), 100.0 * sitLook.idleTicks() / total));
+    }
+
     private static void reportRide() {
         WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
                 "[trace] --- 4.13 문제 3. 탑승 중 회전 덤프 (%d행, 표시 상한 %d) ---",
@@ -2050,6 +2087,7 @@ public final class BoneTrace {
         reportSniff();
         reportSit();
         reportRide();
+        reportSitLook();
         reportFade();
         reportByPhase();
         reportPhaseAudit();
