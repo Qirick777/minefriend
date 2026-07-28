@@ -104,6 +104,29 @@ public final class IdleReaction {
         this.soundsFired = total;
     }
 
+    /**
+     * 확률 판정.
+     *
+     * <p>조건이 맞으면 반드시 발동하던 것을 굴림으로 바꾼다. dwell 만 있으면 근처에 머무는
+     * 동안 쿨다운 주기로 정확히 규칙적으로 나와서 기계처럼 읽힌다.
+     *
+     * <p>셋의 역할이 다르다 — <b>dwell</b> 은 조건 충족 뒤 판정을 시작하기까지의 대기,
+     * <b>확률</b> 은 규칙적 발동을 깨는 것, <b>쿨다운</b> 은 발동 후 재발동 금지다.
+     *
+     * <p>난수는 클라이언트 것이다. 4.12 는 이미 클라이언트 판정이라 성질이 바뀌지 않는다.
+     */
+    private final java.util.Random rng = new java.util.Random();
+    private double rollTimer;
+    private int rolls;
+
+    public int rolls() {
+        return this.rolls;
+    }
+
+    public double rollTimer() {
+        return this.rollTimer;
+    }
+
     private int fires;
     private int hysteresisFlips;
     private int cooldownBlocked;
@@ -161,6 +184,7 @@ public final class IdleReaction {
             this.dwell = 0;
             this.inside = false;
             this.frontInside = false;
+            this.rollTimer = 0;
             return false;
         }
         if (this.cooldown > 0) {
@@ -218,10 +242,24 @@ public final class IdleReaction {
             return false;
         }
         if (this.cooldown > 0) {
+            // 쿨다운 중에는 굴리지도 않는다. 굴려서 버리면 쿨다운이 풀리는 순간 성공이
+            // 밀려 있다가 즉시 터져 규칙적으로 보인다 - 확률을 넣은 이유가 사라진다.
             this.cooldownBlocked++;
+            this.rollTimer = 0;
             return false;
         }
-        this.dwell = 0;
+        this.rollTimer += elapsed;
+        double interval = AnimParams.SNIFF_ROLL_INTERVAL.get();
+        if (interval <= 0.0D || this.rollTimer < interval) {
+            return false;
+        }
+        this.rollTimer -= interval;
+        this.rolls++;
+        if (this.rng.nextDouble() >= AnimParams.SNIFF_ROLL_CHANCE.get()) {
+            return false;
+        }
+        // dwell 은 되돌리지 않는다. 조건은 계속 충족돼 있으므로 다시 40틱을 기다릴 이유가
+        // 없고, 재발동 간격은 쿨다운이 정한다.
         this.cooldown = (int) Math.round(AnimParams.SNIFF_COOLDOWN.get());
         this.fires++;
         this.soundsFired = 0;

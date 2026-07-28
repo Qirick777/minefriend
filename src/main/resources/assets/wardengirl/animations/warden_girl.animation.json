@@ -1147,7 +1147,7 @@
               "vector": [
                 0,
                 0,
-                0
+                0.0
               ],
               "lerp_mode": "catmullrom"
             },
@@ -1155,7 +1155,7 @@
               "vector": [
                 0,
                 0,
-                -7.0
+                2.5
               ],
               "lerp_mode": "catmullrom"
             },
@@ -1163,7 +1163,7 @@
               "vector": [
                 0,
                 0,
-                -4.0
+                1.4286
               ],
               "lerp_mode": "catmullrom"
             },
@@ -1171,7 +1171,7 @@
               "vector": [
                 0,
                 0,
-                1.5
+                -0.5357
               ],
               "lerp_mode": "catmullrom"
             },
@@ -1179,7 +1179,7 @@
               "vector": [
                 0,
                 0,
-                0
+                0.0
               ],
               "lerp_mode": "catmullrom"
             }
@@ -1191,7 +1191,7 @@
               "vector": [
                 0,
                 0,
-                0
+                0.0
               ],
               "lerp_mode": "catmullrom"
             },
@@ -1199,7 +1199,7 @@
               "vector": [
                 0,
                 0,
-                7.0
+                -2.5
               ],
               "lerp_mode": "catmullrom"
             },
@@ -1207,7 +1207,7 @@
               "vector": [
                 0,
                 0,
-                4.0
+                -1.4286
               ],
               "lerp_mode": "catmullrom"
             },
@@ -1215,7 +1215,7 @@
               "vector": [
                 0,
                 0,
-                -1.5
+                0.5357
               ],
               "lerp_mode": "catmullrom"
             },
@@ -1223,7 +1223,7 @@
               "vector": [
                 0,
                 0,
-                0
+                0.0
               ],
               "lerp_mode": "catmullrom"
             }

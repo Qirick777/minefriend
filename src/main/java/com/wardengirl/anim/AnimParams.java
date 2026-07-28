@@ -253,6 +253,14 @@ public final class AnimParams {
     /** 그 거리 안에 머물러야 하는 시간. */
     public static final Param SNIFF_DWELL = addShape("sniff_dwell", 40.0D, 0.0D, 200.0D,
             "tick", "T6", "킁킁 발동까지 근접 유지 시간", "body", "head", "arm_right", "arm_left");
+    /** 확률 판정 주기. dwell 을 채운 뒤 이 주기마다 한 번씩 굴린다. */
+    public static final Param SNIFF_ROLL_INTERVAL =
+            addShape("sniff_roll_interval", 20.0D, 1.0D, 200.0D,
+                    "tick", "T6", "킁킁 확률 판정 주기", "body", "head", "arm_right", "arm_left");
+    /** 한 번의 판정이 성공할 확률. */
+    public static final Param SNIFF_ROLL_CHANCE =
+            addShape("sniff_roll_chance", 0.25D, 0.0D, 1.0D,
+                    "ratio", "T6", "킁킁 확률 판정 성공 확률", "body", "head", "arm_right", "arm_left");
     /** 정면 기준 이 각도 안에 플레이어가 있어야 발동한다. 180 이면 제한 없음. */
     public static final Param SNIFF_FRONT_ANGLE =
             addShape("sniff_front_angle", 60.0D, 0.0D, 180.0D,
@@ -280,6 +288,15 @@ public final class AnimParams {
     /** 4.11 피격 움찔 페이드 아웃. */
     public static final Param HURT_FADE_OUT = addShape("hurt_fade_out", 3.0D, 0.0D, 10.0D,
             "tick", "T5", "피격 움찔 페이드 아웃", "body", "head", "arm_right", "arm_left");
+    /**
+     * 4.11 피격 팔 zRot 배율.
+     *
+     * <p>팔 피벗은 {@code (±5, 21.5, 0)} 이고 몸통 반폭은 4px 이라, 팔 안쪽면과 몸통 바깥면이
+     * 둘 다 {@code x = ±4} 로 <b>맞닿아 있다</b>. 간격이 0px 이므로 안쪽 zRot 은 각도와 무관하게
+     * 즉시 관통한다 — T2 에서 확인한 것과 같은 기하다. 그래서 4.11 의 팔은 바깥으로 간다.
+     */
+    public static final Param HURT_ARM_Z_SCALE = addShape("hurt_arm_z_scale", 1.0D, 0.0D, 3.0D,
+            "ratio", "T5", "피격 팔 zRot 배율", "arm_right", "arm_left");
     /** 4.11 피격 움찔 진폭 배율. 사람이 화면으로 크기를 정한다. */
     public static final Param HURT_AMP_SCALE = addShape("hurt_amp_scale", 1.0D, 0.0D, 3.0D,
             "ratio", "T5", "피격 움찔 진폭 배율", "body", "head", "arm_right", "arm_left", "root");

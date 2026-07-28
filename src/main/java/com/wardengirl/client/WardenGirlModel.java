@@ -844,10 +844,18 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
                         }
                     }
                 }
+                boolean hurtClip = AnimRegistry.IDLE_HURT.equals(action.clip());
                 for (Map.Entry<String, double[]> e : pose.rotationsDeg().entrySet()) {
                     addRotX(e.getKey(), e.getValue()[0] * amp);
                     addRotY(e.getKey(), e.getValue()[1] * amp);
-                    addRotZ(e.getKey(), e.getValue()[2] * amp);
+                    // 4.11 의 팔 zRot 만 따로 조절한다. 팔과 몸통이 x=±4 에서 맞닿아 있어
+                    // 관통이 기하로 결정되므로, 사람이 화면에서 크기를 정할 노브가 필요하다.
+                    double zAmp = amp;
+                    if (hurtClip && (Bones.ARM_RIGHT.equals(e.getKey())
+                            || Bones.ARM_LEFT.equals(e.getKey()))) {
+                        zAmp *= AnimParams.HURT_ARM_Z_SCALE.get();
+                    }
+                    addRotZ(e.getKey(), e.getValue()[2] * zAmp);
                 }
                 for (Map.Entry<String, double[]> e : pose.positionsRaw().entrySet()) {
                     addPositionRaw(e.getKey(), e.getValue(), amp);

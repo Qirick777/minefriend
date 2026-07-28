@@ -335,6 +335,7 @@ public final class BoneTrace {
         sniffInterrupts = 0;
         sniffFrontFlips = 0;
         sniffSounds = 0;
+        sniffRolls = 0;
         sndRows = 0;
         pendingDist = Double.NaN;
         pendingPhase = Double.NaN;
@@ -1259,6 +1260,7 @@ public final class BoneTrace {
     private static int sniffInterrupts = 0;
     private static int sniffFrontFlips = 0;
     private static int sniffSounds = 0;
+    private static int sniffRolls = 0;
 
     private static final int SND_CAP = 40;
     private static final double[] SND_AGE = new double[SND_CAP];
@@ -1307,6 +1309,7 @@ public final class BoneTrace {
         sniffBlockedRejected = r.blockedRejected();
         sniffInterrupts = r.interrupts();
         sniffFrontFlips = r.frontFlips();
+        sniffRolls = r.rolls();
     }
 
     /** Pose side. {@code age} lets the 0-tick / last-tick requirement be checked by value. */
@@ -1352,6 +1355,15 @@ public final class BoneTrace {
                 AnimParams.SNIFF_FRONT_ANGLE.get(), sniffFrontRejected, sniffBlockedRejected,
                 sniffFrontFlips, sniffInterrupts, sniffSounds,
                 sniffStarts > 0 ? (double) sniffSounds / sniffStarts : 0.0D));
+        double p = AnimParams.SNIFF_ROLL_CHANCE.get();
+        double iv = AnimParams.SNIFF_ROLL_INTERVAL.get();
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   확률: 판정 %d회, 성공(=발동) %d회, 실측 성공률 %.4f (설정 %.2f) | "
+                        + "기대 발동 간격 = 쿨다운 %.0f + %.0f/%.2f = %.0f틱",
+                sniffRolls, sniffStarts,
+                sniffRolls > 0 ? (double) sniffStarts / sniffRolls : 0.0D, p,
+                AnimParams.SNIFF_COOLDOWN.get(), iv, p,
+                AnimParams.SNIFF_COOLDOWN.get() + (p > 0 ? iv / p : 0.0D)));
         for (int i = 0; i < sndRows; i++) {
             WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
                     "[trace]     소리 %2d: 발동#%d 문턱#%d 나이 %.3f 모델 %08x",
