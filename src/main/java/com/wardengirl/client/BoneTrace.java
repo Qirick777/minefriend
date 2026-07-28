@@ -1401,9 +1401,17 @@ public final class BoneTrace {
         WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
                 "[trace]   유효 조건: 탑승 틱 %d, 하차 틱 %d, 탈것 회전 %d회, 하차 %d회",
                 rideTicksRiding, rideTicksStanding, rideVehicleTurns, rideDismounts));
-        if (rideTicksRiding == 0 || rideVehicleTurns == 0 || rideDismounts == 0) {
-            WardenGirlMod.LOGGER.info("[trace]   조건 미달 — **측정 불가**");
+        if (rideTicksRiding == 0) {
+            WardenGirlMod.LOGGER.info("[trace]   탑승 프레임 0 — **측정 불가**");
             return;
+        }
+        // 항목별로 나눠 판정한다. 탈것을 안 돌린 창에서 회전 추종을 못 재는 것이지,
+        // 그 창의 시선 시계열까지 버릴 이유는 없다 - 한 덩어리로 막았던 것이 결함이었다.
+        if (rideVehicleTurns == 0) {
+            WardenGirlMod.LOGGER.info("[trace]   탈것 회전 0회 — 회전 추종 **측정 불가**");
+        }
+        if (rideDismounts == 0) {
+            WardenGirlMod.LOGGER.info("[trace]   하차 0회 — 하차 튐 **측정 불가**");
         }
         WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
                 "[trace]   정렬: netHeadYaw 최종 |%.4f|° (0 에 수렴해야 한다) | "
