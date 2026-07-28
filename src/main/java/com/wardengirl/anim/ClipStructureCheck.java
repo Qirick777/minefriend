@@ -75,7 +75,11 @@ public final class ClipStructureCheck {
             new Key(Bones.ARM_LEFT, Channel.ROTATION),
             new Key(Bones.LEG_RIGHT, Channel.ROTATION), // 4.3.4 offset y
             new Key(Bones.LEG_LEFT, Channel.ROTATION),
-            new Key(Bones.ROOT, Channel.POSITION)));    // 4.3.2 bounce
+            new Key(Bones.ROOT, Channel.POSITION),      // 4.3.2 bounce
+            // T6 4.12: 킁킁 전 몸통 회전이 root.yRot 에 가산된다. 이 줄이 없어서 root.yRot 이
+            // -16734 ~ +7747 로 폭주했고 검사기는 통과를 찍었다 - 세트가 수작업이라는 것이
+            // 이 검사기의 유일한 약점이다. Java 가산 채널을 늘리면 반드시 여기도 늘려라.
+            new Key(Bones.ROOT, Channel.ROTATION)));
 
     /**
      * Checks that every {@link #JAVA_ADDED} channel is assigned every frame, for one locomotion clip.

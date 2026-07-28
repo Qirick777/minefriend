@@ -731,6 +731,22 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         double playerDist = near == null ? Double.NaN : near.distanceTo(animatable);
         boolean sniffStarted = !animatable.isSignTest()
                 && reaction.tickSniff(playerDist, animatable.tickCount);
+        // 목표 각도 계산. 적용과 분리돼 있다 - A 안으로 갈 때 이 값을 setYRot 에 넘기면 된다.
+        double desiredYaw = Double.NaN;
+        if (near != null) {
+            desiredYaw = Math.toDegrees(Math.atan2(near.getZ() - animatable.getZ(),
+                    near.getX() - animatable.getX())) - 90.0D;
+        }
+        boolean sniffPlaying = AnimRegistry.IDLE_SNIFF.equals(action.clip()) && action.isPlaying();
+        reaction.setTurnReady(reaction.tickTurn(desiredYaw, animatable.yBodyRot,
+                reaction.inside(), sniffPlaying, animatable.walkStateForReport(),
+                animatable.tickCount));
+        // D 안의 적용부. 본 +yRot 은 앞점을 몹의 왼쪽(+X)으로 보내고, MC yaw 는 커질수록 앞을
+        // +Z 에서 -X(몹의 오른쪽)로 돌리므로 부호가 반대다.  root 세 축은 다른 누구도 쓰지 않는다.
+        double turnYaw = reaction.turnYawDeg();
+        if (Math.abs(turnYaw) > 1.0E-6D) {
+            addRotY(Bones.ROOT, -turnYaw);
+        }
         if (BoneTrace.isRunning() && EntityLock.isSubject(animatable.getId())) {
             BoneTrace.noteReaction(reaction, sniffStarted);
         }

@@ -253,6 +253,13 @@ public final class AnimParams {
     /** 그 거리 안에 머물러야 하는 시간. */
     public static final Param SNIFF_DWELL = addShape("sniff_dwell", 40.0D, 0.0D, 200.0D,
             "tick", "T6", "킁킁 발동까지 근접 유지 시간", "body", "head", "arm_right", "arm_left");
+    /** 몸통을 플레이어 쪽으로 붙이는 데 걸리는 시간. */
+    public static final Param SNIFF_TURN_TICKS = addShape("sniff_turn_ticks", 8.0D, 0.0D, 30.0D,
+            "tick", "T6", "킁킁 전 몸통 회전 시간", "root");
+    /** 이 각도를 넘으면 발동을 포기한다. 발이 크게 제자리 회전하는 그림을 피한다. */
+    public static final Param SNIFF_TURN_MAX_ANGLE =
+            addShape("sniff_turn_max_angle", 120.0D, 0.0D, 180.0D,
+                    "deg", "T6", "이 각도를 넘으면 킁킁을 포기한다", "root");
     /** 재발동 금지 시간. */
     public static final Param SNIFF_COOLDOWN = addShape("sniff_cooldown", 200.0D, 0.0D, 600.0D,
             "tick", "T6", "킁킁 재발동 쿨다운", "body", "head", "arm_right", "arm_left");

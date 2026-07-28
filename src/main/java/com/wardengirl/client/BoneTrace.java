@@ -330,6 +330,11 @@ public final class BoneTrace {
         sniffBlocked = 0;
         sniffFirstVal = Double.NaN;
         sniffLastVal = Double.NaN;
+        sniffAbandoned = 0;
+        sniffBehind = 0;
+        sniffTurnMax = 0.0D;
+        sniffTurnFrames = 0;
+        sniffZeroAfter = false;
         pendingDist = Double.NaN;
         pendingPhase = Double.NaN;
         pendingLegAmp = Double.NaN;
@@ -1248,6 +1253,11 @@ public final class BoneTrace {
     private static int sniffBlocked = 0;
     private static double sniffFirstVal = Double.NaN;
     private static double sniffLastVal = Double.NaN;
+    private static int sniffAbandoned = 0;
+    private static int sniffBehind = 0;
+    private static double sniffTurnMax = 0.0D;
+    private static int sniffTurnFrames = 0;
+    private static boolean sniffZeroAfter = false;
 
     /** Trigger-side state, sampled per frame. Does not advance the state machine. */
     public static void noteReaction(IdleReaction r, boolean started) {
@@ -1264,6 +1274,15 @@ public final class BoneTrace {
         }
         sniffFlips = r.hysteresisFlips();
         sniffBlocked = r.cooldownBlocked();
+        sniffAbandoned = r.abandoned();
+        sniffBehind = r.firesFromBehind();
+        double y = r.turnYawDeg();
+        sniffTurnMax = Math.max(sniffTurnMax, Math.abs(y));
+        if (Math.abs(y) > 1.0E-6D) {
+            sniffTurnFrames++;
+        } else {
+            sniffZeroAfter = true;
+        }
     }
 
     /** Pose side. {@code age} lets the 0-tick / last-tick requirement be checked by value. */
@@ -1303,6 +1322,11 @@ public final class BoneTrace {
                 sniffDistMin, sniffDistMax, AnimParams.SNIFF_DISTANCE.get(),
                 AnimParams.SNIFF_DISTANCE.get() * IdleReaction.EXIT_FACTOR,
                 sniffFlips, sniffBlocked));
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   회전: 뒤·옆(45°초과) 발동 %d회, 각도상한(%.0f°)으로 포기 %d회, "
+                        + "최대 회전 %.4f°, 회전 적용 프레임 %d, 0 복귀 관측 %s",
+                sniffBehind, AnimParams.SNIFF_TURN_MAX_ANGLE.get(), sniffAbandoned,
+                sniffTurnMax, sniffTurnFrames, sniffZeroAfter ? "있음" : "**없음**"));
         if (sniffStarts == 0) {
             WardenGirlMod.LOGGER.info("[trace]   발동 0회 — **측정 불가**");
             return;
