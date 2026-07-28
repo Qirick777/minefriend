@@ -242,7 +242,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             BoneTrace.noteFrameSlip(
                     net.minecraft.util.Mth.lerp(pt, animatable.xOld, animatable.getX()),
                     net.minecraft.util.Mth.lerp(pt, animatable.zOld, animatable.getZ()),
-                    footArc, animatable.walkStateForReport(), animatable.tickCount);
+                    footArc, legDeg, animatable.walkStateForReport(), animatable.tickCount);
             BoneTrace.noteWalkState(animatable.walkStateForReport(),
                     animatable.rawMovingForReport(), animatable.lastMovingTickForReport(),
                     animatable.tickCount);
@@ -578,13 +578,15 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             legAmp = LocomotionMotion.LEG_AMPLITUDE_DEG * AnimParams.WALK_LEG_AMP_SCALE.get();
         }
         double weight = loco.advance(now, walking, distance, legAmp);
-        if (BoneTrace.isRunning() && EntityLock.isSubject(animatable.getId())) {
+        boolean traced = BoneTrace.isRunning() && EntityLock.isSubject(animatable.getId());
+        if (traced) {
             BoneTrace.noteFade(weight, loco.lastDt(), now);
-            // The two factors that scale the drawn leg. Only swingAmount also scales the phase
-            // advance (through legAmp), so the pair has to be recorded together per tick.
-            BoneTrace.noteLocoState(weight, swingAmount);
         }
         if (weight <= 0.0D) {
+            if (traced) {
+                BoneTrace.noteLocoState(weight, swingAmount, distance, loco.phase(), legAmp,
+                        Double.NaN);
+            }
             return new double[4];
         }
         software.bernie.geckolib.core.animation.Animation clip =
@@ -593,6 +595,14 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             return new double[4];
         }
         ClipSampler.Pose pose = ClipSampler.sample(clip, loco.phase());
+        if (traced) {
+            // The clip's own leg_right x at this phase, before any amplitude scaling. Column [3] of
+            // the residual attribution needs it to separate "the clip is not +-18" from "something
+            // scaled it".
+            double[] legRaw = pose.rotationsDeg().get(Bones.LEG_RIGHT);
+            BoneTrace.noteLocoState(weight, swingAmount, distance, loco.phase(), legAmp,
+                    legRaw == null ? Double.NaN : legRaw[0]);
+        }
         // Amplitude scales with speed, vanilla-style. Legs and arms get their own user scale on top
         // because raising the stride without raising the arm swing reads as a limp - the two are
         // judged together on screen.

@@ -313,6 +313,11 @@ public final class BoneTrace {
         slipLastFoot = Double.NaN;
         slipLastWeight = Double.NaN;
         slipLastSwing = Double.NaN;
+        slipLastPhase = Double.NaN;
+        pendingDist = Double.NaN;
+        pendingPhase = Double.NaN;
+        pendingLegAmp = Double.NaN;
+        pendingClipRaw = Double.NaN;
         pendingWeight = Double.NaN;
         pendingSwing = Double.NaN;
         walkTransitions = 0;
@@ -733,13 +738,46 @@ public final class BoneTrace {
      */
     private static double pendingWeight = Double.NaN;
     private static double pendingSwing = Double.NaN;
+    private static double pendingDist = Double.NaN;
+    private static double pendingPhase = Double.NaN;
+    private static double pendingLegAmp = Double.NaN;
+    private static double pendingClipRaw = Double.NaN;
 
-    public static void noteLocoState(double weight, double swingAmount) {
+    /**
+     * Everything C2 used this frame, so the 8% residual can be attributed rather than guessed.
+     *
+     * <p>The shortfall survived removing the staircase at the same size (measured/ceiling 0.895 and
+     * 0.917, against 0.917 and 0.926 before), which means it is a <b>uniform scale</b> and not a
+     * resolution effect. A uniform scale can enter at exactly three places, and each gets its own
+     * column here:
+     *
+     * <ul>
+     *   <li><b>the distance path</b> — {@code distanceUsed} is what the phase consumed. The trace
+     *       measures the body independently from the same rendered position, so the two sums must
+     *       be identical. If they are not, the phase is being fed a different travel than the one
+     *       the ratio divides by, and that alone is the answer.</li>
+     *   <li><b>the phase math</b> — {@code Δphase × perCycle / 26} must equal {@code distanceUsed}.
+     *       This is the {@code walk_cycle_scale} / {@code legAmp} route.</li>
+     *   <li><b>the amplitude path</b> — {@code drawn / (clipRaw × swing × weight)} must be exactly
+     *       1. This is where {@code walk_leg_amp_scale} applied at one place and not the other, or
+     *       a {@code swingAmount} read at two different moments, would show up.</li>
+     * </ul>
+     *
+     * @param clipRawDeg the walk clip's own {@code leg_right} x value at this phase, before any
+     *                   amplitude scaling — the only way to separate "the clip is not ±18" from
+     *                   "something scaled it"
+     */
+    public static void noteLocoState(double weight, double swingAmount, double distanceUsed,
+                                     double phase, double legAmpDeg, double clipRawDeg) {
         if (remainingTicks <= 0) {
             return;
         }
         pendingWeight = weight;
         pendingSwing = swingAmount;
+        pendingDist = distanceUsed;
+        pendingPhase = phase;
+        pendingLegAmp = legAmpDeg;
+        pendingClipRaw = clipRawDeg;
     }
 
     /**
@@ -781,6 +819,15 @@ public final class BoneTrace {
     private static final double[] SLIP_W1 = new double[SLIP_CAP];
     private static final double[] SLIP_S0 = new double[SLIP_CAP];
     private static final double[] SLIP_S1 = new double[SLIP_CAP];
+    /** Distance the phase actually consumed this frame. */
+    private static final double[] SLIP_DIST = new double[SLIP_CAP];
+    /** Phase before / after, in clip ticks, and the cycle distance the phase math used. */
+    private static final double[] SLIP_PH0 = new double[SLIP_CAP];
+    private static final double[] SLIP_PH1 = new double[SLIP_CAP];
+    private static final double[] SLIP_PERCYCLE = new double[SLIP_CAP];
+    /** Clip raw leg_right x, and the value actually written to the bone. Both degrees. */
+    private static final double[] SLIP_CLIP = new double[SLIP_CAP];
+    private static final double[] SLIP_DRAWN = new double[SLIP_CAP];
     private static int slipCount = 0;
 
     /**
@@ -814,6 +861,7 @@ public final class BoneTrace {
     private static double slipLastFoot = Double.NaN;
     private static double slipLastWeight = Double.NaN;
     private static double slipLastSwing = Double.NaN;
+    private static double slipLastPhase = Double.NaN;
 
     /**
      * One walking frame of the slip measurement.
@@ -823,8 +871,8 @@ public final class BoneTrace {
      *                    numerator and denominator describe the same drawn motion
      * @param footArcNow  the drawn sole offset from under the hip, in blocks
      */
-    public static void noteFrameSlip(double x, double z, double footArcNow, boolean walking,
-                                     int tickCount) {
+    public static void noteFrameSlip(double x, double z, double footArcNow, double drawnDeg,
+                                     boolean walking, int tickCount) {
         if (remainingTicks <= 0) {
             return;
         }
@@ -847,6 +895,14 @@ public final class BoneTrace {
                 SLIP_W1[slipCount] = pendingWeight;
                 SLIP_S0[slipCount] = slipLastSwing;
                 SLIP_S1[slipCount] = pendingSwing;
+                SLIP_DIST[slipCount] = pendingDist;
+                SLIP_PH0[slipCount] = slipLastPhase;
+                SLIP_PH1[slipCount] = pendingPhase;
+                SLIP_PERCYCLE[slipCount] = 2.0D * (2.0D * 12.0D
+                        * Math.sin(Math.toRadians(Math.abs(pendingLegAmp))) / 16.0D)
+                        * AnimParams.WALK_CYCLE_SCALE.get();
+                SLIP_CLIP[slipCount] = pendingClipRaw;
+                SLIP_DRAWN[slipCount] = drawnDeg;
                 slipCount++;
             }
         }
@@ -855,6 +911,7 @@ public final class BoneTrace {
         slipLastFoot = footArcNow;
         slipLastWeight = pendingWeight;
         slipLastSwing = pendingSwing;
+        slipLastPhase = pendingPhase;
     }
 
     /**
@@ -1021,6 +1078,7 @@ public final class BoneTrace {
                     name[cond], n, spanTicks, foot, body, foot / body,
                     body / Math.max(1, spanTicks), swingSum / n, (double) n / Math.max(1, spanTicks)));
         }
+        reportResidualAttribution();
         // Raw rows, thinned. Part 6.2: the ratios above are derived, and a derived number that
         // nobody can check against the values it came from is not a measurement.
         int step = Math.max(1, slipCount / 40);
@@ -1032,6 +1090,78 @@ public final class BoneTrace {
                     SLIP_BODY[i] > 1e-9 ? SLIP_FOOT[i] / SLIP_BODY[i] : 0.0D,
                     SLIP_W0[i], SLIP_W1[i], SLIP_S0[i], SLIP_S1[i]));
         }
+    }
+
+    /**
+     * Splits the 8% residual across the three places a uniform scale can enter.
+     *
+     * <p>Restricted to {@code weight == 1} and steady swing, because a fading or accelerating frame
+     * has legitimate reasons to disagree and would blur every column.
+     */
+    private static void reportResidualAttribution() {
+        double sumDist = 0.0D;
+        double sumBody = 0.0D;
+        double sumPhaseDist = 0.0D;
+        double ampMin = Double.POSITIVE_INFINITY;
+        double ampMax = Double.NEGATIVE_INFINITY;
+        double ampSum = 0.0D;
+        int ampN = 0;
+        int n = 0;
+        for (int i = 0; i < slipCount; i++) {
+            if (SLIP_W0[i] < 1.0D - 1.0E-9D || SLIP_W1[i] < 1.0D - 1.0E-9D
+                    || Math.abs(SLIP_S1[i] - SLIP_S0[i]) > SWING_STABLE) {
+                continue;
+            }
+            n++;
+            sumBody += SLIP_BODY[i];
+            if (!Double.isNaN(SLIP_DIST[i])) {
+                sumDist += SLIP_DIST[i];
+            }
+            // Phase wraps at 26; a wrapped step reads as a large negative, so fold it forward.
+            double dPhase = SLIP_PH1[i] - SLIP_PH0[i];
+            if (dPhase < 0.0D) {
+                dPhase += LocomotionMotion.WALK_LENGTH_TICKS;
+            }
+            if (!Double.isNaN(dPhase) && SLIP_PERCYCLE[i] > 1.0E-9D) {
+                sumPhaseDist += dPhase / LocomotionMotion.WALK_LENGTH_TICKS * SLIP_PERCYCLE[i];
+            }
+            // The amplitude chain, on frames where the clip value is big enough for the ratio to
+            // mean anything - near a zero crossing it is 0/0 and says nothing.
+            double expect = SLIP_CLIP[i] * SLIP_S1[i] * AnimParams.WALK_LEG_AMP_SCALE.get()
+                    * SLIP_W1[i];
+            if (Math.abs(expect) > 1.0D && !Double.isNaN(SLIP_DRAWN[i])) {
+                double r = SLIP_DRAWN[i] / expect;
+                ampMin = Math.min(ampMin, r);
+                ampMax = Math.max(ampMax, r);
+                ampSum += r;
+                ampN++;
+            }
+        }
+        WardenGirlMod.LOGGER.info("[trace] --- 잔차 8% 귀속 (weight==1 이고 swing 안정 프레임만) ---");
+        if (n < 8) {
+            WardenGirlMod.LOGGER.info("[trace]   표본 {} — **측정 불가**", n);
+            return;
+        }
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   [1] 거리 경로 : 위상이 먹은 거리 %.5f / 트레이스가 잰 몸 %.5f = **%.4f**"
+                        + "   (1.0 이어야 한다. 같은 렌더 위치를 쓴다)",
+                sumDist, sumBody, sumBody > 1e-9 ? sumDist / sumBody : 0.0D));
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   [2] 위상 수학 : Δ위상->거리 %.5f / 위상이 먹은 거리 %.5f = **%.4f**"
+                        + "   (1.0 이어야 한다)",
+                sumPhaseDist, sumDist, sumDist > 1e-9 ? sumPhaseDist / sumDist : 0.0D));
+        if (ampN < 8) {
+            WardenGirlMod.LOGGER.info("[trace]   [3] 진폭 경로 : 표본 {} — **측정 불가**", ampN);
+        } else {
+            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                    "[trace]   [3] 진폭 경로 : 그려진각 / (클립원값 x swing x scale x weight) "
+                            + "평균 **%.5f** (최소 %.5f 최대 %.5f, 표본 %d)   (1.0 이어야 한다)",
+                    ampSum / ampN, ampMin, ampMax, ampN));
+        }
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   참고: 이 표본의 총 Δ위상 = %.2f 클립틱 = %.2f 사이클",
+                sumPhaseDist > 1e-9 && sumDist > 1e-9 ? 0.0D : 0.0D,
+                SLIP_PERCYCLE[0] > 1e-9 ? sumDist / SLIP_PERCYCLE[0] : 0.0D));
     }
 
     // ---- C2 페이드 (가설 2 확인) -----------------------------------------------------------------
