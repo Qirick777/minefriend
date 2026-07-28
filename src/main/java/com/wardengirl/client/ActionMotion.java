@@ -125,6 +125,11 @@ public final class ActionMotion {
      * playback class keeps one C3 slot and one exclusive lock — the priority question is T6's.
      */
     public static double envelope(double age, double lengthTicks, String clip) {
+        // 4.12 는 클립 자체가 0 에서 시작해 0 으로 끝나므로 엔벨로프가 할 일이 없다. 페이드를
+        // 걸면 저자가 그린 예비동작과 정착을 한 번 더 깎을 뿐이다.
+        if (com.wardengirl.anim.AnimRegistry.IDLE_SNIFF.equals(clip)) {
+            return age < 0.0D || age > lengthTicks ? 0.0D : 1.0D;
+        }
         boolean hurt = com.wardengirl.anim.AnimRegistry.IDLE_HURT.equals(clip);
         double fadeIn = hurt ? AnimParams.HURT_FADE_IN.get() : AnimParams.ATTACK_FADE_IN.get();
         double fadeOut = hurt ? AnimParams.HURT_FADE_OUT.get() : AnimParams.ATTACK_FADE_OUT.get();

@@ -655,6 +655,8 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     private final Map<Integer, ActionMotion> actions = new HashMap<>();
     /** Previous frame's hurtTime, per entity — 4.11's trigger is its rising edge. */
     private final Map<Integer, Integer> lastHurtTime = new HashMap<>();
+    /** T6 반응형 idle 의 트리거 상태. 폐기 시 이 필드도 함께 지운다. */
+    private final Map<Integer, IdleReaction> reactions = new HashMap<>();
 
     /** The four axes where C2 and C3 both write. Order is fixed; see {@link #applyWalkBlend}. */
     private double[] readBlendAxes() {
@@ -718,6 +720,29 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         if (this.lastHurtTime.size() > MAX_TRACKED_ENTITIES) {
             this.lastHurtTime.clear();
         }
+        // ===== T6 반응형 idle. 폐기 시 이 블록과 IdleReaction 만 지우면 된다 =====
+        IdleReaction reaction = this.reactions.computeIfAbsent(animatable.getId(),
+                k -> new IdleReaction());
+        if (this.reactions.size() > MAX_TRACKED_ENTITIES) {
+            this.reactions.clear();
+        }
+        net.minecraft.world.entity.player.Player near =
+                Minecraft.getInstance().player;
+        double playerDist = near == null ? Double.NaN : near.distanceTo(animatable);
+        boolean sniffStarted = !animatable.isSignTest()
+                && reaction.tickSniff(playerDist, animatable.tickCount);
+        if (BoneTrace.isRunning() && EntityLock.isSubject(animatable.getId())) {
+            BoneTrace.noteReaction(reaction, sniffStarted);
+        }
+        if (sniffStarted) {
+            software.bernie.geckolib.core.animation.Animation sniffClip =
+                    getAnimation(animatable, AnimRegistry.IDLE_SNIFF);
+            if (sniffClip != null) {
+                action.syncTo(-animatable.tickCount - 1, AnimRegistry.IDLE_SNIFF,
+                        sniffClip.length(), now);
+            }
+        }
+        // ===== T6 끝 =====
         String requested = hurtStarted ? AnimRegistry.IDLE_HURT : animatable.getActionClip();
         if (hurtStarted) {
             software.bernie.geckolib.core.animation.Animation hurtClip =
@@ -729,7 +754,8 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         } else if (requested.isEmpty()) {
             // A running flinch is not cut short by the server's empty action slot - the two are
             // driven from different places and the flinch owns the slot until it ends on its own.
-            if (!AnimRegistry.IDLE_HURT.equals(action.clip())) {
+            if (!AnimRegistry.IDLE_HURT.equals(action.clip())
+                    && !AnimRegistry.IDLE_SNIFF.equals(action.clip())) {
                 action.stop();
             }
         } else {
@@ -781,6 +807,10 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             BoneTrace.noteHurt(hurtStarted,
                     weight * (isHurt ? AnimParams.HURT_AMP_SCALE.get() : 1.0D),
                     isHurt && pose != null ? pose.rotationsDeg() : null);
+            if (AnimRegistry.IDLE_SNIFF.equals(action.clip()) && pose != null) {
+                BoneTrace.noteSniffPose(age, AnimRegistry.SNIFF_LENGTH_TICKS, weight,
+                        pose.rotationsDeg());
+            }
         }
         if (checking) {
             ActionCheck.sample(pose, delta(beforeRot, readAllBones()),

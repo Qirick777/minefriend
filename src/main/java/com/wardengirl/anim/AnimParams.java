@@ -245,6 +245,18 @@ public final class AnimParams {
     public static final Param WALK_LEG_AMP_SCALE = addShape("walk_leg_amp_scale", 4.0D, 0.25D, 4.0D,
             "ratio", "T5", "걷기 다리 진폭 배율. 확정 4.0 = 유효 ±72°, 바닐라의 90%",
             "leg_right", "leg_left");
+    // ---- T6 반응형 idle. 폐기 가능. 0 이면 발동 안 함 -----------------------------------------
+
+    /** 4.12 킁킁 발동 거리. **0 이면 이 동작 전체가 꺼진다.** */
+    public static final Param SNIFF_DISTANCE = addShape("sniff_distance", 2.0D, 0.0D, 6.0D,
+            "block", "T6", "킁킁 발동 거리. 0 = 끔", "body", "head", "arm_right", "arm_left", "root");
+    /** 그 거리 안에 머물러야 하는 시간. */
+    public static final Param SNIFF_DWELL = addShape("sniff_dwell", 40.0D, 0.0D, 200.0D,
+            "tick", "T6", "킁킁 발동까지 근접 유지 시간", "body", "head", "arm_right", "arm_left");
+    /** 재발동 금지 시간. */
+    public static final Param SNIFF_COOLDOWN = addShape("sniff_cooldown", 200.0D, 0.0D, 600.0D,
+            "tick", "T6", "킁킁 재발동 쿨다운", "body", "head", "arm_right", "arm_left");
+
     /** 4.11 피격 움찔 페이드 인. 기본 0 — 충격은 즉발이어야 한다. */
     public static final Param HURT_FADE_IN = addShape("hurt_fade_in", 0.0D, 0.0D, 5.0D,
             "tick", "T5", "피격 움찔 페이드 인. 0 = 즉발", "body", "head", "arm_right", "arm_left");

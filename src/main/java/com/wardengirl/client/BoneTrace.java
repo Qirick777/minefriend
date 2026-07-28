@@ -319,6 +319,17 @@ public final class BoneTrace {
         hurtMaxWeight = 0.0D;
         HURT_BONES.clear();
         HURT_MAX.clear();
+        sniffStarts = 0;
+        sniffFrames = 0;
+        sniffMaxWeight = 0.0D;
+        SNIFF_BONES.clear();
+        SNIFF_MAX.clear();
+        sniffDistMin = Double.POSITIVE_INFINITY;
+        sniffDistMax = Double.NEGATIVE_INFINITY;
+        sniffFlips = 0;
+        sniffBlocked = 0;
+        sniffFirstVal = Double.NaN;
+        sniffLastVal = Double.NaN;
         pendingDist = Double.NaN;
         pendingPhase = Double.NaN;
         pendingLegAmp = Double.NaN;
@@ -1224,6 +1235,92 @@ public final class BoneTrace {
                 "[trace]   %-10s 최대 |기여| x %.4f  y %.4f  z %.4f", bone, m[0], m[1], m[2])));
     }
 
+    // ===== T6 반응형 idle. 폐기 시 이 블록 전체를 지운다 =====================================
+
+    private static int sniffStarts = 0;
+    private static int sniffFrames = 0;
+    private static double sniffMaxWeight = 0.0D;
+    private static final java.util.Set<String> SNIFF_BONES = new java.util.TreeSet<>();
+    private static final Map<String, double[]> SNIFF_MAX = new LinkedHashMap<>();
+    private static double sniffDistMin = Double.POSITIVE_INFINITY;
+    private static double sniffDistMax = Double.NEGATIVE_INFINITY;
+    private static int sniffFlips = 0;
+    private static int sniffBlocked = 0;
+    private static double sniffFirstVal = Double.NaN;
+    private static double sniffLastVal = Double.NaN;
+
+    /** Trigger-side state, sampled per frame. Does not advance the state machine. */
+    public static void noteReaction(IdleReaction r, boolean started) {
+        if (remainingTicks <= 0) {
+            return;
+        }
+        if (started) {
+            sniffStarts++;
+        }
+        double d = r.lastDistance();
+        if (!Double.isNaN(d)) {
+            sniffDistMin = Math.min(sniffDistMin, d);
+            sniffDistMax = Math.max(sniffDistMax, d);
+        }
+        sniffFlips = r.hysteresisFlips();
+        sniffBlocked = r.cooldownBlocked();
+    }
+
+    /** Pose side. {@code age} lets the 0-tick / last-tick requirement be checked by value. */
+    public static void noteSniffPose(double age, double lengthTicks, double weight,
+                                     Map<String, double[]> pose) {
+        if (remainingTicks <= 0 || pose == null) {
+            return;
+        }
+        sniffFrames++;
+        sniffMaxWeight = Math.max(sniffMaxWeight, weight);
+        double[] head = pose.get(Bones.HEAD);
+        double v = head == null ? 0.0D : head[0] * weight;
+        if (age <= 0.5D && Double.isNaN(sniffFirstVal)) {
+            sniffFirstVal = v;
+        }
+        if (age >= lengthTicks - 0.5D) {
+            sniffLastVal = v;
+        }
+        for (Map.Entry<String, double[]> e : pose.entrySet()) {
+            SNIFF_BONES.add(e.getKey());
+            double[] m = SNIFF_MAX.computeIfAbsent(e.getKey(), k -> new double[3]);
+            for (int i = 0; i < 3; i++) {
+                m[i] = Math.max(m[i], Math.abs(e.getValue()[i] * weight));
+            }
+        }
+    }
+
+    private static void reportSniff() {
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace] --- 4.12 킁킁. 발동 %d회, 재생 프레임 %d, 최대 가중치 %.4f "
+                        + "(sniff_distance %.2f, dwell %.0f, cooldown %.0f) ---",
+                sniffStarts, sniffFrames, sniffMaxWeight, AnimParams.SNIFF_DISTANCE.get(),
+                AnimParams.SNIFF_DWELL.get(), AnimParams.SNIFF_COOLDOWN.get()));
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   거리 관측 %.3f ~ %.3f 블록 (진입 %.2f, 이탈 %.2f), 히스테리시스 전환 %d회, "
+                        + "쿨다운이 막은 프레임 %d",
+                sniffDistMin, sniffDistMax, AnimParams.SNIFF_DISTANCE.get(),
+                AnimParams.SNIFF_DISTANCE.get() * IdleReaction.EXIT_FACTOR,
+                sniffFlips, sniffBlocked));
+        if (sniffStarts == 0) {
+            WardenGirlMod.LOGGER.info("[trace]   발동 0회 — **측정 불가**");
+            return;
+        }
+        WardenGirlMod.LOGGER.info("[trace]   기여한 본: {}", SNIFF_BONES);
+        for (String bone : new String[]{Bones.HIP, Bones.LEG_RIGHT, Bones.LEG_LEFT}) {
+            WardenGirlMod.LOGGER.info("[trace]   {} 기여: {}", bone,
+                    SNIFF_BONES.contains(bone) ? "**있다 — 사양 위반**" : "없음 (본 자체가 클립에 없다)");
+        }
+        SNIFF_MAX.forEach((bone, m) -> WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   %-10s 최대 |기여| x %.4f  y %.4f  z %.4f", bone, m[0], m[1], m[2])));
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   끝점: 0틱 부근 head.x %.5f, 마지막 틱 부근 head.x %.5f  (둘 다 0 이어야 한다)",
+                sniffFirstVal, sniffLastVal));
+    }
+
+    // ===== T6 끝 ===========================================================================
+
     // ---- C2 페이드 (가설 2 확인) -----------------------------------------------------------------
 
     /**
@@ -1679,6 +1776,7 @@ public final class BoneTrace {
         reportMovement();
         reportSlipConditions();
         reportHurt();
+        reportSniff();
         reportFade();
         reportByPhase();
         reportPhaseAudit();

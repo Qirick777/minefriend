@@ -121,4 +121,12 @@ public final class AnimRegistry {
      * Part 11 참조.
      */
     public static final String IDLE_HURT = "idle_hurt";
+
+    /**
+     * 4.12 킁킁. 44틱. <b>T6 이고 폐기 가능하다</b> — {@code sniff_distance} 0 이면 발동하지 않는다.
+     */
+    public static final String IDLE_SNIFF = "idle_sniff";
+
+    /** json {@code animation_length: 2.2} 초 × 20. */
+    public static final double SNIFF_LENGTH_TICKS = 44.0D;
 }
