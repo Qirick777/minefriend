@@ -578,6 +578,28 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             legAmp = LocomotionMotion.LEG_AMPLITUDE_DEG * AnimParams.WALK_LEG_AMP_SCALE.get();
         }
         double weight = loco.advance(now, walking, distance, legAmp);
+        // 4.13 앉기. 걷기와 배타이므로 다리에 두 자세가 겹칠 수 없다 - riding 이면 위의
+        // walking 이 이미 false 다. 전이는 걷기와 같은 6틱이다.
+        boolean riding = animatable.isPassenger();
+        loco.advanceSit(riding, loco.lastDt());
+        double sit = loco.sitWeight();
+        if (sit > 0.0D) {
+            double lx = AnimParams.SIT_LEG_X.get() * sit;
+            double ly = AnimParams.SIT_LEG_Y.get() * sit;
+            addRotX(Bones.LEG_RIGHT, lx);
+            addRotY(Bones.LEG_RIGHT, ly);
+            addRotX(Bones.LEG_LEFT, lx);
+            addRotY(Bones.LEG_LEFT, -ly);
+            double ax = AnimParams.SIT_ARM_X.get() * sit;
+            double az = AnimParams.SIT_ARM_Z.get() * sit;
+            addRotX(Bones.ARM_RIGHT, ax);
+            addRotZ(Bones.ARM_RIGHT, az);
+            addRotX(Bones.ARM_LEFT, ax);
+            addRotZ(Bones.ARM_LEFT, -az);
+        }
+        if (BoneTrace.isRunning() && EntityLock.isSubject(animatable.getId())) {
+            BoneTrace.noteSit(riding, sit);
+        }
         boolean traced = BoneTrace.isRunning() && EntityLock.isSubject(animatable.getId());
         if (traced) {
             BoneTrace.noteFade(weight, loco.lastDt(), now);
@@ -845,12 +867,20 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
                     }
                 }
                 boolean hurtClip = AnimRegistry.IDLE_HURT.equals(action.clip());
+                // 4.13: 탑승 중에는 앉기가 팔을 앞으로 보내므로 킁킁이 상쇄될 수 있다.
+                if (AnimRegistry.IDLE_SNIFF.equals(action.clip()) && animatable.isPassenger()) {
+                    amp *= AnimParams.SNIFF_RIDING_SCALE.get();
+                }
                 for (Map.Entry<String, double[]> e : pose.rotationsDeg().entrySet()) {
                     addRotX(e.getKey(), e.getValue()[0] * amp);
                     addRotY(e.getKey(), e.getValue()[1] * amp);
                     // 4.11 의 팔 zRot 만 따로 조절한다. 팔과 몸통이 x=±4 에서 맞닿아 있어
                     // 관통이 기하로 결정되므로, 사람이 화면에서 크기를 정할 노브가 필요하다.
                     double zAmp = amp;
+                    if (AnimRegistry.IDLE_SNIFF.equals(action.clip())
+                            && animatable.isPassenger()) {
+                        zAmp *= AnimParams.SNIFF_RIDING_SCALE.get();
+                    }
                     if (hurtClip && (Bones.ARM_RIGHT.equals(e.getKey())
                             || Bones.ARM_LEFT.equals(e.getKey()))) {
                         zAmp *= AnimParams.HURT_ARM_Z_SCALE.get();

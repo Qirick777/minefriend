@@ -300,6 +300,13 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     private boolean rawMoving = false;
 
     public boolean isWalkingForAnimation() {
+        // 4.13. 탈것에 타면 몹 좌표가 탈것을 따라 움직여 이동으로 잡힌다. 별도 게이트를 두면
+        // 조건이 둘로 갈라져 어긋나므로 여기 하나로 막는다.
+        if (isPassenger()) {
+            this.walkingForAnimation = false;
+            this.rawMoving = false;
+            return false;
+        }
         // Verification stimulus. Placed before the hysteresis so that clearing it hands control
         // straight back to the real test - which is what makes walk_force 1 -> 0 a clean,
         // repeatable idle transition rather than one that has to wait out the grace period.

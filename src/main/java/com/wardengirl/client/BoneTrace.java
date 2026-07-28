@@ -337,6 +337,14 @@ public final class BoneTrace {
         sniffSounds = 0;
         sniffRolls = 0;
         sndRows = 0;
+        ridingFrames = 0;
+        standingFrames = 0;
+        rideTransitions = 0;
+        lastRiding = null;
+        sitMax = 0.0D;
+        sitMinWhileRiding = Double.POSITIVE_INFINITY;
+        sitRiseTick = Integer.MIN_VALUE;
+        sitRiseTicks = -1.0D;
         pendingDist = Double.NaN;
         pendingPhase = Double.NaN;
         pendingLegAmp = Double.NaN;
@@ -395,6 +403,7 @@ public final class BoneTrace {
             startTick = tickCount;
         }
         sampleCount++;
+        LAST_TICK[0] = tickCount;
         remainingTicks = totalTicks - (tickCount - startTick);
         if (remainingTicks < 0) {
             remainingTicks = 0;
@@ -1242,6 +1251,60 @@ public final class BoneTrace {
                 "[trace]   %-10s 최대 |기여| x %.4f  y %.4f  z %.4f", bone, m[0], m[1], m[2])));
     }
 
+    // ---- 4.13 탑승 앉기 -----------------------------------------------------------------
+
+    private static int ridingFrames = 0;
+    private static int standingFrames = 0;
+    private static int rideTransitions = 0;
+    private static Boolean lastRiding = null;
+    private static double sitMax = 0.0D;
+    private static double sitMinWhileRiding = Double.POSITIVE_INFINITY;
+    private static int sitRiseTick = Integer.MIN_VALUE;
+    private static double sitRiseTicks = -1.0D;
+
+    public static void noteSit(boolean riding, double sitWeight) {
+        if (remainingTicks <= 0) {
+            return;
+        }
+        if (riding) {
+            ridingFrames++;
+            sitMinWhileRiding = Math.min(sitMinWhileRiding, sitWeight);
+        } else {
+            standingFrames++;
+        }
+        sitMax = Math.max(sitMax, sitWeight);
+        if (lastRiding != null && lastRiding != riding) {
+            rideTransitions++;
+            if (riding) {
+                sitRiseTick = LAST_TICK[0];
+            }
+        }
+        // 0 -> 1 에 걸린 시간. 사양 TRANSITION_TICKS.
+        if (riding && sitRiseTick != Integer.MIN_VALUE && sitWeight >= 1.0D - 1.0E-9D
+                && sitRiseTicks < 0.0D) {
+            sitRiseTicks = LAST_TICK[0] - sitRiseTick;
+        }
+        lastRiding = riding;
+    }
+
+    private static final int[] LAST_TICK = new int[1];
+
+    private static void reportSit() {
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace] --- 4.13 탑승 앉기. 탑승 프레임 %d, 하차 프레임 %d, 전이 %d회 ---",
+                ridingFrames, standingFrames, rideTransitions));
+        if (ridingFrames == 0 || standingFrames == 0 || rideTransitions == 0) {
+            WardenGirlMod.LOGGER.info("[trace]   한쪽만 관측 — **측정 불가**");
+            return;
+        }
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   sit 가중치 최대 %.5f (1.0 이어야 한다), 탑승 중 최소 %.5f | "
+                        + "0->1 소요 %.1f틱 (사양 %d) | 자세 leg x %.1f y %.1f, arm x %.1f z %.1f",
+                sitMax, sitMinWhileRiding, sitRiseTicks, AnimRegistry.TRANSITION_TICKS,
+                AnimParams.SIT_LEG_X.get(), AnimParams.SIT_LEG_Y.get(),
+                AnimParams.SIT_ARM_X.get(), AnimParams.SIT_ARM_Z.get()));
+    }
+
     // ===== T6 반응형 idle. 폐기 시 이 블록 전체를 지운다 =====================================
 
     private static int sniffStarts = 0;
@@ -1843,6 +1906,7 @@ public final class BoneTrace {
         reportSlipConditions();
         reportHurt();
         reportSniff();
+        reportSit();
         reportFade();
         reportByPhase();
         reportPhaseAudit();

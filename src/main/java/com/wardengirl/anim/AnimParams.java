@@ -253,6 +253,37 @@ public final class AnimParams {
     /** 그 거리 안에 머물러야 하는 시간. */
     public static final Param SNIFF_DWELL = addShape("sniff_dwell", 40.0D, 0.0D, 200.0D,
             "tick", "T6", "킁킁 발동까지 근접 유지 시간", "body", "head", "arm_right", "arm_left");
+    // ---- 4.13 탑승 앉기 (C2 세 번째 상태) -----------------------------------------------------
+
+    /** 넓적다리를 접는 각. 본 공간. 바닐라 riding 은 −81°, 사람이 −90 으로 정했다. */
+    public static final Param SIT_LEG_X = addShape("sit_leg_x", -90.0D, -120.0D, 0.0D,
+            "deg", "T6", "탑승 앉기 다리 xRot", "leg_right", "leg_left");
+    /** 다리를 좌우로 벌리는 각. 오른다리 +, 왼다리 −. */
+    public static final Param SIT_LEG_Y = addShape("sit_leg_y", 10.0D, 0.0D, 30.0D,
+            "deg", "T6", "탑승 앉기 다리 yRot (오른쪽 +, 왼쪽 −)", "leg_right", "leg_left");
+    /**
+     * 팔 xRot. 바닐라 riding 의 −36° 는 두 손으로 노를 잡는 자세라 쓰지 않는다.
+     *
+     * <p>−20 은 사람이 준 범위 −15 ~ −25 의 가운데다. 넓적다리가 −90 으로 수평이므로 어깨에서
+     * 무릎 위까지의 각이 대략 그 부근이고, −15 면 팔이 허공에 뜨고 −25 면 손이 무릎을 지나
+     * 정강이로 내려간다.
+     */
+    public static final Param SIT_ARM_X = addShape("sit_arm_x", -20.0D, -60.0D, 0.0D,
+            "deg", "T6", "탑승 앉기 팔 xRot", "arm_right", "arm_left");
+    /**
+     * 팔 zRot. 오른팔 +, 왼팔 −(둘 다 바깥).
+     *
+     * <p>0 이 아니라 +2 인 이유는 4.11 에서 값으로 확인한 기하다 — 팔 안쪽면과 몸통 바깥면이
+     * 둘 다 {@code x = ±4} 로 맞닿아 간격이 0px 이므로 <b>안쪽으로는 각도와 무관하게 즉시
+     * 관통한다.</b> 0 은 그 경계 위이고, 살짝 바깥이 안전하다.
+     */
+    public static final Param SIT_ARM_Z = addShape("sit_arm_z", 2.0D, -10.0D, 10.0D,
+            "deg", "T6", "탑승 앉기 팔 zRot (오른쪽 +, 왼쪽 −)", "arm_right", "arm_left");
+    /** 탑승 중에만 킁킁 진폭에 곱한다. 0 이면 탑승 중 킁킁 없음. */
+    public static final Param SNIFF_RIDING_SCALE =
+            addShape("sniff_riding_scale", 1.0D, 0.0D, 1.0D,
+                    "ratio", "T6", "탑승 중 킁킁 진폭 배율", "body", "head", "arm_right", "arm_left");
+
     /** 확률 판정 주기. dwell 을 채운 뒤 이 주기마다 한 번씩 굴린다. */
     public static final Param SNIFF_ROLL_INTERVAL =
             addShape("sniff_roll_interval", 20.0D, 1.0D, 200.0D,

@@ -127,6 +127,26 @@ public final class LocomotionMotion {
     private double phase;
     /** Fade weight, 0 = pure idle, 1 = pure walk. */
     private double weight;
+    /**
+     * 4.13 앉기 가중치. 0 = 서 있음, 1 = 앉음.
+     *
+     * <p>걷기와 <b>배타</b>다 — 탑승 중에는 {@code isWalkingForAnimation()} 이 false 이므로
+     * {@link #weight} 가 0 으로 내려간다. 그래서 다리에 두 자세가 동시에 실릴 수 없고,
+     * 그것이 (a)안을 고른 이유다. 전이는 걷기와 같은 {@code TRANSITION_TICKS} 를 쓴다.
+     */
+    private double sitWeight;
+
+    public double sitWeight() {
+        return this.sitWeight;
+    }
+
+    /** 탑승 여부를 받아 앉기 가중치를 전진시킨다. 걷기와 같은 dt 를 쓴다. */
+    public void advanceSit(boolean riding, double dt) {
+        double step = AnimRegistry.TRANSITION_TICKS <= 0 ? 1.0D
+                : dt / AnimRegistry.TRANSITION_TICKS;
+        this.sitWeight = riding ? Math.min(1.0D, this.sitWeight + step)
+                : Math.max(0.0D, this.sitWeight - step);
+    }
     private double lastTime = Double.NaN;
     private boolean wasWalking = false;
     /** Walk phase frozen at the moment walking ended; the fade-out scales this pose down. */
