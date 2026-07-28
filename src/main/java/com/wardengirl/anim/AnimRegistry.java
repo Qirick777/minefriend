@@ -111,4 +111,14 @@ public final class AnimRegistry {
      * after a GeckoLib version bump.
      */
     public static final String ACTION_TEST = "actiontest";
+
+    /**
+     * 4.11 피격 움찔. 10틱.
+     *
+     * <p>바닐라는 {@code LivingEntity.hurt} 안에서 {@code walkAnimation.setSpeed(1.5F)} 로
+     * {@code limbSwing} 을 인위적으로 밀어 걷기 사이클의 40% 를 8틱에 재생한다. 우리 위상은 렌더
+     * 위치 델타에 묶여 있어 그 경로가 구조적으로 없으므로, 같은 인상을 C3 클립으로 만든다.
+     * Part 11 참조.
+     */
+    public static final String IDLE_HURT = "idle_hurt";
 }

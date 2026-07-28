@@ -245,6 +245,20 @@ public final class AnimParams {
     public static final Param WALK_LEG_AMP_SCALE = addShape("walk_leg_amp_scale", 4.0D, 0.25D, 4.0D,
             "ratio", "T5", "걷기 다리 진폭 배율. 확정 4.0 = 유효 ±72°, 바닐라의 90%",
             "leg_right", "leg_left");
+    /** 4.11 피격 움찔 페이드 인. 기본 0 — 충격은 즉발이어야 한다. */
+    public static final Param HURT_FADE_IN = addShape("hurt_fade_in", 0.0D, 0.0D, 5.0D,
+            "tick", "T5", "피격 움찔 페이드 인. 0 = 즉발", "body", "head", "arm_right", "arm_left");
+    /** 4.11 피격 움찔 페이드 아웃. */
+    public static final Param HURT_FADE_OUT = addShape("hurt_fade_out", 3.0D, 0.0D, 10.0D,
+            "tick", "T5", "피격 움찔 페이드 아웃", "body", "head", "arm_right", "arm_left");
+    /** 4.11 피격 움찔 진폭 배율. 사람이 화면으로 크기를 정한다. */
+    public static final Param HURT_AMP_SCALE = addShape("hurt_amp_scale", 1.0D, 0.0D, 3.0D,
+            "ratio", "T5", "피격 움찔 진폭 배율", "body", "head", "arm_right", "arm_left", "root");
+    /** 피격 중 걷기 body.xRot 을 얼마나 남길지. 두 동작이 겹치는 유일한 축이다. */
+    public static final Param BLEND_WALK_BODY_X_HURT =
+            addShape("blend_walk_body_x_hurt", 1.0D, 0.0D, 1.0D,
+                    "ratio", "T5", "피격 중 걷기 body.xRot 유지 비율", "body");
+
     /**
      * 팔 진폭 배율. 확정 3.15 = 유효 ±31.5°, 바닐라 팔(57.296°)의 55%.
      *

@@ -105,7 +105,7 @@ public final class ActionMotion {
         if (age < 0.0D) {
             return 0.0D;
         }
-        return envelope(age, this.lengthTicks);
+        return envelope(age, this.lengthTicks, this.clip);
     }
 
     /**
@@ -114,8 +114,20 @@ public final class ActionMotion {
      * proves only that the object is consistent with itself.
      */
     public static double envelope(double age, double lengthTicks) {
-        double fadeIn = AnimParams.ATTACK_FADE_IN.get();
-        double fadeOut = AnimParams.ATTACK_FADE_OUT.get();
+        return envelope(age, lengthTicks, null);
+    }
+
+    /**
+     * Per-clip fade parameters.
+     *
+     * <p>4.11's hurt flinch needs its own pair, and specifically {@code hurt_fade_in = 0}: an
+     * impact that ramps in is not an impact. Selecting by clip name rather than adding a second
+     * playback class keeps one C3 slot and one exclusive lock — the priority question is T6's.
+     */
+    public static double envelope(double age, double lengthTicks, String clip) {
+        boolean hurt = com.wardengirl.anim.AnimRegistry.IDLE_HURT.equals(clip);
+        double fadeIn = hurt ? AnimParams.HURT_FADE_IN.get() : AnimParams.ATTACK_FADE_IN.get();
+        double fadeOut = hurt ? AnimParams.HURT_FADE_OUT.get() : AnimParams.ATTACK_FADE_OUT.get();
         double rising = fadeIn <= 0.0D ? 1.0D : age / fadeIn;
         double falling = fadeOut <= 0.0D ? 1.0D : (lengthTicks - age) / fadeOut;
         return Math.max(0.0D, Math.min(1.0D, Math.min(rising, falling)));

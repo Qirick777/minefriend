@@ -624,11 +624,14 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         double[] head = pose.rotationsDeg().get(Bones.HEAD);
         double armAmp = weight * armScale;
         double bodyAmp = weight * swingAmount;
+        // Index 4 is body.xRot, which is NOT one of the four C2/C3 shared axes - it is there for
+        // 4.11's blend_walk_body_x_hurt alone. applyWalkBlend and BlendCheck index 0..3 only.
         return new double[]{
                 armR == null ? 0.0D : armR[0] * armAmp,
                 armL == null ? 0.0D : armL[0] * armAmp,
                 body == null ? 0.0D : body[1] * bodyAmp,
-                head == null ? 0.0D : head[1] * bodyAmp};
+                head == null ? 0.0D : head[1] * bodyAmp,
+                body == null ? 0.0D : body[0] * bodyAmp};
     }
 
     /**
@@ -650,6 +653,8 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     // ---- C3 액션 레이어 (직접 평가) ---------------------------------------------------------
 
     private final Map<Integer, ActionMotion> actions = new HashMap<>();
+    /** Previous frame's hurtTime, per entity — 4.11's trigger is its rising edge. */
+    private final Map<Integer, Integer> lastHurtTime = new HashMap<>();
 
     /** The four axes where C2 and C3 both write. Order is fixed; see {@link #applyWalkBlend}. */
     private double[] readBlendAxes() {
@@ -657,7 +662,11 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
                 getBone(Bones.ARM_RIGHT).map(b -> AxisConvention.toDeg(b.getRotX())).orElse(0.0D),
                 getBone(Bones.ARM_LEFT).map(b -> AxisConvention.toDeg(b.getRotX())).orElse(0.0D),
                 getBone(Bones.BODY).map(b -> AxisConvention.toDeg(b.getRotY())).orElse(0.0D),
-                getBone(Bones.HEAD).map(b -> AxisConvention.toDeg(b.getRotY())).orElse(0.0D)};
+                getBone(Bones.HEAD).map(b -> AxisConvention.toDeg(b.getRotY())).orElse(0.0D),
+                // c2_source 0 is the pre-migration A/B path; the bone's body.xRot there is C1 and
+                // C2 summed and cannot be separated, so 4.11's walk-share blend reports zero
+                // rather than subtracting something it does not know. Default keep is 1.0 anyway.
+                0.0D};
     }
 
     /**
@@ -700,9 +709,29 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         float partialTick = Minecraft.getInstance().getPartialTick();
         double now = animatable.tickCount + partialTick;
 
-        String requested = animatable.getActionClip();
-        if (requested.isEmpty()) {
-            action.stop();
+        // 4.11 피격 움찔. hurtTime 은 서버가 동기화하는 클라이언트 가시 값이므로, C3 의 서버 구동
+        // 경로(getActionClip)를 거치지 않고 여기서 직접 에지를 잡는다. 재생 중에 또 맞으면
+        // syncTo 의 seq 가 달라져 처음부터 다시 시작한다 - 독처럼 반복되는 피해가 그렇게 읽힌다.
+        int hurt = animatable.hurtTime;
+        Integer prevHurt = this.lastHurtTime.put(animatable.getId(), hurt);
+        boolean hurtStarted = prevHurt != null && prevHurt == 0 && hurt > 0;
+        if (this.lastHurtTime.size() > MAX_TRACKED_ENTITIES) {
+            this.lastHurtTime.clear();
+        }
+        String requested = hurtStarted ? AnimRegistry.IDLE_HURT : animatable.getActionClip();
+        if (hurtStarted) {
+            software.bernie.geckolib.core.animation.Animation hurtClip =
+                    getAnimation(animatable, AnimRegistry.IDLE_HURT);
+            if (hurtClip != null) {
+                action.syncTo(-animatable.tickCount, AnimRegistry.IDLE_HURT,
+                        hurtClip.length(), now);
+            }
+        } else if (requested.isEmpty()) {
+            // A running flinch is not cut short by the server's empty action slot - the two are
+            // driven from different places and the flinch owns the slot until it ends on its own.
+            if (!AnimRegistry.IDLE_HURT.equals(action.clip())) {
+                action.stop();
+            }
         } else {
             software.bernie.geckolib.core.animation.Animation clip =
                     getAnimation(animatable, requested);
@@ -726,15 +755,32 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
                     getAnimation(animatable, action.clip());
             if (clip != null) {
                 pose = ClipSampler.sample(clip, age);
+                // hurt_amp_scale is 4.11's only size knob and applies to the flinch alone, so
+                // ActionCheck's actiontest comparison is untouched.
+                double amp = weight * (AnimRegistry.IDLE_HURT.equals(action.clip())
+                        ? AnimParams.HURT_AMP_SCALE.get() : 1.0D);
                 for (Map.Entry<String, double[]> e : pose.rotationsDeg().entrySet()) {
-                    addRotX(e.getKey(), e.getValue()[0] * weight);
-                    addRotY(e.getKey(), e.getValue()[1] * weight);
-                    addRotZ(e.getKey(), e.getValue()[2] * weight);
+                    addRotX(e.getKey(), e.getValue()[0] * amp);
+                    addRotY(e.getKey(), e.getValue()[1] * amp);
+                    addRotZ(e.getKey(), e.getValue()[2] * amp);
                 }
                 for (Map.Entry<String, double[]> e : pose.positionsRaw().entrySet()) {
-                    addPositionRaw(e.getKey(), e.getValue(), weight);
+                    addPositionRaw(e.getKey(), e.getValue(), amp);
+                }
+                // The one axis 4.4.2 and 4.11 share. Walk writes body.xRot as walk_body_lean;
+                // the flinch writes its own. Simple addition may read wrong, so the walk's share
+                // is scalable away exactly like the four C2/C3 axes are.
+                double keep = AnimParams.BLEND_WALK_BODY_X_HURT.get();
+                if (AnimRegistry.IDLE_HURT.equals(action.clip()) && keep < 1.0D - 1.0E-9D) {
+                    addRotX(Bones.BODY, -walkOnly[4] * (1.0D - keep));
                 }
             }
+        }
+        if (BoneTrace.isRunning() && EntityLock.isSubject(animatable.getId())) {
+            boolean isHurt = AnimRegistry.IDLE_HURT.equals(action.clip());
+            BoneTrace.noteHurt(hurtStarted,
+                    weight * (isHurt ? AnimParams.HURT_AMP_SCALE.get() : 1.0D),
+                    isHurt && pose != null ? pose.rotationsDeg() : null);
         }
         if (checking) {
             ActionCheck.sample(pose, delta(beforeRot, readAllBones()),

@@ -314,6 +314,11 @@ public final class BoneTrace {
         slipLastWeight = Double.NaN;
         slipLastSwing = Double.NaN;
         slipLastPhase = Double.NaN;
+        hurtStarts = 0;
+        hurtFrames = 0;
+        hurtMaxWeight = 0.0D;
+        HURT_BONES.clear();
+        HURT_MAX.clear();
         pendingDist = Double.NaN;
         pendingPhase = Double.NaN;
         pendingLegAmp = Double.NaN;
@@ -1164,6 +1169,61 @@ public final class BoneTrace {
                 SLIP_PERCYCLE[0] > 1e-9 ? sumDist / SLIP_PERCYCLE[0] : 0.0D));
     }
 
+    // ---- 4.11 피격 움찔 ---------------------------------------------------------------------
+
+    private static int hurtStarts = 0;
+    private static int hurtFrames = 0;
+    private static double hurtMaxWeight = 0.0D;
+    private static final java.util.Set<String> HURT_BONES = new java.util.TreeSet<>();
+    private static final Map<String, double[]> HURT_MAX = new LinkedHashMap<>();
+
+    /**
+     * One frame of 4.11.
+     *
+     * <p>Records which bones the flinch ever wrote, not just how much — "다리와 hip 기여 0" is a
+     * claim about the bone SET, and a max of 0.0 on a bone that was never in the map would look
+     * identical to a bone that was written with zero. The set makes the two distinguishable.
+     */
+    public static void noteHurt(boolean started, double weight, Map<String, double[]> pose) {
+        if (remainingTicks <= 0) {
+            return;
+        }
+        if (started) {
+            hurtStarts++;
+        }
+        if (pose == null) {
+            return;
+        }
+        hurtFrames++;
+        hurtMaxWeight = Math.max(hurtMaxWeight, weight);
+        for (Map.Entry<String, double[]> e : pose.entrySet()) {
+            HURT_BONES.add(e.getKey());
+            double[] m = HURT_MAX.computeIfAbsent(e.getKey(), k -> new double[3]);
+            for (int i = 0; i < 3; i++) {
+                m[i] = Math.max(m[i], Math.abs(e.getValue()[i] * weight));
+            }
+        }
+    }
+
+    private static void reportHurt() {
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace] --- 4.11 피격 움찔. 피격 %d회, 재생 프레임 %d, 최대 가중치 %.4f "
+                        + "(hurt_amp_scale %.2f, fade %.1f/%.1f) ---",
+                hurtStarts, hurtFrames, hurtMaxWeight, AnimParams.HURT_AMP_SCALE.get(),
+                AnimParams.HURT_FADE_IN.get(), AnimParams.HURT_FADE_OUT.get()));
+        if (hurtStarts == 0) {
+            WardenGirlMod.LOGGER.info("[trace]   피격 0회 — **측정 불가**");
+            return;
+        }
+        WardenGirlMod.LOGGER.info("[trace]   기여한 본: {}", HURT_BONES);
+        for (String bone : new String[]{Bones.HIP, Bones.LEG_RIGHT, Bones.LEG_LEFT}) {
+            WardenGirlMod.LOGGER.info("[trace]   {} 기여: {}", bone,
+                    HURT_BONES.contains(bone) ? "**있다 — 사양 위반**" : "없음 (본 자체가 클립에 없다)");
+        }
+        HURT_MAX.forEach((bone, m) -> WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   %-10s 최대 |기여| x %.4f  y %.4f  z %.4f", bone, m[0], m[1], m[2])));
+    }
+
     // ---- C2 페이드 (가설 2 확인) -----------------------------------------------------------------
 
     /**
@@ -1618,6 +1678,7 @@ public final class BoneTrace {
         }
         reportMovement();
         reportSlipConditions();
+        reportHurt();
         reportFade();
         reportByPhase();
         reportPhaseAudit();
