@@ -565,9 +565,46 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         }
     }
 
+    /**
+     * 4.14 1-B-2 계측. 동기화된 shadow 각도를 <b>클라이언트 엔티티 틱마다</b> 확인한다.
+     *
+     * <h2>왜 모델에서 옮겼는가</h2>
+     *
+     * 직전 라운드에는 {@code WardenGirlModel.setCustomAnimations} 안에 있었고, 그것은 <b>렌더
+     * 경로</b>다. 몹이 프러스텀을 벗어나면 동기화 값을 받아도 로그가 남지 않는다. 실제로 이동
+     * 자극 300틱 동안 클라이언트 수신이 0건으로 기록돼 측정이 무효가 됐다.
+     * <b>네트워크 수신과 렌더는 다른 것</b>이므로 계측도 분리한다.
+     *
+     * <p>상태는 {@link #clientLastShadowSeq} — <b>엔티티 인스턴스별 필드</b>다. static 전역이면
+     * 다른 UUID 가 섞여 초기화 문제가 생긴다. 인스턴스 필드에는 그 문제가 없다.
+     *
+     * <p>{@code Minecraft.getInstance()} / 렌더 프레임 / {@code partialTick} / 모델 / 본 상태 /
+     * 프러스텀 / {@code BoneTrace} 를 쓰지 않는다.
+     */
+    private int clientLastShadowSeq = Integer.MIN_VALUE;
+
+    private void noteShadowReceiveClient() {
+        if (!level().isClientSide) {
+            return;
+        }
+        int seq = this.entityData.get(DATA_LOOK_SHADOW_SEQ);
+        if (seq == this.clientLastShadowSeq) {
+            return;
+        }
+        this.clientLastShadowSeq = seq;
+        float yaw = this.entityData.get(DATA_LOOK_SHADOW_YAW);
+        float pitch = this.entityData.get(DATA_LOOK_SHADOW_PITCH);
+        com.wardengirl.WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
+                "[shadowcli] id=%d uuid=%s seq=%d t=%d gt=%d yaw=%.9f pitch=%.9f "
+                        + "yawbits=%08X pitchbits=%08X",
+                getId(), getUUID(), seq, this.tickCount, level().getGameTime(), yaw, pitch,
+                Float.floatToRawIntBits(yaw), Float.floatToRawIntBits(pitch)));
+    }
+
     @Override
     public void tick() {
         super.tick();
+        noteShadowReceiveClient();
         if (!level().isClientSide && !isPassenger() && this.shadow.isRiding()) {
             // 하차. shadow 상태를 버린다 - 다음 탑승은 몸통 정면 / pitch 0 에서 다시 시작한다.
             this.shadow.reset();
