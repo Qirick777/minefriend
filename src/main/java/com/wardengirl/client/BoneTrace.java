@@ -282,6 +282,7 @@ public final class BoneTrace {
     }
 
     public static void start(int ticks) {
+        EntityLock.reset();
         remainingTicks = ticks;
         totalTicks = ticks;
         startTick = Integer.MIN_VALUE;
@@ -308,6 +309,11 @@ public final class BoneTrace {
         moveLastZ = Double.NaN;
         moveLastTick = Integer.MIN_VALUE;
         deltaMovementSum = 0.0D;
+        slipCount = 0;
+        moveLastWeight = Double.NaN;
+        moveLastSwing = Double.NaN;
+        pendingWeight = Double.NaN;
+        pendingSwing = Double.NaN;
         walkTransitions = 0;
         lastWalkState = null;
         lastRawMoving = null;
@@ -720,6 +726,47 @@ public final class BoneTrace {
     private static double deltaMovementSum = 0.0D;
 
     /**
+     * C2's two amplitude factors, stashed as the model computes them so the slip rows can carry
+     * them. Both scale the <em>drawn</em> leg, but only one of them scales the phase advance — which
+     * is precisely the asymmetry {@link #reportSlipConditions} exists to measure.
+     */
+    private static double pendingWeight = Double.NaN;
+    private static double pendingSwing = Double.NaN;
+
+    public static void noteLocoState(double weight, double swingAmount) {
+        if (remainingTicks <= 0) {
+            return;
+        }
+        pendingWeight = weight;
+        pendingSwing = swingAmount;
+    }
+
+    /**
+     * One row per walking tick: how far the body went, how far the drawn sole went, and the two
+     * amplitude factors in force across that interval.
+     *
+     * <p>The aggregate ratio measured 0.6979 where the geometry says 1.0, and after the offline
+     * integration ruled the curve shape out (1.0176, wrong direction) the remaining suspects are
+     * both <em>amplitude</em> factors. {@code weight} scales the drawn pose but not the phase
+     * advance, so during a fade-in the foot is drawn small while the phase runs at full rate.
+     * {@code limbSwingAmount} scales both — but the phase advance at tick {@code t} uses that tick's
+     * value while the foot's Δ spans {@code t−1 → t}, so a <em>changing</em> swing contributes a
+     * term that is not translation at all. Separating them needs the two recorded per tick, not
+     * summed away.
+     */
+    private static final int SLIP_CAP = 4000;
+    private static final int[] SLIP_TICK = new int[SLIP_CAP];
+    private static final double[] SLIP_BODY = new double[SLIP_CAP];
+    private static final double[] SLIP_FOOT = new double[SLIP_CAP];
+    private static final double[] SLIP_W0 = new double[SLIP_CAP];
+    private static final double[] SLIP_W1 = new double[SLIP_CAP];
+    private static final double[] SLIP_S0 = new double[SLIP_CAP];
+    private static final double[] SLIP_S1 = new double[SLIP_CAP];
+    private static int slipCount = 0;
+    private static double moveLastWeight = Double.NaN;
+    private static double moveLastSwing = Double.NaN;
+
+    /**
      * @param footArcNow the drawn sole offset from under the hip, in blocks
      *                   ({@code 12 · sin(leg xRot) / 16})
      */
@@ -728,12 +775,14 @@ public final class BoneTrace {
         if (remainingTicks <= 0 || tickCount == moveLastTick) {
             return;
         }
-        if (!Double.isNaN(moveLastX) && walking && tickCount == moveLastTick + 1
-                && !Double.isNaN(lastFootArc) && !Double.isNaN(footArcNow)) {
-            footArcSum += Math.abs(footArcNow - lastFootArc);
+        boolean consecutive = !Double.isNaN(moveLastX) && walking && tickCount == moveLastTick + 1;
+        double footStep = Double.NaN;
+        if (consecutive && !Double.isNaN(lastFootArc) && !Double.isNaN(footArcNow)) {
+            footStep = Math.abs(footArcNow - lastFootArc);
+            footArcSum += footStep;
         }
         lastFootArc = footArcNow;
-        if (!Double.isNaN(moveLastX) && walking && tickCount == moveLastTick + 1) {
+        if (consecutive) {
             double dx = x - moveLastX;
             double dz = z - moveLastZ;
             double d = Math.sqrt(dx * dx + dz * dz);
@@ -741,10 +790,23 @@ public final class BoneTrace {
             deltaMovementSum += deltaMovementHoriz;
             moveMaxPerTick = Math.max(moveMaxPerTick, d);
             moveTicks++;
+            if (slipCount < SLIP_CAP && !Double.isNaN(footStep)
+                    && !Double.isNaN(moveLastWeight) && !Double.isNaN(pendingWeight)) {
+                SLIP_TICK[slipCount] = tickCount;
+                SLIP_BODY[slipCount] = d;
+                SLIP_FOOT[slipCount] = footStep;
+                SLIP_W0[slipCount] = moveLastWeight;
+                SLIP_W1[slipCount] = pendingWeight;
+                SLIP_S0[slipCount] = moveLastSwing;
+                SLIP_S1[slipCount] = pendingSwing;
+                slipCount++;
+            }
         }
         moveLastX = x;
         moveLastZ = z;
         moveLastTick = tickCount;
+        moveLastWeight = pendingWeight;
+        moveLastSwing = pendingSwing;
     }
 
     /**
@@ -805,6 +867,106 @@ public final class BoneTrace {
                         + "발 %.4f블록 / 몸 %.4f블록)",
                 moveSumBlocks > 1e-9 ? footArcSum / moveSumBlocks : 0.0D,
                 footArcSum, moveSumBlocks));
+    }
+
+    // ---- 후보 1: 미끄러짐을 조건별로 분리 ---------------------------------------------------------
+
+    /**
+     * Minimum walking ticks a condition needs before its ratio is allowed to carry a verdict.
+     *
+     * <p>One nominal cycle. Below that the two sums cover different fractions of a cycle — the foot
+     * term is a rectified sine and the body term is not — so the ratio is biased by wherever the
+     * sample happened to start. Part 6.3.0: a condition that does not clear this bar prints
+     * 측정 불가, not a number with a verdict attached.
+     */
+    private static final int SLIP_MIN_TICKS = 26;
+
+    /** |Δ limbSwingAmount| below which the amplitude counts as steady across that tick. */
+    private static final double SWING_STABLE = 0.01D;
+
+    /**
+     * Foot travel ÷ body travel under three nested conditions, with the sample count of each.
+     *
+     * <p>Geometry says 1.0; the offline integration (tools/FootPath) says the catmullrom overshoot
+     * puts the achievable figure at <b>1.018</b>. The aggregate measured 0.6979. The two remaining
+     * candidates are both amplitude factors and they are separated by nesting:
+     *
+     * <ul>
+     *   <li><b>전체</b> — every walking tick. This is the 0.6979 figure.</li>
+     *   <li><b>weight == 1</b> — fade excluded. The fade scales the drawn foot and not the phase, so
+     *       if the fade is the cause this row goes to ~1.018 and the difference is its share.</li>
+     *   <li><b>weight == 1 이고 limbSwingAmount 안정</b> — amplitude also held still. The phase
+     *       advance uses the tick's own swing while the foot Δ spans the previous tick to this one,
+     *       so a moving swing injects a term that is not translation. If this row is the one that
+     *       reaches 1.018, the cause is that mismatch, not the fade.</li>
+     * </ul>
+     */
+    private static void reportSlipConditions() {
+        WardenGirlMod.LOGGER.info(
+                "[trace] --- 발 이동 / 몸 이동, 조건 3단 (기하 목표 1.0, 곡선 보정 후 1.018) ---");
+        if (slipCount == 0) {
+            WardenGirlMod.LOGGER.info("[trace]   걷기 틱 표본 0개 — **측정 불가**");
+            return;
+        }
+        double swingMin = Double.POSITIVE_INFINITY;
+        double swingMax = Double.NEGATIVE_INFINITY;
+        double weightMin = Double.POSITIVE_INFINITY;
+        int fadeTicks = 0;
+        for (int i = 0; i < slipCount; i++) {
+            swingMin = Math.min(swingMin, Math.min(SLIP_S0[i], SLIP_S1[i]));
+            swingMax = Math.max(swingMax, Math.max(SLIP_S0[i], SLIP_S1[i]));
+            weightMin = Math.min(weightMin, Math.min(SLIP_W0[i], SLIP_W1[i]));
+            if (SLIP_W0[i] < 1.0D - 1.0E-9D || SLIP_W1[i] < 1.0D - 1.0E-9D) {
+                fadeTicks++;
+            }
+        }
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace]   관측된 범위: weight 최소 %.5f (페이드 중 틱 %d개 / %d), "
+                        + "limbSwingAmount %.5f ~ %.5f",
+                weightMin, fadeTicks, slipCount, swingMin, swingMax));
+
+        String[] name = {"전체", "weight == 1", "weight == 1 이고 swing 안정"};
+        for (int cond = 0; cond < 3; cond++) {
+            double body = 0.0D;
+            double foot = 0.0D;
+            double swingSum = 0.0D;
+            int n = 0;
+            for (int i = 0; i < slipCount; i++) {
+                boolean full = SLIP_W0[i] >= 1.0D - 1.0E-9D && SLIP_W1[i] >= 1.0D - 1.0E-9D;
+                boolean steady = Math.abs(SLIP_S1[i] - SLIP_S0[i]) <= SWING_STABLE;
+                if (cond >= 1 && !full) {
+                    continue;
+                }
+                if (cond >= 2 && !steady) {
+                    continue;
+                }
+                body += SLIP_BODY[i];
+                foot += SLIP_FOOT[i];
+                swingSum += SLIP_S1[i];
+                n++;
+            }
+            if (n < SLIP_MIN_TICKS || body <= 1.0E-9D) {
+                WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                        "[trace]   %-28s 표본 %4d틱 (필요 %d) — **측정 불가**",
+                        name[cond], n, SLIP_MIN_TICKS));
+                continue;
+            }
+            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                    "[trace]   %-28s 표본 %4d틱  발 %.5f / 몸 %.5f = **%.4f**  "
+                            + "(몸 %.5f 블록/틱, swing 평균 %.4f)",
+                    name[cond], n, foot, body, foot / body, body / n, swingSum / n));
+        }
+        // Raw rows, thinned. Part 6.2: the ratios above are derived, and a derived number that
+        // nobody can check against the values it came from is not a measurement.
+        int step = Math.max(1, slipCount / 40);
+        WardenGirlMod.LOGGER.info("[trace]   틱별 원값 (t, 몸 이동, 발 이동, weight, limbSwingAmount):");
+        for (int i = 0; i < slipCount; i += step) {
+            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                    "[trace]     t=%6d  몸 %.5f  발 %.5f  비 %7.4f  w %.5f->%.5f  s %.5f->%.5f",
+                    SLIP_TICK[i], SLIP_BODY[i], SLIP_FOOT[i],
+                    SLIP_BODY[i] > 1e-9 ? SLIP_FOOT[i] / SLIP_BODY[i] : 0.0D,
+                    SLIP_W0[i], SLIP_W1[i], SLIP_S0[i], SLIP_S1[i]));
+        }
     }
 
     // ---- C2 페이드 (가설 2 확인) -----------------------------------------------------------------
@@ -888,6 +1050,7 @@ public final class BoneTrace {
      */
     private static void reportValidity() {
         WardenGirlMod.LOGGER.info("[trace] --- 측정 유효 조건 (판정보다 먼저 본다) ---");
+        WardenGirlMod.LOGGER.info("[trace]   엔티티          : {}", EntityLock.validityLine());
         WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
                 "[trace]   걷기 프레임      : %d / %d (%.1f%%)   %s",
                 walkFrames, sampleCount, 100.0D * walkFrames / Math.max(1, sampleCount),
@@ -1259,6 +1422,7 @@ public final class BoneTrace {
             }
         }
         reportMovement();
+        reportSlipConditions();
         reportFade();
         reportByPhase();
         reportPhaseAudit();

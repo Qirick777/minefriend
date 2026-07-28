@@ -102,6 +102,7 @@ public final class VitalCheck {
     private static final double[] WORST_TIME = new double[N];
 
     public static void start(int ticks) {
+        EntityLock.reset();
         remainingTicks = ticks;
         totalTicks = ticks;
         startTick = Integer.MIN_VALUE;

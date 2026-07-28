@@ -111,6 +111,7 @@ public final class ActionCheck {
     private static double leakAfterEnd = 0.0D;
 
     public static void start(int ticks) {
+        EntityLock.reset();
         remainingTicks = ticks;
         totalTicks = ticks;
         startTick = Integer.MIN_VALUE;

@@ -115,6 +115,7 @@ public final class BlendCheck {
     private static int legFullFrames = 0;
 
     public static void start(int ticks) {
+        EntityLock.reset();
         remainingTicks = ticks;
         totalTicks = ticks;
         startTick = Integer.MIN_VALUE;

@@ -195,6 +195,12 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             damperFor(animatable).reset();
             return;
         }
+        // Every verifier in this method keeps its state in statics, and setCustomAnimations runs
+        // once per RENDERED ENTITY. A second warden girl in the world therefore interleaves a
+        // second animation state into the same accumulators - measured, and it produced a full page
+        // of plausible numbers. EntityLock pins the measurement to one entity and reports the rest.
+        // Computed here because applyLocomotionMotion already feeds BoneTrace.
+        boolean measured = EntityLock.accepts(animatable.getId());
         // C2 first, exactly where the controller used to write it, so every layer below sits on
         // top of the same value it always did. walkOnly is what C2 contributed on the four axes it
         // shares with C3 - now known directly instead of read back off the bone.
@@ -202,7 +208,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
                 ? readBlendAxes()               // 이관 전: 컨트롤러가 이미 본에 썼다
                 : applyLocomotionMotion(animatable, animationState);
         VitalMotion.Contribution vital = applyVitalMotion(animatable);
-        if (VitalCheck.isRunning()) {
+        if (measured && VitalCheck.isRunning()) {
             VitalCheck.sample(readAllBones(), readAllPositions(), animatable.tickCount,
                     Minecraft.getInstance().getPartialTick());
         }
@@ -213,13 +219,13 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         applyHeadgearSpring(animatable);
         applyOverlayVisibility();
         reportParamChange();
-        if (BlendCheck.isRunning()) {
+        if (measured && BlendCheck.isRunning()) {
             BlendCheck.sample(walkOnly,
                     vital == null ? null : new double[]{vital.bodyRotY()},
                     action.c3(), action.eff(), action.weight(), readAllBones(),
                     animatable.walkStateForReport(), animatable.tickCount);
         }
-        if (BoneTrace.isRunning()) {
+        if (measured && BoneTrace.isRunning()) {
             // Read-only: isWalkingForAnimation() advances the hysteresis, and calling it here would
             // run that state machine at frame rate on top of its normal per-frame call.
             // 12px lever, sole at y=0, /16 to blocks. The drawn angle, so it includes every
@@ -560,8 +566,11 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             legAmp = LocomotionMotion.LEG_AMPLITUDE_DEG * AnimParams.WALK_LEG_AMP_SCALE.get();
         }
         double weight = loco.advance(now, walking, distance, legAmp);
-        if (BoneTrace.isRunning()) {
+        if (BoneTrace.isRunning() && EntityLock.isSubject(animatable.getId())) {
             BoneTrace.noteFade(weight, loco.lastDt(), now);
+            // The two factors that scale the drawn leg. Only swingAmount also scales the phase
+            // advance (through legAmp), so the pair has to be recorded together per tick.
+            BoneTrace.noteLocoState(weight, swingAmount);
         }
         if (weight <= 0.0D) {
             return new double[4];
