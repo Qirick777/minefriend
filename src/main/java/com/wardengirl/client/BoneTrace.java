@@ -1333,6 +1333,7 @@ public final class BoneTrace {
     public static void noteRide(int tick, boolean riding, String vehicle, double vehYRot,
                                 double yRot, double yBodyRot, double yBodyRotO,
                                 double yHeadRot, double netHeadYaw, double headBoneYaw,
+                                double lookTarget, double lookOut, double playerAz,
                                 String vanilla) {
         if (remainingTicks <= 0 || tick == rideLastTick) {
             return;
@@ -1375,10 +1376,11 @@ public final class BoneTrace {
         }
         rideLastTick = tick;
         RIDE_ROW[rideRows++] = String.format(Locale.ROOT,
-                "t=%6d %s vehicle=%-10s vehYRot %+8.3f | yRot %+8.3f  yBodyRot %+8.3f "
-                        + "(O %+8.3f)  yHeadRot %+8.3f | netHeadYaw %+8.3f  head.yRot %+8.3f | %s",
-                tick, riding ? "TAM" : "---", vehicle, vehYRot, yRot, yBodyRot, yBodyRotO,
-                yHeadRot, netHeadYaw, headBoneYaw, vanilla);
+                "t=%6d %s vehYRot %+8.3f | yRot %+8.3f yBodyRot %+8.3f yHeadRot %+8.3f "
+                        + "| netHeadYaw %+8.3f lookTgt %+8.3f lookOut %+8.3f head.yRot %+8.3f "
+                        + "| playerAz %+8.3f | %s",
+                tick, riding ? "TAM" : "---", vehYRot, yRot, yBodyRot,
+                yHeadRot, netHeadYaw, lookTarget, lookOut, headBoneYaw, playerAz, vanilla);
     }
 
     private static double wrap180(double deg) {

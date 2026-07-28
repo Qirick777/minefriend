@@ -279,13 +279,20 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
                     other.getYHeadRot(), other.getVehicle().getYRot());
             break;
         }
+        double playerAz = Double.NaN;
+        net.minecraft.client.player.LocalPlayer lp = Minecraft.getInstance().player;
+        if (lp != null) {
+            double toPlayer = Math.toDegrees(Math.atan2(lp.getZ() - animatable.getZ(),
+                    lp.getX() - animatable.getX())) - 90.0D;
+            playerAz = ((toPlayer - animatable.yBodyRot) % 360.0D + 540.0D) % 360.0D - 180.0D;
+        }
         BoneTrace.noteRide(animatable.tickCount, animatable.isPassenger(),
                 vehicle == null ? "없음" : vehicle.getType().toShortString(),
                 vehicle == null ? Double.NaN : vehicle.getYRot(),
                 animatable.getYRot(), animatable.yBodyRot, animatable.yBodyRotO,
                 animatable.getYHeadRot(),
                 look == null ? Double.NaN : look.netHeadYaw(),
-                headBoneYaw, vanilla);
+                headBoneYaw, lastLookTargetYaw, lastLookOutYaw, playerAz, vanilla);
     }
 
     // ---- 4.6 시선 (선택지 A: Java 가산) ----------------------------------------------------------
@@ -326,6 +333,10 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      * sees it. A sign flip across the back is therefore a sweep from +75 to −75 through zero, which
      * is the path the head physically has to take anyway.
      */
+    /** 4.14 조사용. 마지막 프레임의 시선 목표/출력 yaw. 계측 전용이다. */
+    private static double lastLookTargetYaw = Double.NaN;
+    private static double lastLookOutYaw = Double.NaN;
+
     private void applyLook(WardenGirlEntity animatable,
                            AnimationState<WardenGirlEntity> animationState) {
         EntityModelData look = animationState.getData(DataTickets.ENTITY_MODEL_DATA);
@@ -351,6 +362,9 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
 
         BoneTrace.noteLook(target, new double[]{yaw, pitch}, damping, distance,
                 animatable.tickCount);
+        // 4.14 조사용. 시선이 계산한 목표각과 감쇠 출력을 탑승 덤프와 같은 행에 싣는다.
+        lastLookTargetYaw = target[LookDamper.YAW];
+        lastLookOutYaw = yaw;
         addRotY(Bones.HEAD, yaw);
         addRotX(Bones.HEAD, pitch);
     }
