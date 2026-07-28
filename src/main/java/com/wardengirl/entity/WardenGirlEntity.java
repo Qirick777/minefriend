@@ -484,8 +484,13 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         SitLookShadow.Step st = this.shadow.advance(getX(), getEyeY(), getZ(), this.yBodyRot,
                 this.probeWanted, this.probeX, this.probeY, this.probeZ, goal, dist);
 
-        this.entityData.set(DATA_LOOK_SHADOW_YAW, (float) st.outYaw);
-        this.entityData.set(DATA_LOOK_SHADOW_PITCH, (float) st.outPitch);
+        // 계측: 동기화 필드에 실제로 들어가는 float 을 먼저 만들고, 그 변수의 raw bits 를
+        // 찍는다. double 을 %.9f 로 찍어 되파싱하면 float32 최근접값이 한 칸 어긋날 수 있어
+        // 비트 동일성을 주장할 수 없었다.
+        float shadowYaw = (float) st.outYaw;
+        float shadowPitch = (float) st.outPitch;
+        this.entityData.set(DATA_LOOK_SHADOW_YAW, shadowYaw);
+        this.entityData.set(DATA_LOOK_SHADOW_PITCH, shadowPitch);
         this.shadowSeq++;
         this.entityData.set(DATA_LOOK_SHADOW_SEQ, this.shadowSeq);
 
@@ -496,7 +501,8 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
                         + "dist=%.9f wx=%.9f wy=%.9f wz=%.9f rawY=%.9f rawP=%.9f "
                         + "prevY=%.9f prevP=%.9f limY=%.9f limP=%.9f bodyY=%.9f body=%.9f "
                         + "boneY=%.9f boneP=%.9f clY=%.9f clP=%.9f k=%.9f "
-                        + "poutY=%.9f poutP=%.9f outY=%.9f outP=%.9f seq=%d",
+                        + "poutY=%.9f poutP=%.9f outY=%.9f outP=%.9f "
+                        + "yawbits=%08X pitchbits=%08X seq=%d",
                 getUUID(), level().getGameTime(), st.wanted, goal, pRun && rRun,
                 target == null ? "none" : String.valueOf(target.getId()),
                 target instanceof Player, dist,
@@ -504,7 +510,9 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
                 st.prevHeadYaw, st.prevPitch, st.limitedHeadYaw, st.limitedPitch,
                 st.bodyClampedYaw, this.yBodyRot, st.boneYaw, st.bonePitch,
                 st.gainClampYaw, st.gainClampPitch, st.damping,
-                st.prevOutYaw, st.prevOutPitch, st.outYaw, st.outPitch, this.shadowSeq));
+                st.prevOutYaw, st.prevOutPitch, st.outYaw, st.outPitch,
+                Float.floatToRawIntBits(shadowYaw), Float.floatToRawIntBits(shadowPitch),
+                this.shadowSeq));
     }
     private int probeLogged = 0;
 

@@ -301,10 +301,13 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         }
         shadowCliLastSeq = seq;
         WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
-                "[shadowcli] id=%d uuid=%s seq=%d t=%d gt=%d yaw=%.9f pitch=%.9f",
+                "[shadowcli] id=%d uuid=%s seq=%d t=%d gt=%d yaw=%.9f pitch=%.9f "
+                        + "yawbits=%08X pitchbits=%08X",
                 animatable.getId(), animatable.getUUID(), seq, animatable.tickCount,
                 animatable.level().getGameTime(), animatable.syncedShadowYaw(),
-                animatable.syncedShadowPitch()));
+                animatable.syncedShadowPitch(),
+                Float.floatToRawIntBits(animatable.syncedShadowYaw()),
+                Float.floatToRawIntBits(animatable.syncedShadowPitch())));
     }
 
     private void noteSyncReceive(WardenGirlEntity animatable) {
