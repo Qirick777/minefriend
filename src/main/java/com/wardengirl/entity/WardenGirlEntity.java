@@ -354,8 +354,14 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         // 진행 방향이다. 다만 말처럼 LivingEntity 인 탈것은 GeckoLib 이 렌더 단계에서 몸통을
         // 탈것의 yBodyRot 으로 따로 덮으므로 이 보정과 겹친다 - 보트에서 통과한 뒤 본다.
         float rate = (float) (AnimParams.SIT_BODY_FOLLOW_RATE.get() * follow);
-        float next = getYRot()
-                + net.minecraft.util.Mth.wrapDegrees(vehicle.getYRot() - getYRot()) * rate;
+        // 4.14 (2). 결과를 반드시 정규화한다. 없으면 고정점이 0 이 아니라 +360 이다 -
+        // wrapDegrees(0 - 359.99) 가 +0.01 이라 359.99 에서도 계속 위로 올라가기 때문이다.
+        // 측정에서 yRot 이 +360.000 에 park 했고, 그 값이 clampRotation 을 통해 yHeadRot 으로
+        // 흘러 GeckoLib 의 netHeadYaw = headRot - bodyRot = 360 이 됐다. GeckoLib 은 비-LivingEntity
+        // 탈것에서 그 차를 감싸지 않으므로 ±75 클램프가 -75 로 때려박았고, 화면에서는 고개가
+        // 0 과 -75 를 오갔다.
+        float next = net.minecraft.util.Mth.wrapDegrees(getYRot()
+                + net.minecraft.util.Mth.wrapDegrees(vehicle.getYRot() - getYRot()) * rate);
         setYRot(next);
         setYHeadRot(next);
     }
