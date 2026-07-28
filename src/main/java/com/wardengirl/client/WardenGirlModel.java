@@ -232,10 +232,17 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             // amplitude scale actually applied.
             double legDeg = getBone(Bones.LEG_RIGHT)
                     .map(b -> AxisConvention.toDeg(b.getRotX())).orElse(0.0D);
+            double footArc = 12.0D * Math.sin(Math.toRadians(legDeg)) / 16.0D;
             BoneTrace.noteMovement(animatable.getX(), animatable.getZ(),
                     animatable.getDeltaMovement().horizontalDistance(),
-                    12.0D * Math.sin(Math.toRadians(legDeg)) / 16.0D,
-                    animatable.walkStateForReport(), animatable.tickCount);
+                    footArc, animatable.walkStateForReport(), animatable.tickCount);
+            // The slip ratio is measured at frame rate, against the same rendered position the
+            // phase is driven from - numerator and denominator then describe one motion.
+            float pt = Minecraft.getInstance().getPartialTick();
+            BoneTrace.noteFrameSlip(
+                    net.minecraft.util.Mth.lerp(pt, animatable.xOld, animatable.getX()),
+                    net.minecraft.util.Mth.lerp(pt, animatable.zOld, animatable.getZ()),
+                    footArc, animatable.walkStateForReport(), animatable.tickCount);
             BoneTrace.noteWalkState(animatable.walkStateForReport(),
                     animatable.rawMovingForReport(), animatable.lastMovingTickForReport(),
                     animatable.tickCount);
@@ -556,7 +563,12 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         double swingAmount = Math.min(1.0D, Math.max(0.0D, animationState.getLimbSwingAmount()));
         double legAmp = LocomotionMotion.LEG_AMPLITUDE_DEG
                 * AnimParams.WALK_LEG_AMP_SCALE.get() * swingAmount;
-        double distance = animatable.walkDistanceThisTickForAnimation();
+        // Per FRAME, from the rendered position - not per tick. See LocomotionMotion#frameDistance
+        // for the measurement that forced this: a tick-quantised phase made the drawn leg a
+        // 3.78-step staircase per cycle and cost 75% of the foot-slip shortfall.
+        double distance = loco.frameDistance(
+                net.minecraft.util.Mth.lerp(partialTick, animatable.xOld, animatable.getX()),
+                net.minecraft.util.Mth.lerp(partialTick, animatable.zOld, animatable.getZ()));
         if (AnimParams.WALK_FORCE.get() >= 0.5D) {
             // walk_force makes no real movement, so a distance-driven phase would simply stop.
             // Feeding it a synthetic cruise speed keeps every window measured with it meaningful -

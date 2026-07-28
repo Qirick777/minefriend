@@ -81,6 +81,48 @@ public final class LocomotionMotion {
         return 2.0D * (2.0D * 12.0D * Math.sin(Math.toRadians(Math.abs(legAmplitudeDeg))) / 16.0D);
     }
 
+    /**
+     * Horizontal distance the <em>drawn</em> body covered since the previous frame, in blocks.
+     *
+     * <h2>Why the phase left the tick</h2>
+     *
+     * The first distance-driven version consumed a whole tick's travel on that tick's first frame
+     * ({@code walkDistanceThisTickForAnimation} returned 0 on every other frame). So the phase was a
+     * staircase and the drawn leg angle held still for a whole tick and then jumped. Measured, the
+     * cycle is only <b>3.78 ticks</b> long at the default amplitude — an inscribed polygon with
+     * fewer than four vertices per cycle, and an inscribed polygon is always shorter than the curve.
+     * Offline integration of the real clip put that loss at <b>0.8196</b> against a geometric target
+     * of 1.018, which is 75% of the whole measured foot-slip shortfall.
+     *
+     * <p>The input is the <b>rendered</b> position, {@code Mth.lerp(partialTick, xOld, getX())}.
+     * Verified from the 1.20.1 bytecode rather than assumed: {@code ClientLevel.tickNonPassenger}
+     * calls {@code setOldPosAndRot()} immediately before {@code Entity.tick()}, so {@code xOld} is
+     * the position at the start of the tick; and {@code EntityRenderDispatcher.render} computes the
+     * draw position with that exact expression. Driving the phase from it means the legs are locked
+     * to the body <em>as drawn</em>, not as ticked.
+     *
+     * @return 0 on the first call, and 0 for a jump larger than {@link #TELEPORT_BLOCKS} — a
+     *         teleport is not locomotion, and feeding one in would spin the cycle.
+     */
+    private static final double TELEPORT_BLOCKS = 0.5D;
+
+    public double frameDistance(double x, double z) {
+        if (Double.isNaN(this.lastX)) {
+            this.lastX = x;
+            this.lastZ = z;
+            return 0.0D;
+        }
+        double dx = x - this.lastX;
+        double dz = z - this.lastZ;
+        this.lastX = x;
+        this.lastZ = z;
+        double d = Math.sqrt(dx * dx + dz * dz);
+        return d > TELEPORT_BLOCKS ? 0.0D : d;
+    }
+
+    private double lastX = Double.NaN;
+    private double lastZ = Double.NaN;
+
     /** Ticks into the walk cycle, wrapped. */
     private double phase;
     /** Fade weight, 0 = pure idle, 1 = pure walk. */

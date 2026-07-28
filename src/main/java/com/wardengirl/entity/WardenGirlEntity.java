@@ -273,34 +273,15 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
      * do so at frame rate rather than tick rate.
      */
     /**
-     * Horizontal distance covered since the previous tick, in blocks.
+     * Removed: the per-tick walk distance.
      *
-     * <p>Measured from the entity's own position, <b>not</b> from {@code getDeltaMovement()}: that
-     * field reported roughly half the real travel (0.051 against 0.093 blocks/tick measured), and
-     * feeding it to a distance-driven phase would halve the stride. Part 11.
-     *
-     * <p>Zero on any frame that is not the first of a new tick, so the phase advances once per tick
-     * rather than once per frame.
+     * <p>It handed the phase a whole tick's travel on that tick's first frame and zero on every
+     * other, which made the drawn leg a staircase — measured at 3.78 steps per cycle, costing 75%
+     * of the foot-slip shortfall. The phase now runs off the <em>rendered</em> position every frame
+     * instead; see {@code LocomotionMotion#frameDistance}. The finding that survives from here is
+     * that {@code getDeltaMovement()} is not the travel — it reported 0.051 against a measured
+     * 0.093 blocks/tick, so the position delta is the only truthful source. Part 11.
      */
-    public double walkDistanceThisTickForAnimation() {
-        if (this.tickCount == this.lastDistanceTick) {
-            return 0.0D;
-        }
-        double d = 0.0D;
-        if (this.lastDistanceTick != Integer.MIN_VALUE) {
-            double dx = getX() - this.lastDistanceX;
-            double dz = getZ() - this.lastDistanceZ;
-            d = Math.sqrt(dx * dx + dz * dz);
-        }
-        this.lastDistanceTick = this.tickCount;
-        this.lastDistanceX = getX();
-        this.lastDistanceZ = getZ();
-        return d;
-    }
-
-    private int lastDistanceTick = Integer.MIN_VALUE;
-    private double lastDistanceX;
-    private double lastDistanceZ;
 
     public boolean walkStateForReport() {
         return this.walkingForAnimation;
