@@ -369,6 +369,36 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         // 바닐라 쪽은 Boat.clampRotation 이 매 틱 yHeadRot = yRot 로 덮어쓰므로 결과가 같다.
     }
 
+    /**
+     * 4.14 조사용. 탑승 중 서버의 {@code yHeadRot} 을 <b>두 지점에서</b> 찍는다.
+     *
+     * <p>{@code aiStep()} 직후는 Goal → {@code LookControl} 이 막 쓴 값이고,
+     * {@code tick()} 끝은 오프셋 386 의 {@code tickHeadTurn} 까지 지난 값이다. 둘을 비교하면
+     * "Goal 이 안 돈다"와 "돌지만 뒤에서 되돌린다"가 갈린다. <b>계측 전용이다.</b>
+     */
+    private float headAfterAiStep = Float.NaN;
+    private int probeLogged = 0;
+
+    @Override
+    public void aiStep() {
+        super.aiStep();
+        if (!level().isClientSide && isPassenger()) {
+            this.headAfterAiStep = getYHeadRot();
+        }
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (!level().isClientSide && isPassenger() && this.probeLogged < 200) {
+            this.probeLogged++;
+            com.wardengirl.WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
+                    "[probe] t=%d aiStep=%.3f tickEnd=%.3f yRot=%.3f yBodyRot=%.3f vehYRot=%.3f",
+                    this.tickCount, this.headAfterAiStep, getYHeadRot(), getYRot(), this.yBodyRot,
+                    getVehicle() == null ? Float.NaN : getVehicle().getYRot()));
+        }
+    }
+
     public boolean isWalkingForAnimation() {
         // 4.13. 탈것에 타면 몹 좌표가 탈것을 따라 움직여 이동으로 잡힌다. 별도 게이트를 두면
         // 조건이 둘로 갈라져 어긋나므로 여기 하나로 막는다.
