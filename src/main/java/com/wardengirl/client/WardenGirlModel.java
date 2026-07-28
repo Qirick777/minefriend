@@ -660,7 +660,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     /** 중단이 시작된 시각(틱). 있으면 페이드 아웃 중이다. */
     private final Map<Integer, Double> sniffInterrupt = new HashMap<>();
     /** 소리를 터뜨릴 재생 나이(틱). 0.746초 클립 안에 킁킁 2회가 있으므로 두 번 튼다. */
-    private static final double[] SNIFF_SOUND_AT = {4.0D, 16.0D};
+    private static final double[] SNIFF_SOUND_AT = {4.0D, 22.0D};
 
     /** The four axes where C2 and C3 both write. Order is fixed; see {@link #applyWalkBlend}. */
     private double[] readBlendAxes() {
@@ -825,15 +825,22 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
                         // 소리는 우리가 직접 발화한다 - C3 는 직접 평가 경로라 GeckoLib 의
                         // 사운드 키프레임을 타지 않는다. 재생당 정확히 2회, 중복 없이.
                         IdleReaction r = this.reactions.get(animatable.getId());
-                        if (r != null && r.claimSound(age, SNIFF_SOUND_AT)
-                                && AnimParams.SNIFF_DISTANCE.get() > 0.0D) {
+                        int which = r == null ? -1 : r.soundsFired();
+                        if (r != null && AnimParams.SNIFF_DISTANCE.get() > 0.0D
+                                && r.claimSound(age, SNIFF_SOUND_AT)) {
+                            double vol = AnimParams.SNIFF_SOUND_VOLUME.get()
+                                    * (which == 0 ? 1.0D
+                                            : AnimParams.SNIFF_SOUND_VOLUME_2ND.get());
                             animatable.level().playLocalSound(animatable.getX(),
                                     animatable.getY(), animatable.getZ(),
                                     com.wardengirl.registry.ModSounds.SNIFF.get(),
                                     net.minecraft.sounds.SoundSource.NEUTRAL,
-                                    (float) AnimParams.SNIFF_SOUND_VOLUME.get(),
+                                    (float) vol,
                                     (float) AnimParams.SNIFF_SOUND_PITCH.get(), false);
-                            BoneTrace.noteSniffSound();
+                            // 계측: 어느 재생의 몇 번째 문턱을 어느 나이에 먹었는가.
+                            // 2회 초과의 원인을 값으로 잡기 위한 것이다.
+                            BoneTrace.noteSniffSound(age, which,
+                                    System.identityHashCode(this));
                         }
                     }
                 }

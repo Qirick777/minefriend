@@ -264,6 +264,10 @@ public final class AnimParams {
                     "tick", "T6", "킁킁 중단 페이드 아웃", "body", "head", "arm_right", "arm_left");
     public static final Param SNIFF_SOUND_VOLUME =
             addShape("sniff_sound_volume", 0.6D, 0.0D, 2.0D, "ratio", "T6", "킁킁 소리 볼륨");
+    /** 2차 발화 볼륨 배율. 1차 대비. 두 번째 덩어리가 약해야 감쇠가 읽힌다. */
+    public static final Param SNIFF_SOUND_VOLUME_2ND =
+            addShape("sniff_sound_volume_2nd", 0.8D, 0.0D, 1.0D, "ratio", "T6",
+                    "킁킁 2차 발화 볼륨 배율 (1차 대비)");
     public static final Param SNIFF_SOUND_PITCH =
             addShape("sniff_sound_pitch", 1.0D, 0.5D, 2.0D, "ratio", "T6", "킁킁 소리 피치");
     /** 재발동 금지 시간. */

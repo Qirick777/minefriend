@@ -335,6 +335,7 @@ public final class BoneTrace {
         sniffInterrupts = 0;
         sniffFrontFlips = 0;
         sniffSounds = 0;
+        sndRows = 0;
         pendingDist = Double.NaN;
         pendingPhase = Double.NaN;
         pendingLegAmp = Double.NaN;
@@ -1259,9 +1260,31 @@ public final class BoneTrace {
     private static int sniffFrontFlips = 0;
     private static int sniffSounds = 0;
 
-    public static void noteSniffSound() {
-        if (remainingTicks > 0) {
-            sniffSounds++;
+    private static final int SND_CAP = 40;
+    private static final double[] SND_AGE = new double[SND_CAP];
+    private static final int[] SND_WHICH = new int[SND_CAP];
+    private static final int[] SND_MODEL = new int[SND_CAP];
+    private static final int[] SND_FIRE = new int[SND_CAP];
+    private static int sndRows = 0;
+
+    /**
+     * 소리 한 발화.
+     *
+     * <p>재생당 2회여야 하는데 실측이 2.50 이 나왔다. 원인을 좁히려면 <b>어느 모델 인스턴스가</b>
+     * <b>몇 번째 발동의</b> <b>몇 번째 문턱을</b> <b>어느 나이에</b> 먹었는지가 모두 필요하다 —
+     * 같은 문턱이 두 번 나오면 중복이고, 모델 해시가 둘이면 인스턴스가 둘이다.
+     */
+    public static void noteSniffSound(double age, int which, int modelId) {
+        if (remainingTicks <= 0) {
+            return;
+        }
+        sniffSounds++;
+        if (sndRows < SND_CAP) {
+            SND_AGE[sndRows] = age;
+            SND_WHICH[sndRows] = which;
+            SND_MODEL[sndRows] = modelId;
+            SND_FIRE[sndRows] = sniffStarts;
+            sndRows++;
         }
     }
 
@@ -1329,6 +1352,11 @@ public final class BoneTrace {
                 AnimParams.SNIFF_FRONT_ANGLE.get(), sniffFrontRejected, sniffBlockedRejected,
                 sniffFrontFlips, sniffInterrupts, sniffSounds,
                 sniffStarts > 0 ? (double) sniffSounds / sniffStarts : 0.0D));
+        for (int i = 0; i < sndRows; i++) {
+            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                    "[trace]     소리 %2d: 발동#%d 문턱#%d 나이 %.3f 모델 %08x",
+                    i + 1, SND_FIRE[i], SND_WHICH[i], SND_AGE[i], SND_MODEL[i]));
+        }
         if (sniffStarts == 0) {
             WardenGirlMod.LOGGER.info("[trace]   발동 0회 — **측정 불가**");
             return;
