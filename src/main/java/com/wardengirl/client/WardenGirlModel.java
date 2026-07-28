@@ -534,6 +534,9 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         // read back the constant the json put there, and a walk cycle on top would bury it.
         boolean walking = !animatable.isSignTest() && animatable.isWalkingForAnimation();
         double weight = loco.advance(now, walking);
+        if (BoneTrace.isRunning()) {
+            BoneTrace.noteFade(weight, loco.lastDt(), now);
+        }
         if (weight <= 0.0D) {
             return new double[4];
         }

@@ -2,6 +2,7 @@ package com.wardengirl.client;
 
 import com.wardengirl.WardenGirlMod;
 import com.wardengirl.anim.AnimParams;
+import com.wardengirl.anim.AnimRegistry;
 import com.wardengirl.anim.Bones;
 
 import java.util.LinkedHashMap;
@@ -297,6 +298,7 @@ public final class BoneTrace {
         }
         lookSamples = 0;
         walkFrames = 0;
+        fadeCount = 0;
         moveSumBlocks = 0.0D;
         moveTicks = 0;
         moveMaxPerTick = 0.0D;
@@ -772,6 +774,72 @@ public final class BoneTrace {
                 measured > 1e-9 ? perCycle / measured : 0.0D));
     }
 
+    // ---- C2 페이드 (가설 2 확인) -----------------------------------------------------------------
+
+    /**
+     * The idle↔walk fade weight, with the frame delta that produced each step.
+     *
+     * <p>Hypothesis 2: the fade decays by {@code dt / 6} where {@code dt} is a <em>frame</em> delta,
+     * so a frame that skips a tick drops the weight twice as far in one step. Observed frames
+     * spanning two ticks ({@code t=3017 → 3019 → 3021}), so this is not speculative — but whether
+     * it lands inside a stop transition, and how much of the 3.7~5.7× it accounts for, has to be
+     * read off the values.
+     */
+    private static final int FADE_CAP = 4000;
+    private static final double[] FADE_WEIGHT = new double[FADE_CAP];
+    private static final double[] FADE_DT = new double[FADE_CAP];
+    private static final double[] FADE_TIME = new double[FADE_CAP];
+    private static int fadeCount = 0;
+
+    public static void noteFade(double weight, double dt, double timeTicks) {
+        if (remainingTicks <= 0 || fadeCount >= FADE_CAP) {
+            return;
+        }
+        FADE_WEIGHT[fadeCount] = weight;
+        FADE_DT[fadeCount] = dt;
+        FADE_TIME[fadeCount] = timeTicks;
+        fadeCount++;
+    }
+
+    /**
+     * Every falling run of the fade, with how long it actually took.
+     *
+     * <p>Spec is {@link AnimRegistry#TRANSITION_TICKS}. A run that lands anywhere else is the
+     * measurement hypothesis 2 predicts.
+     */
+    private static void reportFade() {
+        if (fadeCount < 4) {
+            return;
+        }
+        WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                "[trace] --- C2 페이드. 사양 %d틱 ---", AnimRegistry.TRANSITION_TICKS));
+        int runs = 0;
+        for (int i = 1; i < fadeCount && runs < 6; i++) {
+            boolean startsFalling = FADE_WEIGHT[i] < FADE_WEIGHT[i - 1]
+                    && FADE_WEIGHT[i - 1] >= 1.0D - 1.0E-9D;
+            if (!startsFalling) {
+                continue;
+            }
+            int j = i;
+            while (j + 1 < fadeCount && FADE_WEIGHT[j] > 0.0D) {
+                j++;
+            }
+            runs++;
+            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                    "[trace]   하강 %d: t=%.3f -> %.3f  실측 %.3f틱  (프레임 %d개)",
+                    runs, FADE_TIME[i - 1], FADE_TIME[j], FADE_TIME[j] - FADE_TIME[i - 1],
+                    j - i + 1));
+            for (int k = i - 1; k <= j && k < fadeCount; k++) {
+                double drop = k > 0 ? FADE_WEIGHT[k - 1] - FADE_WEIGHT[k] : 0.0D;
+                WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                        "[trace]      t=%9.3f  dt=%6.3f  가중치 %.5f  감소 %.5f%s",
+                        FADE_TIME[k], FADE_DT[k], FADE_WEIGHT[k], drop,
+                        FADE_DT[k] > 1.0D ? "   <== 프레임이 틱을 건너뛰었다" : ""));
+            }
+            i = j;
+        }
+    }
+
     private static final int GRACE_CAP = 32;
     private static final int[] GRACE_OFF_TICK = new int[GRACE_CAP];
     private static final int[] GRACE_LAST_MOVING = new int[GRACE_CAP];
@@ -972,6 +1040,47 @@ public final class BoneTrace {
         }
     }
 
+    /**
+     * Dumps {@code leg_right.xRot} across the first few stop transitions.
+     *
+     * <p>The phase table gives means and maxima; this gives the actual travel. "How far did the leg
+     * move during the stop, and over how many ticks" is the question that separates a fade that is
+     * too fast from a fade that never had far to go — and the two paths differ by 5x on the mean
+     * without that being decidable from the mean alone.
+     */
+    private static void reportStopDetail() {
+        int runs = 0;
+        for (int k = 1; k < seriesCount && runs < 3; k++) {
+            if (SERIES_WALK[k] || !SERIES_WALK[k - 1]) {
+                continue;
+            }
+            runs++;
+            int end = k;
+            while (end + 1 < seriesCount && SERIES_TICK[end] <= SERIES_TICK[k] + 10) {
+                end++;
+            }
+            double lo = Double.POSITIVE_INFINITY;
+            double hi = Double.NEGATIVE_INFINITY;
+            for (int j = k - 1; j <= end; j++) {
+                lo = Math.min(lo, SERIES[0][j]);
+                hi = Math.max(hi, SERIES[0][j]);
+            }
+            WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                    "[trace]   정지 %d: t=%d 에서 시작. leg_right.xRot %+8.4f -> %+8.4f "
+                            + "(구간 폭 %.4f, 총 이동 %.4f, %d틱, 프레임 %d개)",
+                    runs, SERIES_TICK[k], SERIES[0][k - 1], SERIES[0][end], hi - lo,
+                    Math.abs(SERIES[0][end] - SERIES[0][k - 1]),
+                    SERIES_TICK[end] - SERIES_TICK[k - 1], end - k + 2));
+            for (int j = k - 1; j <= end; j++) {
+                WardenGirlMod.LOGGER.info(String.format(Locale.ROOT,
+                        "[trace]      t=%6d  leg_r.x %+9.4f  d%+8.4f",
+                        SERIES_TICK[j], SERIES[0][j],
+                        j > 0 ? SERIES[0][j] - SERIES[0][j - 1] : 0.0D));
+            }
+            k = end;
+        }
+    }
+
     /** 0 = stop transition, 1 = start transition, 2 = steady walk, -1 = steady idle (ignored). */
     private static int phaseOf(int j) {
         int tick = SERIES_TICK[j];
@@ -1031,7 +1140,10 @@ public final class BoneTrace {
             }
         }
         reportMovement();
+        reportFade();
         reportByPhase();
+        WardenGirlMod.LOGGER.info("[trace] --- 정지 전이 상세 (leg_right.xRot) ---");
+        reportStopDetail();
         int step = Math.max(1, seriesCount / 260);
         WardenGirlMod.LOGGER.info("[trace] 시계열 행 (t=엔티티틱, d=직전 표본 대비 차분):");
         for (int j = 0; j < seriesCount; j += step) {

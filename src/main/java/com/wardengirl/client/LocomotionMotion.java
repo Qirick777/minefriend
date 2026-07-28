@@ -64,6 +64,12 @@ public final class LocomotionMotion {
     private boolean wasWalking = false;
     /** Walk phase frozen at the moment walking ended; the fade-out scales this pose down. */
     private double frozenPhase = Double.NaN;
+    /** Frame delta of the last {@link #advance}, for the fade diagnostic. */
+    private double lastDt = 0.0D;
+
+    public double lastDt() {
+        return this.lastDt;
+    }
 
     /**
      * Advances to {@code now} and returns the walk clip's blend weight.
@@ -98,6 +104,7 @@ public final class LocomotionMotion {
                 : dt / AnimRegistry.TRANSITION_TICKS;
         this.weight = walking ? Math.min(1.0D, this.weight + step)
                 : Math.max(0.0D, this.weight - step);
+        this.lastDt = dt;
         return this.weight;
     }
 
