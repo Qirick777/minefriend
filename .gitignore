@@ -21,6 +21,8 @@ build
 eclipse
 run
 run-data
+# 검증용 클라이언트가 저장소 루트에 남기는 회전 로그. 산출물이지 소스가 아니다.
+logs
 
 # Files from Forge MDK
 forge*changelog.txt
