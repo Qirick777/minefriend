@@ -102,7 +102,7 @@ public class WardenGirlAttackGoal extends Goal {
         this.ticks = -1;
         this.approach = 0;
         if (this.target != null) {
-            this.mob.getNavigation().moveTo(this.target, 1.0D);
+            this.mob.getNavigation().moveTo(this.target, com.wardengirl.anim.AnimParams.PURSUE_SPEED.get());
         }
     }
 
@@ -139,7 +139,7 @@ public class WardenGirlAttackGoal extends Goal {
         }
         this.approach++;
         if (this.approach % 10 == 0) {
-            this.mob.getNavigation().moveTo(this.target, 1.0D);
+            this.mob.getNavigation().moveTo(this.target, com.wardengirl.anim.AnimParams.PURSUE_SPEED.get());
         }
     }
 

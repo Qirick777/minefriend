@@ -348,6 +348,13 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     /** Bounded so despawned entities cannot leak; springs are cheap to re-seed. */
     private static final int MAX_TRACKED_ENTITIES = 64;
 
+    /**
+     * T9 임시. {@code /wg run show} 가 읽는 마지막 프레임 값. 정적이라 여러 마리가 있으면
+     * 마지막으로 그려진 개체의 값이다 — 혼자 튜닝하는 용도라 그대로 둔다. 최종 수치가
+     * 정해지면 명령어와 함께 지운다.
+     */
+    static double lastSwing;
+    static double lastRun;
 
     /** {right, left}, in the order of {@link Bones#HEADGEAR}. */
     private HeadgearSpring[] springsFor(WardenGirlEntity animatable) {
@@ -584,6 +591,11 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         // judged together on screen.
         double armScale = swingAmount * AnimParams.WALK_ARM_AMP_SCALE.get();
         double legScale = swingAmount * AnimParams.WALK_LEG_AMP_SCALE.get();
+        // T9 임시. 달리기 가중치는 상태가 아니라 이번 프레임의 limbSwingAmount 하나로 정한다.
+        double run = runWeight(animatable, swingAmount);
+        lastSwing = swingAmount;
+        lastRun = run;
+        armScale *= 1.0D + clamp(AnimParams.RUN_ARM_GAIN.get(), 0.0D, 0.40D) * run;
         for (Map.Entry<String, double[]> e : pose.rotationsDeg().entrySet()) {
             double amp = weight * boneAmplitude(e.getKey(), swingAmount, armScale, legScale);
             addRotX(e.getKey(), e.getValue()[0] * amp);
@@ -593,6 +605,17 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         for (Map.Entry<String, double[]> e : pose.positionsRaw().entrySet()) {
             addPositionRaw(e.getKey(), e.getValue(),
                     weight * boneAmplitude(e.getKey(), swingAmount, armScale, legScale));
+        }
+        // T9 임시. body 를 앞으로 숙이고 head 로 정확히 같은 양을 되돌린다.
+        //
+        // body 는 head 의 직계 부모이고 둘 다 x 축 회전이므로 최종 방향은 두 각의 <b>합</b>이다
+        // (root·hip 의 x 는 걷기에서 0). 그래서 상쇄량은 근사가 아니라 부호만 뒤집은 같은 값이고,
+        // 시선 추적을 다시 계산할 필요가 없다 — 4.6 이 head 에 더하는 LookControl pitch 는
+        // 그대로 남고 body 가 만든 차이만 사라진다.
+        double lean = -clamp(AnimParams.RUN_LEAN.get(), 0.0D, 16.0D) * run * weight;
+        if (lean != 0.0D) {
+            addRotX(Bones.BODY, lean);
+            addRotX(Bones.HEAD, -lean);
         }
         double[] armR = pose.rotationsDeg().get(Bones.ARM_RIGHT);
         double[] armL = pose.rotationsDeg().get(Bones.ARM_LEFT);
@@ -617,6 +640,43 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      * one — vanilla does the same). Only the arms and legs carry an extra user scale, because those
      * are the two the silhouette is judged by.
      */
+    private static double clamp(double v, double lo, double hi) {
+        return v < lo ? lo : (v > hi ? hi : v);
+    }
+
+    /**
+     * T9 임시. 이번 프레임의 달리기 가중치 0~1. <b>상태도 히스테리시스도 없다.</b>
+     *
+     * <p>입력은 {@code limbSwingAmount} 하나다 — 이미 엔티티별이고, 바닐라가
+     * {@code speed += (min(수평이동×4, 1) − speed) × 0.4} 로 평활·클램프하므로 감쇠도 공짜다.
+     * {@code frameDistance} 는 위상 전용이고 프레임 노이즈가 커서 쓰지 않는다.
+     *
+     * <p>0 이 되는 조건은 전부 이미 있는 값이다.
+     * <ul>
+     *   <li>공중 — 낙하 중 수평 이동을 달리기로 읽지 않는다;</li>
+     *   <li>탑승 — {@code isWalkingForAnimation()} 이 이미 막지만 명시해 둔다;</li>
+     *   <li>상체 액션 중 — 근접·소닉·킁킁·피격. 상체는 액션 것이다.</li>
+     * </ul>
+     * 액션 셋은 T7·T8 이 발동할 때 {@code navigation.stop()} 을 부르므로 이 가중치가 이미
+     * 0 을 향해 떨어지고 있는 구간이다. 그리고 상쇄가 정확하므로 이 게이트가 켜지고 꺼져도
+     * <b>최종 시선은 바뀌지 않는다</b> — 튀는 것은 몸통뿐이다.
+     */
+    private static double runWeight(WardenGirlEntity a, double swingAmount) {
+        if (!a.onGround() || a.isPassenger()) {
+            return 0.0D;
+        }
+        if (a.getSonicTime() > 0 || a.getAttackTime() > 0 || a.getSniffTime() > 0
+                || a.hurtTime != 0) {
+            return 0.0D;
+        }
+        double start = AnimParams.RUN_START.get();
+        double full = AnimParams.RUN_FULL.get();
+        if (full - start < 1.0E-6D) {
+            return swingAmount > start ? 1.0D : 0.0D;
+        }
+        return clamp((swingAmount - start) / (full - start), 0.0D, 1.0D);
+    }
+
     private static double boneAmplitude(String bone, double swingAmount, double armScale,
                                         double legScale) {
         return switch (bone) {

@@ -636,6 +636,46 @@ public final class AnimParams {
             "걷기 상시 상체 기울기 (4.4.2 body.xRot -4). 음수가 앞으로 숙임. 0 이면 수직",
             "body");
 
+    // ---- T9 달리기 (임시 튜닝용) ----------------------------------------------------------
+    //
+    // 별도 run 클립도, 달리기 상태도 없다. 실제 이동량이 만드는 limbSwingAmount 하나로 0~1
+    // 가중치를 만들고, 그 위에 상체 기울임과 팔 증폭만 얹는다. 다리·보폭·재생 헤드는 기존
+    // 자동 계산 그대로다 — cycleBlocks 가 다리 진폭에서만 보폭을 유도하므로 팔과 상체를
+    // 건드려도 접지 비율 1.0 이 깨지지 않는다.
+    //
+    // 아래 다섯 개는 사람이 화면에서 값을 고르기 위한 임시 노브다. 값이 정해지면
+    // run_lean / run_arm_gain 만 상수로 굳히고 나머지와 이 주석은 지운다.
+
+    /** 사람이 양수로 넣는다. 내부에서 앞으로(음수) 적용한다. */
+    public static final Param RUN_LEAN = addShape("run_lean", 8.0D, 0.0D, 16.0D,
+            "deg", "T9",
+            "빠르게 이동할 때 body 에 더하는 전방 기울임. 양수 입력 = 앞으로. "
+                    + "head 가 같은 양을 반대로 상쇄하므로 최종 시선은 변하지 않는다",
+            "body", "head");
+
+    public static final Param RUN_ARM_GAIN = addShape("run_arm_gain", 0.20D, 0.0D, 0.40D,
+            "ratio", "T9",
+            "빠르게 이동할 때 걷기 팔 진폭에 더하는 비율. 0.20 = +20%",
+            "arm_right", "arm_left");
+
+    /** {@code limbSwingAmount} 가 이 값 이하면 달리기 가중치 0. 평상시 걷기 값이어야 한다. */
+    public static final Param RUN_START = addShape("run_start", 0.50D, 0.0D, 1.0D,
+            "ratio", "T9",
+            "달리기 가중치가 0 인 limbSwingAmount. 실측: 배회·1.0배 추격에서 0.457",
+            "body", "head", "arm_right", "arm_left");
+
+    /** 이 값 이상이면 달리기 가중치 1. 추격 속도에서 실측한 값이어야 한다. */
+    public static final Param RUN_FULL = addShape("run_full", 0.72D, 0.0D, 1.0D,
+            "ratio", "T9",
+            "달리기 가중치가 1 인 limbSwingAmount. 실측: 1.3배 추격에서 0.772",
+            "body", "head", "arm_right", "arm_left");
+
+    /** 서버가 읽는다. T7 추격의 navigation 속도 배율. */
+    public static final Param PURSUE_SPEED = addShape("pursue_speed", 1.3D, 0.5D, 2.0D,
+            "ratio", "T9",
+            "전투 추적 중 navigation 속도 배율. 평상시 배회는 1.0 그대로다",
+            "(서버 이동)");
+
     /**
      * 걷기 종료 유예, 틱. 임계 미만이 이만큼 <em>연속</em>되어야 걷기를 끝낸다.
      *
