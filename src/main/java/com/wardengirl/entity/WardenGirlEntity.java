@@ -5,7 +5,9 @@ import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.Attribute;
@@ -219,6 +221,67 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         }
         this.ownerUuid = owner;
         return true;
+    }
+
+    // ---- T12 소유 관계·전투 대상 공통 판정 ---------------------------------------------------
+    //
+    // 설계서 4.3. 목표 선정, 근접, 소닉 피해, 소닉 넉백, 복수 목표 선정이 전부 이 두 메서드를
+    // 다시 부른다 — 대상마다 조건을 복사하지 않는 것이 이 태스크의 전부다.
+    //
+    // <b>서버 전용 판정이다.</b> owner UUID 는 SynchedEntityData 로 내보내지 않으므로 클라이언트
+    // 인스턴스의 ownerUuid 는 항상 null 이다. 렌더링·클라이언트 예측에 쓰면 안 된다.
+
+    /**
+     * 이 워든걸이 <b>보호</b>하는 대상인가. 설계서 4.3 의 {@code isOwnerOrSameOwnerWardenGirl}.
+     *
+     * <pre>
+     *   target == null                          → false
+     *   이 개체가 야생(owner 없음)               → false   (보호 대상 자체가 성립하지 않는다)
+     *   target 의 UUID == 이 개체의 owner UUID   → true    (소유자 본인)
+     *   target 이 워든걸이고 owner UUID 가 같다  → true
+     * </pre>
+     *
+     * <p>야생 워든걸 두 마리는 <b>false</b> 다 — 위의 야생 조기 반환이 그것까지 함께 막는다.
+     * 소유자가 다른 워든걸도 false 이므로 추가 보호를 받지 않는다.
+     *
+     * <p>전역 owner 값도, 현재 플레이어도, 첫 번째 플레이어 검색도 쓰지 않는다. 비교는 두
+     * 엔티티 인스턴스의 필드 사이에서만 일어나므로 소유자 플레이어 엔티티를 서버 전체에서
+     * 찾을 필요가 없다 — 소유자가 오프라인이거나 다른 차원이어도 같은 답을 낸다.
+     */
+    public boolean isOwnerOrSameOwnerWardenGirl(@javax.annotation.Nullable Entity target) {
+        java.util.UUID mine = this.ownerUuid;
+        if (target == null || mine == null) {
+            return false;
+        }
+        if (mine.equals(target.getUUID())) {
+            return true;                        // 소유자 본인. 플레이어의 엔티티 UUID = 프로필 UUID
+        }
+        return target instanceof WardenGirlEntity other && mine.equals(other.ownerUuid);
+    }
+
+    /**
+     * 보호 대상만 추가로 거절하고 나머지는 바닐라 판정에 맡긴다.
+     *
+     * <p>{@code canAttack} 은 {@code LivingEntity} 에 선언되어 있고 {@code Mob} 은 이것을
+     * 재정의하지 않는다(1.20.1 확인). {@code TargetingConditions.forCombat().test(공격자, 대상)}
+     * 이 내부에서 이것을 부르므로, 목표 탐색이 그 조건을 거치기만 하면 필터가 자동으로 걸린다.
+     *
+     * <p>호출처를 전부 확인했다 — 전부 <b>목표 선정</b> 경로다({@code TargetingConditions},
+     * {@code TargetGoal}, brain 의 {@code StartAttacking} / {@code StopAttackingIfTargetInvalid}
+     * 등). 피해·충돌·포션 경로에는 없다. 즉 이 재정의는 <b>들어오는 피해를 막지 않는다</b> —
+     * 소유자는 여전히 자기 워든걸을 때릴 수 있다. T12 는 대상 필터이지 면역이 아니다.
+     */
+    @Override
+    public boolean canAttack(LivingEntity target) {
+        return !isOwnerOrSameOwnerWardenGirl(target) && super.canAttack(target);
+    }
+
+    /**
+     * 지금 이 순간 실제로 공격할 수 있는 대상인가. 목표 선정·유지·<b>최종 방송 직전</b>이 모두
+     * 이 하나를 부른다. 죽음·제거는 여기서, 보호와 바닐라 규칙은 {@link #canAttack} 에서 본다.
+     */
+    public boolean isValidCombatTarget(@javax.annotation.Nullable LivingEntity target) {
+        return target != null && target.isAlive() && !target.isRemoved() && canAttack(target);
     }
 
     public long getPowerStacks() {

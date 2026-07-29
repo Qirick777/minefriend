@@ -128,9 +128,13 @@ public class WardenGirlSonicBoomGoal extends Goal {
         return path != null && !path.canReach();
     }
 
+    /**
+     * 충전 유지 판정. {@code hurtTime} 은 여전히 보지 않는다(T8 규칙 유지) — 대신 죽음·제거·
+     * 보호 대상 전환을 T12 공통 판정으로 함께 본다.
+     */
     @Override
     public boolean canContinueToUse() {
-        return this.target != null && this.target.isAlive() && !cancelled()
+        return this.mob.isValidCombatTarget(this.target) && !cancelled()
                 && this.ticks < AnimRegistry.SONIC_LENGTH_TICKS;
     }
 
@@ -166,6 +170,12 @@ public class WardenGirlSonicBoomGoal extends Goal {
     private void emit() {
         if (!(this.mob.level() instanceof ServerLevel server)) {
             return;
+        }
+        // 방출 직전 마지막 재검사. T16 이 여기에 피해와 넉백을 붙이므로, 그때 조건을 새로
+        // 쓰지 않도록 지금부터 이 한 줄이 관문이다. canContinueToUse 는 goalSelector 가
+        // 두 틱에 한 번만 평가하므로 방출 틱과 한 틱 어긋날 수 있다 — 그 틈을 여기서 막는다.
+        if (!this.mob.isValidCombatTarget(this.target)) {
+            return;                             // 이번 방출 회차를 시작하지 않는다.
         }
         Vec3 from = this.mob.position().add(0.0D, 1.6D, 0.0D);
         Vec3 delta = this.target.getEyePosition().subtract(from);

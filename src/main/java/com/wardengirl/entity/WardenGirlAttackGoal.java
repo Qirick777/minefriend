@@ -95,9 +95,14 @@ public class WardenGirlAttackGoal extends Goal {
         return this.target != null;
     }
 
+    /**
+     * 대상 유지 판정. 죽음·제거·보호 대상 전환을 한 번에 본다 — T12 공통 판정 재사용.
+     * 대상 <b>최초 선정</b>은 {@link WardenGirlHostiles#nearest} 가 {@code TargetingConditions
+     * .forCombat()} 을 통과시키면서 이미 같은 필터를 건다.
+     */
     @Override
     public boolean canContinueToUse() {
-        if (this.target == null || !this.target.isAlive() || blocked() || this.mob.isPassenger()) {
+        if (!this.mob.isValidCombatTarget(this.target) || blocked() || this.mob.isPassenger()) {
             return false;
         }
         if (this.ticks >= 0) {
@@ -140,6 +145,12 @@ public class WardenGirlAttackGoal extends Goal {
             this.approach = 0;
             if (this.mob.isMeleeOnCooldown()) {
                 return;                         // 옆에 붙어 기다린다. 추적은 끊기지 않는다.
+            }
+            // 방송 직전 마지막 재검사. 여기가 T12.5 에서 실제 피해를 붙일 자리이므로, 그때
+            // 조건을 다시 쓰지 않도록 지금부터 이 한 줄이 관문이다. 사거리는 바로 위 if 가,
+            // 죽음·제거·보호 대상 전환은 isValidCombatTarget 이 본다.
+            if (!this.mob.isValidCombatTarget(this.target)) {
+                return;                         // 이번 공격 회차를 시작하지 않는다.
             }
             this.ticks = 0;
             this.mob.startMeleeCooldown(MELEE_COOLDOWN);

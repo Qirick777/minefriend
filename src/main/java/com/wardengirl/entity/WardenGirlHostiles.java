@@ -41,7 +41,14 @@ public final class WardenGirlHostiles {
         return e instanceof Zombie;
     }
 
-    /** 사거리 안에서 가장 가까운 적. 없으면 {@code null}. */
+    /**
+     * 사거리 안에서 가장 가까운 적. 없으면 {@code null}.
+     *
+     * <p>{@code TargetingConditions.forCombat()} 을 쓰므로 <b>여기서 이미 공통 필터가 걸린다</b> —
+     * {@code EntityGetter.getNearestEntity} 가 후보마다 {@code NEAREST.test(mob, 후보)} 를 부르고,
+     * {@code TargetingConditions.test} 는 전투 모드일 때 {@code 공격자.canAttack(대상)} 을 검사한다
+     * (1.20.1 바이트코드 확인). 그래서 이 자리에 중복 필터를 넣지 않았다.
+     */
     public static LivingEntity nearest(WardenGirlEntity mob) {
         AABB box = mob.getBoundingBox().inflate(RANGE_XZ, RANGE_Y, RANGE_XZ);
         return mob.level().getNearestEntity(Zombie.class, NEAREST, mob,
@@ -59,11 +66,16 @@ public final class WardenGirlHostiles {
      *
      * <p>{@code getTarget()} 은 보지 않는다. 뒤쪽·사거리 밖·수직 범위 밖은 제외되므로 멀리 있는
      * 좀비 때문에 성립하지 않는다.
+     *
+     * <p>이쪽은 {@code getEntitiesOfClass} 라 {@code TargetingConditions} 를 거치지 않는다. 그래서
+     * {@link WardenGirlEntity#isValidCombatTarget} 을 직접 부른다 — {@link #nearest} 와 <b>같은</b>
+     * 보호 규칙을 쓰기 위해서다. 보호 대상은 군중 수에 들어가지 않는다. 수평·수직 사거리는
+     * 그대로 {@link #inBoomRange} 가 정하므로 기존 좀비 판정 범위는 바뀌지 않는다.
      */
     public static int frontCrowd(WardenGirlEntity mob) {
         AABB box = mob.getBoundingBox().inflate(RANGE_XZ, RANGE_Y, RANGE_XZ);
         List<Zombie> list = mob.level().getEntitiesOfClass(Zombie.class, box,
-                z -> z.isAlive() && isHostile(z) && inBoomRange(mob, z));
+                z -> isHostile(z) && mob.isValidCombatTarget(z) && inBoomRange(mob, z));
         int n = 0;
         for (Zombie z : list) {
             double azimuth = Math.toDegrees(Math.atan2(z.getZ() - mob.getZ(),
