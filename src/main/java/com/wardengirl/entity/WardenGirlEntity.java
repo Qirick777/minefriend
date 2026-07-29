@@ -69,11 +69,23 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
      * 3 / 29 / 30 / 46~52 / 54 / 55 / 60, {@code Mob} 20 이다 — 세 클래스의
      * {@code handleEntityEvent} switch 를 바이트코드에서 전부 확인했다. 61 은 비어 있고,
      * 이 프로젝트에서 {@code broadcastEntityEvent} 를 쓰는 다른 곳도 없다.
+     *
+     * <h2>엔티티 계통만 보면 부족하다 — 21 / 35 / 63 은 쓸 수 없다</h2>
+     *
+     * <p>{@code ClientPacketListener.handleEntityEvent} 가 {@code entity.handleEntityEvent} 를
+     * 부르기 <b>전에</b> {@code lookupswitch {21, 35, 63}} 로 세 값을 가로챈다 — 각각
+     * {@code GuardianAttackSoundInstance}, 토템 파티클, {@code SnifferSoundInstance} 다.
+     * 가로챈 뒤 {@code goto} 로 빠져나가므로 우리 {@code handleEntityEvent} 는 아예 호출되지
+     * 않고, 63 은 {@code (Sniffer) entity} 캐스트에서 {@code ClassCastException} 까지 낸다.
+     * 실제로 63 을 쓴 첫 구현이 그렇게 실패했다. 61 · 62 · 64 는 이 세 값이 아니다.
      */
     public static final byte EVENT_SNIFF = 61;
 
     /** 4.8 기본 공격 시작 통지. 61 과 같은 이유로 62 도 비어 있다. */
     public static final byte EVENT_ATTACK = 62;
+
+    /** 4.9 소닉붐 시작 통지. 63 은 {@code ClientPacketListener} 가 가로채므로 64 다. */
+    public static final byte EVENT_SONIC = 64;
 
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
@@ -116,6 +128,9 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         // T7 임시 — 좀비를 향해 걸어가 사거리에서 18틱 공격 모션만 낸다. 피해 없음.
         // 지울 때는 이 한 줄과 WardenGirlAttackGoal 파일만 지우면 된다.
         this.goalSelector.addGoal(3, new WardenGirlAttackGoal(this));
+        // T8 임시 — 근접이 불가하거나 전방에 좀비가 몰리면 소닉붐. 피해 없음.
+        // 지울 때는 이 한 줄과 WardenGirlSonicBoomGoal 파일만 지우면 된다.
+        this.goalSelector.addGoal(2, new WardenGirlSonicBoomGoal(this));
         this.goalSelector.addGoal(7, new LookAtPlayerGoal(this, Player.class, 12.0F));
         this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
     }
@@ -394,12 +409,35 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         return this.attackTime;
     }
 
+    /** 4.9 소닉붐 재생 시간. 같은 규약. */
+    private int sonicTime;
+
+    public int getSonicTime() {
+        return this.sonicTime;
+    }
+
+    /**
+     * 근접과 소닉붐이 <b>함께 쓰는</b> 서버 공격 쿨다운(틱). Goal 마다 따로 두지 않는다 —
+     * 따로 두면 근접 직후 소닉붐이 겹쳐 나간다. 서버에서만 감소한다.
+     */
+    private int attackCooldown;
+
+    public boolean isAttackOnCooldown() {
+        return this.attackCooldown > 0;
+    }
+
+    public void startAttackCooldown(int ticks) {
+        this.attackCooldown = ticks;
+    }
+
     @Override
     public void handleEntityEvent(byte id) {
         if (id == EVENT_SNIFF) {
             this.sniffTime = (int) Math.round(AnimRegistry.SNIFF_LENGTH_TICKS);
         } else if (id == EVENT_ATTACK) {
             this.attackTime = (int) Math.round(AnimRegistry.ATTACK_LENGTH_TICKS);
+        } else if (id == EVENT_SONIC) {
+            this.sonicTime = (int) Math.round(AnimRegistry.SONIC_LENGTH_TICKS);
         } else {
             super.handleEntityEvent(id);
         }
@@ -420,6 +458,11 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
             if (this.attackTime > 0) {
                 this.attackTime--;
             }
+            if (this.sonicTime > 0) {
+                this.sonicTime--;
+            }
+        } else if (this.attackCooldown > 0) {
+            this.attackCooldown--;
         }
     }
 

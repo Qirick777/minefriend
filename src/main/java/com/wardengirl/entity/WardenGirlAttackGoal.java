@@ -2,9 +2,6 @@ package com.wardengirl.entity;
 
 import com.wardengirl.anim.AnimRegistry;
 import net.minecraft.world.entity.ai.goal.Goal;
-import net.minecraft.world.entity.ai.targeting.TargetingConditions;
-import net.minecraft.world.entity.monster.Zombie;
-import net.minecraft.world.phys.AABB;
 
 import java.util.EnumSet;
 
@@ -18,8 +15,7 @@ import java.util.EnumSet;
  *
  * <h2>좀비는 임시 대상이다</h2>
  *
- * <b>적대 기준의 절대 규칙이 아니다.</b> 공격 모션을 화면에서 반복해 보기 위한 표적일 뿐이며,
- * 범용 적대·진영·태그 체계를 만들지 않았다. 대상 판정은 {@link #TARGET} 한 곳에 모여 있다.
+ * <b>적대 기준의 절대 규칙이 아니다.</b> 대상 판정은 {@link WardenGirlHostiles} 한 곳에만 있다.
  *
  * <h2>피해가 없다</h2>
  *
@@ -33,19 +29,11 @@ import java.util.EnumSet;
  */
 public class WardenGirlAttackGoal extends Goal {
 
-    /** 좀비를 찾는 반경. */
-    private static final double SEARCH = 16.0D;
-    /** 모션이 끝난 뒤 재발동 금지 틱. */
-    private static final int COOLDOWN = 20;
     /** 접근 제한 시간. 좀비가 도망가거나 길이 막히면 포기한다. */
     private static final int APPROACH_LIMIT = 200;
 
-    /** 대상 규약. 관전자·무적 제외는 바닐라 것을 그대로 쓴다. */
-    private static final TargetingConditions TARGET =
-            TargetingConditions.forCombat().range(SEARCH).ignoreLineOfSight();
-
     private final WardenGirlEntity mob;
-    private Zombie target;
+    private net.minecraft.world.entity.LivingEntity target;
 
     /**
      * 바닐라 근접 사거리 제곱. {@code MeleeAttackGoal.getAttackReachSqr} 와 같은 식이다 —
@@ -60,8 +48,6 @@ public class WardenGirlAttackGoal extends Goal {
     /** 재생 나이(틱). 음수면 아직 접근 중이다. */
     private int ticks = -1;
     private int approach;
-    private int cooldown;
-    private int lastTick = Integer.MIN_VALUE;
 
     public WardenGirlAttackGoal(WardenGirlEntity mob) {
         this.mob = mob;
@@ -78,28 +64,13 @@ public class WardenGirlAttackGoal extends Goal {
         return this.mob.hurtTime != 0 || this.mob.isSignTest();
     }
 
-    private Zombie findZombie() {
-        AABB box = this.mob.getBoundingBox().inflate(SEARCH);
-        return this.mob.level().getNearestEntity(Zombie.class, TARGET, this.mob,
-                this.mob.getX(), this.mob.getEyeY(), this.mob.getZ(), box);
-    }
-
     @Override
     public boolean canUse() {
-        int tick = this.mob.tickCount;
-        int elapsed = this.lastTick == Integer.MIN_VALUE ? 1 : tick - this.lastTick;
-        this.lastTick = tick;
-        if (elapsed < 0) {
-            elapsed = 1;
-        }
-        if (this.cooldown > 0) {
-            this.cooldown -= elapsed;
+        // 쿨다운은 소닉붐과 공유한다. Goal 자체 카운터를 두지 않는다.
+        if (this.mob.isAttackOnCooldown() || blocked() || this.mob.isPassenger()) {
             return false;
         }
-        if (blocked() || this.mob.isPassenger()) {
-            return false;
-        }
-        this.target = findZombie();
+        this.target = WardenGirlHostiles.nearest(this.mob);
         return this.target != null;
     }
 
@@ -138,6 +109,7 @@ public class WardenGirlAttackGoal extends Goal {
         if (this.mob.distanceToSqr(this.target) <= reachSqr(this.target)) {
             this.mob.getNavigation().stop();
             this.ticks = 0;
+            this.mob.startAttackCooldown(WardenGirlSonicBoomGoal.SHARED_COOLDOWN);
             this.mob.level().broadcastEntityEvent(this.mob, WardenGirlEntity.EVENT_ATTACK);
             return;
         }
@@ -152,6 +124,5 @@ public class WardenGirlAttackGoal extends Goal {
         this.target = null;
         this.ticks = -1;
         this.approach = 0;
-        this.cooldown = COOLDOWN;
     }
 }

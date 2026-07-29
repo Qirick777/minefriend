@@ -140,4 +140,18 @@ public final class AnimRegistry {
 
     /** json {@code animation_length: 0.9} 초 × 20. */
     public static final double ATTACK_LENGTH_TICKS = 18.0D;
+
+    /**
+     * 4.9 소닉붐. 60틱. <b>T8 첫 후보이며 사람 승인 전이다.</b>
+     *
+     * <p>길이 60 과 방출 34 는 바닐라 {@code SonicBoom} 의 {@code DURATION} /
+     * {@code TICKS_BEFORE_PLAYING_SOUND} 와 같은 값이다.
+     */
+    public static final String SONIC_BOOM = "sonic_boom";
+
+    /** json {@code animation_length: 3.0} 초 × 20. */
+    public static final double SONIC_LENGTH_TICKS = 60.0D;
+
+    /** 시작 후 이 틱에 팔이 완전히 펼쳐지고 파티클·사운드가 나간다. */
+    public static final int SONIC_EMIT_TICK = 34;
 }

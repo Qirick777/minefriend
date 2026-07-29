@@ -633,6 +633,8 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     private final Map<Integer, Integer> lastHurtTime = new HashMap<>();
     /** 직전 프레임의 {@code attackTime}, 엔티티별. {@link #lastSniffTime} 과 같은 규약. */
     private final Map<Integer, Integer> lastAttackTime = new HashMap<>();
+    /** 직전 프레임의 {@code sonicTime}, 엔티티별. 같은 규약. */
+    private final Map<Integer, Integer> lastSonicTime = new HashMap<>();
     /**
      * 직전 프레임의 {@code sniffTime}, 엔티티별. 4.11 피격의 {@link #lastHurtTime} 과 같은 규약 —
      * 서버가 올린 값의 <b>상승 에지</b>가 재생 시작이다. 거리·각도·확률은 여기서 보지 않는다.
@@ -754,6 +756,23 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             }
         }
         // ===== T7 끝 =====
+        // ===== T8 소닉붐. 판정은 서버 WardenGirlSonicBoomGoal 이 한다 ========================
+        int sonic = animatable.getSonicTime();
+        Integer prevSonicBoxed = this.lastSonicTime.put(animatable.getId(), sonic);
+        if (this.lastSonicTime.size() > MAX_TRACKED_ENTITIES) {
+            this.lastSonicTime.clear();
+        }
+        if (sonic > (prevSonicBoxed == null ? 0 : prevSonicBoxed)) {
+            software.bernie.geckolib.core.animation.Animation sonicClip =
+                    getAnimation(animatable, AnimRegistry.SONIC_BOOM);
+            double sonicElapsed = Math.max(0.0D, AnimRegistry.SONIC_LENGTH_TICKS - sonic);
+            if (sonicClip != null && sonicElapsed < sonicClip.length()) {
+                this.sniffInterrupt.remove(animatable.getId());
+                action.syncTo(-animatable.tickCount - 3, AnimRegistry.SONIC_BOOM,
+                        sonicClip.length(), now - sonicElapsed);
+            }
+        }
+        // ===== T8 끝 =====
         String requested = hurtStarted ? AnimRegistry.IDLE_HURT : animatable.getActionClip();
         if (hurtStarted) {
             software.bernie.geckolib.core.animation.Animation hurtClip =
@@ -767,7 +786,8 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             // driven from different places and the flinch owns the slot until it ends on its own.
             if (!AnimRegistry.IDLE_HURT.equals(action.clip())
                     && !AnimRegistry.IDLE_SNIFF.equals(action.clip())
-                    && !AnimRegistry.ATTACK.equals(action.clip())) {
+                    && !AnimRegistry.ATTACK.equals(action.clip())
+                    && !AnimRegistry.SONIC_BOOM.equals(action.clip())) {
                 action.stop();
             }
         } else {
