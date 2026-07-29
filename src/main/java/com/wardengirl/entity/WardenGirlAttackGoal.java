@@ -39,6 +39,15 @@ public class WardenGirlAttackGoal extends Goal {
      */
     public static final int MELEE_COOLDOWN = 19;
 
+    /**
+     * 전투 추적 중 navigation 속도 배율. 평상시 배회는 {@code 1.0} 그대로다.
+     *
+     * <p>클라이언트는 이 값을 모른다 — 실제 이동량이 커지면 {@code limbSwingAmount} 가 올라
+     * 보폭·다리 진폭·상체 기울임이 따라 커진다. 나중에 소유자를 따라갈 때도 같은 배율을
+     * 넘기면 같은 표현이 나온다.
+     */
+    private static final double PURSUE_SPEED = 1.3D;
+
     private final WardenGirlEntity mob;
     private net.minecraft.world.entity.LivingEntity target;
 
@@ -102,7 +111,7 @@ public class WardenGirlAttackGoal extends Goal {
         this.ticks = -1;
         this.approach = 0;
         if (this.target != null) {
-            this.mob.getNavigation().moveTo(this.target, com.wardengirl.anim.AnimParams.PURSUE_SPEED.get());
+            this.mob.getNavigation().moveTo(this.target, PURSUE_SPEED);
         }
     }
 
@@ -139,7 +148,7 @@ public class WardenGirlAttackGoal extends Goal {
         }
         this.approach++;
         if (this.approach % 10 == 0) {
-            this.mob.getNavigation().moveTo(this.target, com.wardengirl.anim.AnimParams.PURSUE_SPEED.get());
+            this.mob.getNavigation().moveTo(this.target, PURSUE_SPEED);
         }
     }
 

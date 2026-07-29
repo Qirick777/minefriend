@@ -348,14 +348,6 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     /** Bounded so despawned entities cannot leak; springs are cheap to re-seed. */
     private static final int MAX_TRACKED_ENTITIES = 64;
 
-    /**
-     * T9 임시. {@code /wg run show} 가 읽는 마지막 프레임 값. 정적이라 여러 마리가 있으면
-     * 마지막으로 그려진 개체의 값이다 — 혼자 튜닝하는 용도라 그대로 둔다. 최종 수치가
-     * 정해지면 명령어와 함께 지운다.
-     */
-    static double lastSwing;
-    static double lastRun;
-
     /** {right, left}, in the order of {@link Bones#HEADGEAR}. */
     private HeadgearSpring[] springsFor(WardenGirlEntity animatable) {
         if (this.springs.size() > MAX_TRACKED_ENTITIES) {
@@ -591,11 +583,9 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         // judged together on screen.
         double armScale = swingAmount * AnimParams.WALK_ARM_AMP_SCALE.get();
         double legScale = swingAmount * AnimParams.WALK_LEG_AMP_SCALE.get();
-        // T9 임시. 달리기 가중치는 상태가 아니라 이번 프레임의 limbSwingAmount 하나로 정한다.
+        // 4.4.4 달리기. 가중치는 상태가 아니라 이번 프레임의 limbSwingAmount 하나로 정한다.
         double run = runWeight(animatable, swingAmount);
-        lastSwing = swingAmount;
-        lastRun = run;
-        armScale *= 1.0D + clamp(AnimParams.RUN_ARM_GAIN.get(), 0.0D, 0.40D) * run;
+        armScale *= 1.0D + RUN_ARM_GAIN * run;
         for (Map.Entry<String, double[]> e : pose.rotationsDeg().entrySet()) {
             double amp = weight * boneAmplitude(e.getKey(), swingAmount, armScale, legScale);
             addRotX(e.getKey(), e.getValue()[0] * amp);
@@ -606,13 +596,13 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             addPositionRaw(e.getKey(), e.getValue(),
                     weight * boneAmplitude(e.getKey(), swingAmount, armScale, legScale));
         }
-        // T9 임시. body 를 앞으로 숙이고 head 로 정확히 같은 양을 되돌린다.
+        // body 를 앞으로 숙이고 head 로 정확히 같은 양을 되돌린다.
         //
         // body 는 head 의 직계 부모이고 둘 다 x 축 회전이므로 최종 방향은 두 각의 <b>합</b>이다
         // (root·hip 의 x 는 걷기에서 0). 그래서 상쇄량은 근사가 아니라 부호만 뒤집은 같은 값이고,
         // 시선 추적을 다시 계산할 필요가 없다 — 4.6 이 head 에 더하는 LookControl pitch 는
         // 그대로 남고 body 가 만든 차이만 사라진다.
-        double lean = -clamp(AnimParams.RUN_LEAN.get(), 0.0D, 16.0D) * run * weight;
+        double lean = -RUN_LEAN_DEG * run * weight;
         if (lean != 0.0D) {
             addRotX(Bones.BODY, lean);
             addRotX(Bones.HEAD, -lean);
@@ -640,12 +630,32 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      * one — vanilla does the same). Only the arms and legs carry an extra user scale, because those
      * are the two the silhouette is judged by.
      */
+    /**
+     * 4.4.4 달리기 표현. <b>별도 run 클립도, 달리기 상태도, 동기화도 없다.</b>
+     *
+     * <p>다리 진폭·보폭·root 바운스는 이미 실제 이동량을 따라 커진다 — 여기 네 수는 그 위에
+     * 상체만 얹는다. {@code cycleBlocks} 가 보폭을 <em>다리</em> 진폭에서만 유도하므로 팔과
+     * 상체를 건드려도 접지 비율 1.0 이 깨지지 않는다.
+     *
+     * <p>{@code RUN_START} / {@code RUN_FULL} 은 실측값이다 — 배회와 1.0배 추격에서
+     * {@code limbSwingAmount} 가 0.457, 1.3배 추격에서 0.772 로 안정했다. 두 구간 사이에
+     * 여유를 두었으므로 평상시 이동에서는 가중치가 0, 추격에서는 1 이다.
+     *
+     * <p>기울임과 팔 증폭 값은 사람이 화면에서 고른 것이다.
+     */
+    private static final double RUN_START = 0.50D;
+    private static final double RUN_FULL = 0.72D;
+    /** body 에 더하는 최대 전방 기울임(도). head 가 같은 양을 반대로 상쇄한다. */
+    private static final double RUN_LEAN_DEG = 3.0D;
+    /** 걷기 팔 진폭에 더하는 최대 비율. */
+    private static final double RUN_ARM_GAIN = 0.20D;
+
     private static double clamp(double v, double lo, double hi) {
         return v < lo ? lo : (v > hi ? hi : v);
     }
 
     /**
-     * T9 임시. 이번 프레임의 달리기 가중치 0~1. <b>상태도 히스테리시스도 없다.</b>
+     * 이번 프레임의 달리기 가중치 0~1. <b>상태도 히스테리시스도 없다.</b>
      *
      * <p>입력은 {@code limbSwingAmount} 하나다 — 이미 엔티티별이고, 바닐라가
      * {@code speed += (min(수평이동×4, 1) − speed) × 0.4} 로 평활·클램프하므로 감쇠도 공짜다.
@@ -669,12 +679,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
                 || a.hurtTime != 0) {
             return 0.0D;
         }
-        double start = AnimParams.RUN_START.get();
-        double full = AnimParams.RUN_FULL.get();
-        if (full - start < 1.0E-6D) {
-            return swingAmount > start ? 1.0D : 0.0D;
-        }
-        return clamp((swingAmount - start) / (full - start), 0.0D, 1.0D);
+        return clamp((swingAmount - RUN_START) / (RUN_FULL - RUN_START), 0.0D, 1.0D);
     }
 
     private static double boneAmplitude(String bone, double swingAmount, double armScale,
