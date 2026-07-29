@@ -64,10 +64,15 @@ public class WardenGirlAttackGoal extends Goal {
         return this.mob.hurtTime != 0 || this.mob.isSignTest();
     }
 
+    /**
+     * <b>공유 쿨다운을 여기서 보지 않는다.</b> 보던 때에는 쿨다운이 공격뿐 아니라 대상 탐색과
+     * 접근까지 함께 막아, 공격 모션이 끝나면 몹이 82틱 동안 완전히 멈춰 섰다(실측: 공격 t=195,
+     * 모션 종료 t=214, 다음 시작 t=296, 그 사이 활성 Goal 없음 · 경로 null · 속도 0.0000).
+     * 쿨다운은 {@link #tick()} 의 사거리 도달 지점에서만 본다 — 막히는 것은 다음 모션뿐이다.
+     */
     @Override
     public boolean canUse() {
-        // 쿨다운은 소닉붐과 공유한다. Goal 자체 카운터를 두지 않는다.
-        if (this.mob.isAttackOnCooldown() || blocked() || this.mob.isPassenger()) {
+        if (blocked() || this.mob.isPassenger()) {
             return false;
         }
         this.target = WardenGirlHostiles.nearest(this.mob);
@@ -105,14 +110,19 @@ public class WardenGirlAttackGoal extends Goal {
             this.ticks++;
             return;
         }
-        this.approach++;
         if (this.mob.distanceToSqr(this.target) <= reachSqr(this.target)) {
             this.mob.getNavigation().stop();
+            // 사거리 안이면 접근이 막힌 것이 아니므로 포기 시계를 되돌린다.
+            this.approach = 0;
+            if (this.mob.isAttackOnCooldown()) {
+                return;                         // 옆에 붙어 기다린다. 추적은 끊기지 않는다.
+            }
             this.ticks = 0;
             this.mob.startAttackCooldown(WardenGirlSonicBoomGoal.SHARED_COOLDOWN);
             this.mob.level().broadcastEntityEvent(this.mob, WardenGirlEntity.EVENT_ATTACK);
             return;
         }
+        this.approach++;
         if (this.approach % 10 == 0) {
             this.mob.getNavigation().moveTo(this.target, 1.0D);
         }

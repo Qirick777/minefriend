@@ -86,12 +86,20 @@ public class WardenGirlSonicBoomGoal extends Goal {
         if (this.mob.distanceToSqr(t) <= meleeSqr) {
             return false;                       // 근접 사거리 안 — T7 이 한다
         }
-        // 도달 경로가 없다. null 검사만으로는 부족하다 — 바닐라 PathNavigation.createPath 는
-        // 닿지 못하는 대상에도 canReach()==false 인 부분 경로를 돌려준다. 기둥 위 좀비에서
-        // 실측한 값이 n=1, reach=false, distToTgt=7.00 이었고, null 만 보던 첫 구현은 그래서
-        // 한 번도 발동하지 않았다.
+        // 도달 불가는 "경로가 있는데 대상에 닿지 못한다" 하나뿐이다.
+        //
+        // 바닐라 PathNavigation.createPath 는 닿지 못하는 대상에도 canReach()==false 인 부분
+        // 경로를 돌려준다(기둥 위 좀비 실측: n=1, reach=false, distToTgt=7.00). null 만 보던
+        // 첫 구현은 그래서 한 번도 발동하지 않았다.
+        //
+        // 반대로 null 은 "도달 불가" 가 아니라 "이번 틱에는 계산하지 않았다" 다 — createPath 는
+        // canUpdatePath() 가 false 일 때(땅에 닿지 않았고 액체 속도 탑승 중도 아닐 때) A* 를
+        // 돌리지 않고 그대로 null 을 반환한다. 스폰 직후가 정확히 그 상태여서, 평지 8블록 앞의
+        // 접근 가능한 좀비에게 소닉이 오발됐다(실측 t=1 발동, 첫 접근이 t=136 까지 135틱 지연).
+        // canUpdatePath() 는 protected 라 여기서 부를 수 없으므로 그 상태의 신호인 null 을
+        // "발동하지 않음" 으로 읽는다. 땅에 닿는 다음 틱이면 정상 판정이 된다.
         Path path = this.mob.getNavigation().createPath(t, 0);
-        return path == null || !path.canReach();
+        return path != null && !path.canReach();
     }
 
     @Override
