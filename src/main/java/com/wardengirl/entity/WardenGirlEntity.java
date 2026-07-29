@@ -3,6 +3,7 @@ package com.wardengirl.entity;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.PathfinderMob;
@@ -363,7 +364,8 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     public void rideTick() {
         super.rideTick();
         if (isPassenger()) {
-            setYHeadRot(this.ridingHeadYaw);
+            setYHeadRot(Mth.rotateIfNecessary(this.ridingHeadYaw, this.yBodyRot,
+                    getMaxHeadYRot()));
         }
     }
 
