@@ -417,17 +417,39 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     }
 
     /**
-     * 근접과 소닉붐이 <b>함께 쓰는</b> 서버 공격 쿨다운(틱). Goal 마다 따로 두지 않는다 —
-     * 따로 두면 근접 직후 소닉붐이 겹쳐 나간다. 서버에서만 감소한다.
+     * 공격 쿨다운 두 개. <b>서버 정본이고 여기 말고는 어디에도 없다</b> — Goal 은 카운터를 갖지
+     * 않고 이 값을 읽고 쓰기만 한다. 서버에서만 감소한다.
+     *
+     * <p>하나로 합쳐 쓰던 때에는 소닉붐용 100틱이 근접에도 걸려, 18틱 모션이 끝난 뒤 사거리
+     * 안에 붙어 선 채 81틱을 아무 것도 하지 않았다(실측: 공격 t=108 · 208 · 308, 간격 100틱).
+     * 두 동작의 적정 간격이 다르므로 두 값으로 나눈다.
+     *
+     * <ul>
+     *   <li>{@code meleeCooldown} — 근접 공격 방송 시점에 19틱. 모션이 18틱이므로 이 값이 곧
+     *       <b>공격 시작 간격</b>이고 추가 대기가 아니다. 소닉 방출 시점에도 26틱이 걸린다 —
+     *       방출(34틱) + 26 = 60틱, 즉 소닉 모션이 끝나는 순간 근접이 풀린다.</li>
+     *   <li>{@code sonicCooldown} — <b>소닉 방출 시점에만</b> 100틱. 근접은 이 값을 건드리지
+     *       않으므로 근접을 아무리 반복해도 소닉 주기가 밀리지 않는다. 시작 간격은
+     *       34 + 100 = 134틱이다.</li>
+     * </ul>
      */
-    private int attackCooldown;
+    private int meleeCooldown;
+    private int sonicCooldown;
 
-    public boolean isAttackOnCooldown() {
-        return this.attackCooldown > 0;
+    public boolean isMeleeOnCooldown() {
+        return this.meleeCooldown > 0;
     }
 
-    public void startAttackCooldown(int ticks) {
-        this.attackCooldown = ticks;
+    public void startMeleeCooldown(int ticks) {
+        this.meleeCooldown = ticks;
+    }
+
+    public boolean isSonicOnCooldown() {
+        return this.sonicCooldown > 0;
+    }
+
+    public void startSonicCooldown(int ticks) {
+        this.sonicCooldown = ticks;
     }
 
     @Override
@@ -461,8 +483,13 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
             if (this.sonicTime > 0) {
                 this.sonicTime--;
             }
-        } else if (this.attackCooldown > 0) {
-            this.attackCooldown--;
+        } else {
+            if (this.meleeCooldown > 0) {
+                this.meleeCooldown--;
+            }
+            if (this.sonicCooldown > 0) {
+                this.sonicCooldown--;
+            }
         }
     }
 

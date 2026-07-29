@@ -32,6 +32,13 @@ public class WardenGirlAttackGoal extends Goal {
     /** 접근 제한 시간. 좀비가 도망가거나 길이 막히면 포기한다. */
     private static final int APPROACH_LIMIT = 200;
 
+    /**
+     * 근접 공격 시작 간격(틱). <b>모션 길이 18틱 위에 얹는 대기가 아니라 간격 그 자체다</b> —
+     * 방송한 틱에 걸고 19틱 뒤에 풀리므로, 모션이 끝나는 틱에 곧바로 다음 공격이 나간다.
+     * 소닉과 공유하던 100틱을 그대로 쓰던 때에는 모션 뒤에 81틱의 빈 시간이 남았다.
+     */
+    public static final int MELEE_COOLDOWN = 19;
+
     private final WardenGirlEntity mob;
     private net.minecraft.world.entity.LivingEntity target;
 
@@ -65,7 +72,7 @@ public class WardenGirlAttackGoal extends Goal {
     }
 
     /**
-     * <b>공유 쿨다운을 여기서 보지 않는다.</b> 보던 때에는 쿨다운이 공격뿐 아니라 대상 탐색과
+     * <b>쿨다운을 여기서 보지 않는다.</b> 보던 때에는 쿨다운이 공격뿐 아니라 대상 탐색과
      * 접근까지 함께 막아, 공격 모션이 끝나면 몹이 82틱 동안 완전히 멈춰 섰다(실측: 공격 t=195,
      * 모션 종료 t=214, 다음 시작 t=296, 그 사이 활성 Goal 없음 · 경로 null · 속도 0.0000).
      * 쿨다운은 {@link #tick()} 의 사거리 도달 지점에서만 본다 — 막히는 것은 다음 모션뿐이다.
@@ -84,10 +91,10 @@ public class WardenGirlAttackGoal extends Goal {
         if (this.target == null || !this.target.isAlive() || blocked() || this.mob.isPassenger()) {
             return false;
         }
-        if (this.ticks < 0) {
-            return this.approach < APPROACH_LIMIT;
+        if (this.ticks >= 0) {
+            return true;            // 모션 재생 중. 종료는 tick() 이 스스로 한다.
         }
-        return this.ticks < AnimRegistry.ATTACK_LENGTH_TICKS;
+        return this.approach < APPROACH_LIMIT;
     }
 
     @Override
@@ -108,17 +115,25 @@ public class WardenGirlAttackGoal extends Goal {
         if (this.ticks >= 0) {
             // 모션 재생 중. 서버는 틱만 센다 — 피해도, 판정도 없다.
             this.ticks++;
-            return;
+            if (this.ticks < AnimRegistry.ATTACK_LENGTH_TICKS) {
+                return;
+            }
+            // 모션이 끝났다. Goal 을 멈췄다 다시 켜는 대신 여기서 접근 상태로 돌아간다.
+            // canContinueToUse 로 끝내면 재시작이 goalSelector 의 전체 평가를 기다려야 하는데,
+            // Mob.serverAiStep 은 그것을 (serverTick + entityId) % 2 == 0 인 틱에만 돌린다.
+            // 그래서 19틱 쿨다운인데도 실측 간격이 20틱으로 밀렸다. tick() 은 매틱 돌므로
+            // (requiresUpdateEveryTick) 여기서 끝내면 간격이 쿨다운 값과 정확히 같아진다.
+            this.ticks = -1;
         }
         if (this.mob.distanceToSqr(this.target) <= reachSqr(this.target)) {
             this.mob.getNavigation().stop();
             // 사거리 안이면 접근이 막힌 것이 아니므로 포기 시계를 되돌린다.
             this.approach = 0;
-            if (this.mob.isAttackOnCooldown()) {
+            if (this.mob.isMeleeOnCooldown()) {
                 return;                         // 옆에 붙어 기다린다. 추적은 끊기지 않는다.
             }
             this.ticks = 0;
-            this.mob.startAttackCooldown(WardenGirlSonicBoomGoal.SHARED_COOLDOWN);
+            this.mob.startMeleeCooldown(MELEE_COOLDOWN);
             this.mob.level().broadcastEntityEvent(this.mob, WardenGirlEntity.EVENT_ATTACK);
             return;
         }

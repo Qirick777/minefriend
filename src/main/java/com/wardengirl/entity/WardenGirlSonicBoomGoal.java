@@ -34,8 +34,14 @@ import java.util.EnumSet;
  */
 public class WardenGirlSonicBoomGoal extends Goal {
 
-    /** 근접과 함께 쓰는 서버 공격 쿨다운. <b>방출(34틱) 시점</b>부터 센다. */
-    public static final int SHARED_COOLDOWN = 100;
+    /** 소닉붐 <b>전용</b> 쿨다운. 방출(34틱) 시점부터 센다 — 시작 간격은 34 + 100 = 134틱. */
+    public static final int SONIC_COOLDOWN = 100;
+
+    /**
+     * 방출 뒤 근접을 막는 시간. 34 + 26 = 60, 즉 <b>소닉 모션이 끝나는 순간</b> 근접이 풀린다.
+     * 회복 구간에 주먹이 끼어드는 것만 막고 별도의 공백은 만들지 않는다.
+     */
+    public static final int MELEE_LOCK_AFTER_EMIT = 26;
 
     private final WardenGirlEntity mob;
     private LivingEntity target;
@@ -60,7 +66,7 @@ public class WardenGirlSonicBoomGoal extends Goal {
      * 발동식.
      *
      * <pre>
-     *   공유 쿨다운 없음 && 실행 가능 상태 && 대상이 수평 15 · 수직 20 안
+     *   소닉 쿨다운 없음 && 근접 모션 중 아님 && 실행 가능 상태 && 대상이 수평 15 · 수직 20 안
      *   && ( 전방 군중 3마리 이상  ||  근접이 불가능 )
      * </pre>
      *
@@ -70,7 +76,10 @@ public class WardenGirlSonicBoomGoal extends Goal {
      */
     @Override
     public boolean canUse() {
-        if (this.mob.isAttackOnCooldown() || blocked()) {
+        // 근접 쿨다운(19틱)은 근접 모션 길이(18틱)와 사실상 같으므로, 그것을 그대로 재생 중
+        // 판정으로 쓴다. 재생 중에 소닉이 끼어들어 클립을 덮어쓰지 않고, 모션이 끝나는 틱에는
+        // 둘 다 풀려 우선순위(T8 2 < T7 3)대로 소닉이 먼저 선택될 수 있다. 새 타이머는 없다.
+        if (this.mob.isSonicOnCooldown() || this.mob.isMeleeOnCooldown() || blocked()) {
             return false;
         }
         LivingEntity t = WardenGirlHostiles.nearest(this.mob);
@@ -121,7 +130,12 @@ public class WardenGirlSonicBoomGoal extends Goal {
         if (this.target == null) {
             return;
         }
-        this.mob.getLookControl().setLookAt(this.target.position());
+        // 엔티티 오버로드다. Vec3 판이던 때에는 position() 이 대상의 <b>발</b> 좌표라 같은 높이
+        // 6블록 대상에도 서버 xRot 이 +14.31°(아래)로 고정됐고(눈 기준이면 +2.0°), 그 값이 60틱
+        // 내내 유지되다가 클립의 body 젖힘이 풀리는 47~60틱에 드러나 고개가 지면을 향한 채
+        // 복귀했다. LookControl.getWantedY 는 LivingEntity 에 눈높이를 쓰므로, 이 한 줄로
+        // 시선 목표가 emit() 의 target.getEyePosition() 과 같아진다.
+        this.mob.getLookControl().setLookAt(this.target);
         if (this.ticks == AnimRegistry.SONIC_EMIT_TICK) {
             emit();
         }
@@ -145,10 +159,9 @@ public class WardenGirlSonicBoomGoal extends Goal {
             server.sendParticles(ParticleTypes.SONIC_BOOM, p.x, p.y, p.z, 1, 0.0D, 0.0D, 0.0D, 0.0D);
         }
         this.mob.playSound(SoundEvents.WARDEN_SONIC_BOOM, 3.0F, 1.0F);
-        // 쿨다운은 타격 순간부터 센다 — 근접이 공격 방송 시점에 거는 것과 같은 규칙이다.
-        // 그래서 소닉↔소닉 최소 간격이 34 + 100 = 134틱이 된다. 재생 중(0~59틱)에는 T8 이
-        // MOVE·LOOK 을 쥐고 있고 T7 은 우선순위가 낮아 끼어들 수 없으므로 빈 구간이 없다.
-        this.mob.startAttackCooldown(WardenGirlSonicBoomGoal.SHARED_COOLDOWN);
+        // 두 쿨다운 모두 타격 순간부터 센다 — 근접이 공격 방송 시점에 거는 것과 같은 규칙이다.
+        this.mob.startSonicCooldown(SONIC_COOLDOWN);
+        this.mob.startMeleeCooldown(MELEE_LOCK_AFTER_EMIT);
     }
 
     @Override
