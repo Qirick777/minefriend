@@ -129,4 +129,15 @@ public final class AnimRegistry {
 
     /** json {@code animation_length: 1.9} 초 × 20. */
     public static final double SNIFF_LENGTH_TICKS = 38.0D;
+
+    /**
+     * 4.8 기본 공격 — 양팔 내려찍기. 18틱. <b>T7 첫 후보이며 사람 승인 전이다.</b>
+     *
+     * <p>4.12 킁킁과 같은 경로를 쓴다 — 서버 Goal 이 발동을 결정하고 표준 엔티티 사건으로 알리며,
+     * 클립은 {@code ClipSampler} 로 직접 평가해 {@code ActionMotion} 슬롯에 올린다.
+     */
+    public static final String ATTACK = "attack";
+
+    /** json {@code animation_length: 0.9} 초 × 20. */
+    public static final double ATTACK_LENGTH_TICKS = 18.0D;
 }

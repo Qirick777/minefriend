@@ -631,6 +631,8 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     private final Map<Integer, ActionMotion> actions = new HashMap<>();
     /** Previous frame's hurtTime, per entity — 4.11's trigger is its rising edge. */
     private final Map<Integer, Integer> lastHurtTime = new HashMap<>();
+    /** 직전 프레임의 {@code attackTime}, 엔티티별. {@link #lastSniffTime} 과 같은 규약. */
+    private final Map<Integer, Integer> lastAttackTime = new HashMap<>();
     /**
      * 직전 프레임의 {@code sniffTime}, 엔티티별. 4.11 피격의 {@link #lastHurtTime} 과 같은 규약 —
      * 서버가 올린 값의 <b>상승 에지</b>가 재생 시작이다. 거리·각도·확률은 여기서 보지 않는다.
@@ -734,6 +736,24 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             }
         }
         // ===== T6 끝 =====
+        // ===== T7 기본 공격. 판정은 서버 WardenGirlAttackGoal 이 한다 =========================
+        // C3 슬롯은 하나이므로 우선순위는 이 블록들의 순서가 정한다: 피격 > 공격 > 킁킁.
+        int atk = animatable.getAttackTime();
+        Integer prevAtkBoxed = this.lastAttackTime.put(animatable.getId(), atk);
+        if (this.lastAttackTime.size() > MAX_TRACKED_ENTITIES) {
+            this.lastAttackTime.clear();
+        }
+        if (atk > (prevAtkBoxed == null ? 0 : prevAtkBoxed)) {
+            software.bernie.geckolib.core.animation.Animation attackClip =
+                    getAnimation(animatable, AnimRegistry.ATTACK);
+            double atkElapsed = Math.max(0.0D, AnimRegistry.ATTACK_LENGTH_TICKS - atk);
+            if (attackClip != null && atkElapsed < attackClip.length()) {
+                this.sniffInterrupt.remove(animatable.getId());
+                action.syncTo(-animatable.tickCount - 2, AnimRegistry.ATTACK,
+                        attackClip.length(), now - atkElapsed);
+            }
+        }
+        // ===== T7 끝 =====
         String requested = hurtStarted ? AnimRegistry.IDLE_HURT : animatable.getActionClip();
         if (hurtStarted) {
             software.bernie.geckolib.core.animation.Animation hurtClip =
@@ -746,7 +766,8 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             // A running flinch is not cut short by the server's empty action slot - the two are
             // driven from different places and the flinch owns the slot until it ends on its own.
             if (!AnimRegistry.IDLE_HURT.equals(action.clip())
-                    && !AnimRegistry.IDLE_SNIFF.equals(action.clip())) {
+                    && !AnimRegistry.IDLE_SNIFF.equals(action.clip())
+                    && !AnimRegistry.ATTACK.equals(action.clip())) {
                 action.stop();
             }
         } else {

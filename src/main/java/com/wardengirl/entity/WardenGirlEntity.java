@@ -72,6 +72,9 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
      */
     public static final byte EVENT_SNIFF = 61;
 
+    /** 4.8 기본 공격 시작 통지. 61 과 같은 이유로 62 도 비어 있다. */
+    public static final byte EVENT_ATTACK = 62;
+
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
     public WardenGirlEntity(EntityType<? extends PathfinderMob> type, Level level) {
@@ -110,6 +113,9 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         // 4.12 킁킁. 플래그가 없으므로 두 시선 Goal 과 동시에 돈다 — 킁킁 중에도 고개는 계속
         // 움직인다. 우선순위는 시선보다 아래에 둔다.
         this.goalSelector.addGoal(9, new WardenGirlSniffGoal(this));
+        // T7 임시 — 좀비를 향해 걸어가 사거리에서 18틱 공격 모션만 낸다. 피해 없음.
+        // 지울 때는 이 한 줄과 WardenGirlAttackGoal 파일만 지우면 된다.
+        this.goalSelector.addGoal(3, new WardenGirlAttackGoal(this));
         this.goalSelector.addGoal(7, new LookAtPlayerGoal(this, Player.class, 12.0F));
         this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
     }
@@ -381,10 +387,19 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         return this.sniffTime;
     }
 
+    /** 4.8 공격 재생 시간. {@link #sniffTime} 과 같은 규약이다. */
+    private int attackTime;
+
+    public int getAttackTime() {
+        return this.attackTime;
+    }
+
     @Override
     public void handleEntityEvent(byte id) {
         if (id == EVENT_SNIFF) {
             this.sniffTime = (int) Math.round(AnimRegistry.SNIFF_LENGTH_TICKS);
+        } else if (id == EVENT_ATTACK) {
+            this.attackTime = (int) Math.round(AnimRegistry.ATTACK_LENGTH_TICKS);
         } else {
             super.handleEntityEvent(id);
         }
@@ -398,8 +413,13 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
             // 이 분기가 그냥 최신값을 들고 있을 뿐이고 복원도 일어나지 않는다.
             this.ridingHeadYaw = getYHeadRot();
         }
-        if (level().isClientSide && this.sniffTime > 0) {
-            this.sniffTime--;
+        if (level().isClientSide) {
+            if (this.sniffTime > 0) {
+                this.sniffTime--;
+            }
+            if (this.attackTime > 0) {
+                this.attackTime--;
+            }
         }
     }
 
