@@ -23,6 +23,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.ai.attributes.Attribute;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -171,7 +174,13 @@ public final class WardenGirlCommand {
                                         .then(Commands.argument("amount", LongArgumentType.longArg())
                                                 .executes(ctx -> powerAdd(ctx.getSource(),
                                                         EntityArgument.getEntity(ctx, "target"),
-                                                        LongArgumentType.getLong(ctx, "amount"))))))));
+                                                        LongArgumentType.getLong(ctx, "amount")))))))
+                // ---- T11 실제 Attribute 조회 -------------------------------------------------
+                .then(Commands.literal("stats")
+                        .then(Commands.literal("get")
+                                .then(Commands.argument("target", EntityArgument.entity())
+                                        .executes(ctx -> statsGet(ctx.getSource(),
+                                                EntityArgument.getEntity(ctx, "target")))))));
     }
 
     // ---- T10 /wardengirl owner|power -------------------------------------------------------
@@ -265,6 +274,43 @@ public final class WardenGirlCommand {
                 applied == amount ? ""
                         : String.format(Locale.ROOT, "%n         요청 %+d 중 %+d 만 적용됐다 "
                                 + "(0 하한 / long 상한에서 포화).", amount, applied)));
+        return 1;
+    }
+
+    // ---- T11 /wardengirl stats get ----------------------------------------------------------
+    //
+    // 공식은 여기에 없다. 스택은 엔티티 API 로, 체력·근접·저항은 살아 있는 AttributeInstance 로,
+    // 소닉은 엔티티의 getSonicDamage() 로 읽는다 — 즉 이 출력은 계산 결과의 재현이 아니라
+    // 개체가 지금 실제로 들고 있는 값이다.
+    //
+    // 소수 7자리로 낸다. 천장 미달(1019.9999390 < 1020)과 수렴(스택 500 → 983.8...)을 눈으로
+    // 구분하려면 이 정도가 필요하다.
+
+    private static double baseOf(WardenGirlEntity girl, Attribute attribute) {
+        AttributeInstance instance = girl.getAttribute(attribute);
+        return instance == null ? Double.NaN : instance.getBaseValue();
+    }
+
+    private static int statsGet(CommandSourceStack source, Entity target) {
+        WardenGirlEntity girl = asWardenGirl(source, target);
+        if (girl == null) {
+            return 0;
+        }
+        ok(source, String.format(Locale.ROOT,
+                "%s%n"
+                        + "         강화 스택        = %d%n"
+                        + "         현재/최대 체력    = %.7f / %.7f%n"
+                        + "         MAX_HEALTH base  = %.7f%n"
+                        + "         ATTACK_DAMAGE base = %.7f%n"
+                        + "         KNOCKBACK_RESISTANCE base = %.7f%n"
+                        + "         소닉 피해        = %.7f",
+                describe(girl),
+                girl.getPowerStacks(),
+                girl.getHealth(), girl.getMaxHealth(),
+                baseOf(girl, Attributes.MAX_HEALTH),
+                baseOf(girl, Attributes.ATTACK_DAMAGE),
+                baseOf(girl, Attributes.KNOCKBACK_RESISTANCE),
+                girl.getSonicDamage()));
         return 1;
     }
 

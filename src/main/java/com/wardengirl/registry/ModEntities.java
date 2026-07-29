@@ -32,6 +32,11 @@ public final class ModEntities {
             ENTITY_TYPES.register("warden_girl", () -> EntityType.Builder
                     .of(WardenGirlEntity::new, MobCategory.CREATURE)
                     .sized(0.6F, 1.8F)
+                    // 2차 설계서 5.2 화염 면역. Entity.fireImmune() 이 이 타입 플래그를 그대로
+                    // 돌려주고, Entity.isInvulnerableTo 가 DamageTypeTags.IS_FIRE 와 함께 검사한다.
+                    // 불 블록·용암·불타는 틱·화염 속성 공격이 모두 그 태그에 들어 있으므로 이
+                    // 한 줄이 전부를 덮는다 — 최종 피해 직전에 태그를 또 보지 않는다.
+                    .fireImmune()
                     .clientTrackingRange(10)
                     .build(new ResourceLocation(WardenGirlMod.MOD_ID, "warden_girl").toString()));
 

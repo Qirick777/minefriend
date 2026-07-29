@@ -8,6 +8,8 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.entity.ai.attributes.Attribute;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
@@ -103,7 +105,13 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
      */
     public static AttributeSupplier.Builder createAttributes() {
         return Mob.createMobAttributes()
-                .add(Attributes.MAX_HEALTH, 20.0D)
+                // 2차 설계서 5.1 의 0스택 기본값. 스택이 붙으면 개체의 AttributeInstance
+                // base value 만 덮어쓴다 — 타입 전체의 기본값은 여기 이 한 벌뿐이다.
+                .add(Attributes.MAX_HEALTH, PowerStats.HEALTH_BASE)
+                // createMobAttributes 에는 ATTACK_DAMAGE 가 없다(FOLLOW_RANGE 와
+                // ATTACK_KNOCKBACK 만 얹는다). 직접 넣지 않으면 getAttribute 가 null 이다.
+                .add(Attributes.ATTACK_DAMAGE, PowerStats.ATTACK_BASE)
+                .add(Attributes.KNOCKBACK_RESISTANCE, 0.0D)
                 .add(Attributes.MOVEMENT_SPEED, 0.23D);
     }
 
@@ -223,7 +231,11 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
      * 맡긴다 — 거기서는 사람에게 이유를 돌려줄 수 있다.
      */
     public void setPowerStacks(long stacks) {
-        this.powerStacks = Math.max(0L, stacks);
+        long next = Math.max(0L, stacks);
+        // 실제로 늘어났을 때만 회복한다. 같은 값 재설정, 감소, add 0 은 전부 회복 없음이다.
+        boolean grew = next > this.powerStacks;
+        this.powerStacks = next;
+        recalculatePowerStats(grew);
     }
 
     /**
@@ -239,7 +251,50 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         } else if (amount < 0L && sum > this.powerStacks) {
             sum = 0L;                               // 아래로 넘침
         }
-        this.powerStacks = Math.max(0L, sum);
+        // 재계산과 회복은 setPowerStacks 한 곳에서만 일어난다 — 두 번 적용될 경로가 없다.
+        setPowerStacks(sum);
+    }
+
+    /** 이 개체의 스택으로 계산한 소닉붐 피해. 전역 값도, 저장된 값도 아니다. */
+    public double getSonicDamage() {
+        return PowerStats.sonic(this.powerStacks);
+    }
+
+    /**
+     * 스택 → Attribute base value. <b>몇 번 불러도 같은 스택에서 같은 결과다.</b>
+     *
+     * <p>modifier 를 붙이지 않고 개체 {@code AttributeInstance} 의 base value 를 목표값으로
+     * 그냥 <em>설정</em>한다. 그래서 반복 호출이 누적되지 않고, 포션·장비가 얹은 modifier 는
+     * 별도 레이어라 그대로 남는다. 다른 워든걸의 {@code AttributeMap} 은 건드리지 않는다.
+     *
+     * @param healGrowthDelta {@code true} 면 최대 체력이 <b>실제로 늘어난 만큼만</b> 현재
+     *                        체력을 올린다. 로드·복구·같은 스택 재계산에서는 반드시
+     *                        {@code false} 여야 한다(2차 설계서 6.4).
+     */
+    public void recalculatePowerStats(boolean healGrowthDelta) {
+        if (level().isClientSide) {
+            return;                                 // 서버 정본. 클라이언트는 동기화된 체력만 본다.
+        }
+        float before = getMaxHealth();
+        setBase(Attributes.MAX_HEALTH, PowerStats.health(this.powerStacks));
+        setBase(Attributes.ATTACK_DAMAGE, PowerStats.attack(this.powerStacks));
+        setBase(Attributes.KNOCKBACK_RESISTANCE,
+                PowerStats.knockbackResistance(this.powerStacks));
+        float after = getMaxHealth();
+
+        float health = getHealth();
+        if (healGrowthDelta && after > before) {
+            health += after - before;
+        }
+        // setHealth 가 [0, 최대] 로 자른다 — 스택이 줄어 최대가 내려간 경우가 여기서 처리된다.
+        setHealth(health);
+    }
+
+    private void setBase(Attribute attribute, double value) {
+        AttributeInstance instance = getAttribute(attribute);
+        if (instance != null && instance.getBaseValue() != value) {
+            instance.setBaseValue(value);
+        }
     }
 
     /**
@@ -290,9 +345,28 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
      */
     @Override
     public void readAdditionalSaveData(CompoundTag tag) {
+        // 저장된 Health 를 super 보다 먼저 붙잡는다.
+        //
+        // LivingEntity.readAdditionalSaveData 의 실제 순서는 AbsorptionAmount → Attributes
+        // → ActiveEffects → Health 다(바이트코드 확인). 그래서 보통은 Attributes 가 먼저
+        // 복원되어 setHealth 가 제 최대치로 자르지만, Attributes NBT 가 없거나 스택과 어긋난
+        // 저장본에서는 그 시점의 낮은 최대치로 잘려 버린다 — 100스택 400/500 이 30 으로
+        // 남는 경우가 그것이다. PowerStacks 가 성장의 유일한 정본이므로, 재계산으로 최대치를
+        // 세운 뒤 저장값을 그대로 되돌려 놓는다.
+        //
+        // 이것은 <b>회복이 아니라 저장값 복구</b>다. 회복은 recalculatePowerStats(true) 하나뿐이고
+        // 여기서는 false 로 부른다.
+        float savedHealth = tag.contains("Health", 99) ? tag.getFloat("Health") : Float.NaN;
+
         super.readAdditionalSaveData(tag);
         this.ownerUuid = tag.hasUUID(TAG_OWNER) ? tag.getUUID(TAG_OWNER) : null;
         this.powerStacks = Math.max(0L, tag.getLong(TAG_POWER));
+        recalculatePowerStats(false);
+
+        if (!Float.isNaN(savedHealth)) {
+            // setHealth 가 새 최대치로 자르므로, 저장 체력이 더 클 때만 제한된다.
+            setHealth(savedHealth);
+        }
     }
 
     @Override
