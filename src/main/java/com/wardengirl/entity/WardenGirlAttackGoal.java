@@ -35,8 +35,6 @@ public class WardenGirlAttackGoal extends Goal {
 
     /** 좀비를 찾는 반경. */
     private static final double SEARCH = 16.0D;
-    /** 이 거리 안에 들어오면 모션을 낸다. 좀비 폭 0.6 + 워든걸 폭 0.6 을 감안한 값. */
-    private static final double REACH = 2.4D;
     /** 모션이 끝난 뒤 재발동 금지 틱. */
     private static final int COOLDOWN = 20;
     /** 접근 제한 시간. 좀비가 도망가거나 길이 막히면 포기한다. */
@@ -48,6 +46,17 @@ public class WardenGirlAttackGoal extends Goal {
 
     private final WardenGirlEntity mob;
     private Zombie target;
+
+    /**
+     * 바닐라 근접 사거리 제곱. {@code MeleeAttackGoal.getAttackReachSqr} 와 같은 식이다 —
+     * {@code (폭 × 2) × 폭 × 2 + 대상 폭}. 워든걸 0.6 / 좀비 0.6 이면 2.04, 즉 중심 간 1.428블록.
+     * 고정 상수 2.4 를 쓰면 히트박스 표면 사이에 1.8블록이 남아 허공을 때리는 그림이 됐다.
+     */
+    private double reachSqr(net.minecraft.world.entity.LivingEntity t) {
+        float w = this.mob.getBbWidth();
+        return w * 2.0F * w * 2.0F + t.getBbWidth();
+    }
+
     /** 재생 나이(틱). 음수면 아직 접근 중이다. */
     private int ticks = -1;
     private int approach;
@@ -126,7 +135,7 @@ public class WardenGirlAttackGoal extends Goal {
             return;
         }
         this.approach++;
-        if (this.mob.distanceToSqr(this.target) <= REACH * REACH) {
+        if (this.mob.distanceToSqr(this.target) <= reachSqr(this.target)) {
             this.mob.getNavigation().stop();
             this.ticks = 0;
             this.mob.level().broadcastEntityEvent(this.mob, WardenGirlEntity.EVENT_ATTACK);
