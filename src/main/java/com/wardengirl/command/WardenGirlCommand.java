@@ -3,6 +3,7 @@ package com.wardengirl.command;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.wardengirl.anim.AnimParams;
@@ -16,9 +17,12 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.coordinates.Vec3Argument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -136,7 +140,132 @@ public final class WardenGirlCommand {
                                         .then(Commands.argument("value", DoubleArgumentType.doubleArg())
                                                 .executes(ctx -> paramSet(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "key"),
-                                                        DoubleArgumentType.getDouble(ctx, "value"))))))));
+                                                        DoubleArgumentType.getDouble(ctx, "value")))))))
+                // ---- T10 개체별 소유권·강화 ----------------------------------------------
+                .then(Commands.literal("owner")
+                        .then(Commands.literal("get")
+                                .then(Commands.argument("target", EntityArgument.entity())
+                                        .executes(ctx -> ownerGet(ctx.getSource(),
+                                                EntityArgument.getEntity(ctx, "target")))))
+                        .then(Commands.literal("set")
+                                .then(Commands.argument("target", EntityArgument.entity())
+                                        .then(Commands.argument("player", EntityArgument.player())
+                                                .executes(ctx -> ownerSet(ctx.getSource(),
+                                                        EntityArgument.getEntity(ctx, "target"),
+                                                        EntityArgument.getPlayer(ctx, "player")))))))
+                .then(Commands.literal("power")
+                        .then(Commands.literal("get")
+                                .then(Commands.argument("target", EntityArgument.entity())
+                                        .executes(ctx -> powerGet(ctx.getSource(),
+                                                EntityArgument.getEntity(ctx, "target")))))
+                        .then(Commands.literal("set")
+                                .then(Commands.argument("target", EntityArgument.entity())
+                                        // 음수는 파싱 단계에서 거절한다 — 사람에게 이유가 그대로 간다.
+                                        .then(Commands.argument("stacks", LongArgumentType.longArg(0L))
+                                                .executes(ctx -> powerSet(ctx.getSource(),
+                                                        EntityArgument.getEntity(ctx, "target"),
+                                                        LongArgumentType.getLong(ctx, "stacks"))))))
+                        .then(Commands.literal("add")
+                                .then(Commands.argument("target", EntityArgument.entity())
+                                        // 감소 시험을 위해 음수를 받는다. 결과는 0 아래로 내려가지 않는다.
+                                        .then(Commands.argument("amount", LongArgumentType.longArg())
+                                                .executes(ctx -> powerAdd(ctx.getSource(),
+                                                        EntityArgument.getEntity(ctx, "target"),
+                                                        LongArgumentType.getLong(ctx, "amount"))))))));
+    }
+
+    // ---- T10 /wardengirl owner|power -------------------------------------------------------
+    //
+    // 명령어는 진입점일 뿐이다(2차 설계서 3.3 / 10장). 소유권 규칙도 스택 산술도 여기 없고,
+    // 전부 WardenGirlEntity 의 API 를 부른다 — 나중에 길들이기·강화 상호작용이 같은 API 를
+    // 쓰면 두 경로가 저절로 같은 규칙을 따른다.
+
+    /** 대상이 워든걸이 아니면 이유를 밝히고 거절한다. */
+    private static WardenGirlEntity asWardenGirl(CommandSourceStack source, Entity target) {
+        if (target instanceof WardenGirlEntity girl) {
+            return girl;
+        }
+        source.sendFailure(Component.literal("[wardengirl] 대상이 워든걸이 아니다: "
+                + target.getType().getDescriptionId() + " (" + target.getName().getString() + ")"));
+        return null;
+    }
+
+    /** 사람이 로그에서 개체를 구분할 수 있게 이름·엔티티 id·UUID 를 함께 낸다. */
+    private static String describe(WardenGirlEntity girl) {
+        return String.format(Locale.ROOT, "%s id=%d uuid=%s",
+                girl.getName().getString(), girl.getId(), girl.getUUID());
+    }
+
+    private static void ok(CommandSourceStack source, String body) {
+        source.sendSuccess(() -> Component.literal("[wardengirl] ").withStyle(ChatFormatting.GOLD)
+                .append(Component.literal(body).withStyle(ChatFormatting.WHITE)), true);
+    }
+
+    private static int ownerGet(CommandSourceStack source, Entity target) {
+        WardenGirlEntity girl = asWardenGirl(source, target);
+        if (girl == null) {
+            return 0;
+        }
+        ok(source, String.format(Locale.ROOT, "%s%n         소유자 = %s",
+                describe(girl), girl.getOwnerUuid().map(java.util.UUID::toString).orElse("없음 (야생)")));
+        return 1;
+    }
+
+    private static int ownerSet(CommandSourceStack source, Entity target, ServerPlayer player) {
+        WardenGirlEntity girl = asWardenGirl(source, target);
+        if (girl == null) {
+            return 0;
+        }
+        if (!girl.trySetInitialOwner(player.getUUID())) {
+            source.sendFailure(Component.literal(String.format(Locale.ROOT,
+                    "[wardengirl] 각인 거절 — 이미 소유자가 있다. %s / 기존 소유자 %s%n"
+                            + "         소유권 변경·해제·이전은 제공하지 않는다.",
+                    describe(girl), girl.getOwnerUuid().map(java.util.UUID::toString).orElse("?"))));
+            return 0;
+        }
+        ok(source, String.format(Locale.ROOT, "%s%n         최초 각인 -> %s (%s)",
+                describe(girl), player.getGameProfile().getName(), player.getUUID()));
+        return 1;
+    }
+
+    private static int powerGet(CommandSourceStack source, Entity target) {
+        WardenGirlEntity girl = asWardenGirl(source, target);
+        if (girl == null) {
+            return 0;
+        }
+        ok(source, String.format(Locale.ROOT, "%s%n         강화 스택 = %d",
+                describe(girl), girl.getPowerStacks()));
+        return 1;
+    }
+
+    private static int powerSet(CommandSourceStack source, Entity target, long stacks) {
+        WardenGirlEntity girl = asWardenGirl(source, target);
+        if (girl == null) {
+            return 0;
+        }
+        long before = girl.getPowerStacks();
+        girl.setPowerStacks(stacks);
+        ok(source, String.format(Locale.ROOT, "%s%n         강화 스택 %d -> %d",
+                describe(girl), before, girl.getPowerStacks()));
+        return 1;
+    }
+
+    private static int powerAdd(CommandSourceStack source, Entity target, long amount) {
+        WardenGirlEntity girl = asWardenGirl(source, target);
+        if (girl == null) {
+            return 0;
+        }
+        long before = girl.getPowerStacks();
+        girl.addPowerStacks(amount);
+        long after = girl.getPowerStacks();
+        long applied = after - before;
+        ok(source, String.format(Locale.ROOT,
+                "%s%n         강화 스택 %d %+d -> %d%s",
+                describe(girl), before, amount, after,
+                applied == amount ? ""
+                        : String.format(Locale.ROOT, "%n         요청 %+d 중 %+d 만 적용됐다 "
+                                + "(0 하한 / long 상한에서 포화).", amount, applied)));
+        return 1;
     }
 
     // ---- /wardengirl ai <on|off> --------------------------------------------------------------

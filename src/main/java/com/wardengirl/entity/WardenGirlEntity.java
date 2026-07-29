@@ -1,5 +1,6 @@
 package com.wardengirl.entity;
 
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
@@ -168,6 +169,101 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
 
     public boolean isMovementAiEnabled() {
         return this.movementAiEnabled;
+    }
+
+    // ---- T10 개체별 소유권·강화 데이터 (2차 설계서 4장 / 6장 / 11장) ----------------------
+    //
+    // 서버 정본이다. SynchedEntityData 도, 전용 패킷도, 클라이언트 캐시도 두지 않는다 —
+    // 2차 설계서 11.2 대로 이 두 값은 아직 렌더링에 쓰이지 않는다. 필요해지는 태스크에서
+    // 동기화를 따로 붙인다.
+    //
+    // 두 값 모두 <b>인스턴스 필드</b>다. static 이 하나라도 있으면 모든 워든걸이 소유자와
+    // 스택을 공유하게 되므로(설계서 15장 금지 사항) 여기서 구조적으로 막는다.
+
+    /** NBT 키. 설계서 11.1 의 이름을 그대로 쓴다. */
+    private static final String TAG_OWNER = "OwnerUUID";
+    private static final String TAG_POWER = "PowerStacks";
+
+    /** 없으면 야생. 별도 {@code tamed} 플래그를 두지 않는다 — 설계서 4.1. */
+    @javax.annotation.Nullable
+    private java.util.UUID ownerUuid;
+
+    /** 개체별 강화 스택. 음수가 되지 않는다. */
+    private long powerStacks;
+
+    public java.util.Optional<java.util.UUID> getOwnerUuid() {
+        return java.util.Optional.ofNullable(this.ownerUuid);
+    }
+
+    public boolean hasOwner() {
+        return this.ownerUuid != null;
+    }
+
+    /**
+     * 최초 각인. <b>이미 소유자가 있으면 같은 UUID 라도 거절한다</b> — 설계서 4.2 는 변경·해제·
+     * 이전을 제공하지 않으므로, 같은 값 재설정을 허용하면 "다시 각인해도 된다"는 경로가 생긴다.
+     *
+     * @return 이번 호출로 각인됐으면 {@code true}. {@code false} 면 기존 소유자는 그대로다.
+     */
+    public boolean trySetInitialOwner(java.util.UUID owner) {
+        if (owner == null || this.ownerUuid != null) {
+            return false;
+        }
+        this.ownerUuid = owner;
+        return true;
+    }
+
+    public long getPowerStacks() {
+        return this.powerStacks;
+    }
+
+    /**
+     * 음수는 0 으로 보정한다. 반환형이 {@code void} 라 거절을 알릴 방법이 없으므로 설계서 6.1
+     * 의 두 선택지("0 으로 보정하거나 거절") 중 보정을 택했다. 거절은 명령어 쪽에서 파싱 단계에
+     * 맡긴다 — 거기서는 사람에게 이유를 돌려줄 수 있다.
+     */
+    public void setPowerStacks(long stacks) {
+        this.powerStacks = Math.max(0L, stacks);
+    }
+
+    /**
+     * 포화 덧셈. 설계서 6.1 은 게임 설계상 상한을 두지 않지만 {@code long} 의 기술적 한계는
+     * 인정하므로, 넘치면 {@link Long#MAX_VALUE} 에서 멈추고 모자라면 0 에서 멈춘다.
+     * {@code Math.addExact} 로 던지지 않는 이유는 정상 플레이에서 도달할 수 없는 값 때문에
+     * 예외 경로를 만들 필요가 없어서다.
+     */
+    public void addPowerStacks(long amount) {
+        long sum = this.powerStacks + amount;
+        if (amount > 0L && sum < this.powerStacks) {
+            sum = Long.MAX_VALUE;                   // 위로 넘침
+        } else if (amount < 0L && sum > this.powerStacks) {
+            sum = 0L;                               // 아래로 넘침
+        }
+        this.powerStacks = Math.max(0L, sum);
+    }
+
+    /**
+     * 소유자와 스택만 저장한다. 계산 가능한 스탯은 저장하지 않는다 — 설계서 11.1.
+     * 소유자가 없으면 키 자체를 쓰지 않는다(가짜 UUID 금지).
+     */
+    @Override
+    public void addAdditionalSaveData(CompoundTag tag) {
+        super.addAdditionalSaveData(tag);
+        if (this.ownerUuid != null) {
+            tag.putUUID(TAG_OWNER, this.ownerUuid);
+        }
+        tag.putLong(TAG_POWER, this.powerStacks);
+    }
+
+    /**
+     * 키가 없으면 야생·0스택이다 — {@code getLong} 이 없는 키에 0 을 돌려주므로 이전 저장본이
+     * 그대로 열린다. 손상되거나 손으로 고친 음수는 0 으로 복구한다.
+     */
+    @Override
+    public void readAdditionalSaveData(CompoundTag tag) {
+        super.readAdditionalSaveData(tag);
+        this.ownerUuid = tag.hasUUID(TAG_OWNER) ? tag.getUUID(TAG_OWNER) : null;
+        this.powerStacks = Math.max(0L, tag.getLong(TAG_POWER));
     }
 
     @Override
