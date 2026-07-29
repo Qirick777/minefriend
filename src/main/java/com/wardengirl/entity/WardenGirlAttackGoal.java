@@ -42,25 +42,31 @@ public class WardenGirlAttackGoal extends Goal {
     /**
      * 실제 타격이 일어나는 모션 나이(틱). <b>내려찍기가 바닥에 닿는 프레임이다.</b>
      *
-     * <p>{@code attack} 클립(0.9초 = 18틱)의 {@code arm_right.rotation.x} 실측:
+     * <p>선딜이 12틱이던 때에는, 넉백 저항이 0인 저스택 워든걸이 대상의 반격에 맞아 공중으로
+     * 떠오른 채 12틱을 흘려보내 <b>미스의 92%</b>가 발생했다(실측: 미스 회차의 92%가 창 안에서
+     * 피격·공중, 워든걸 이동 1.80블록 대 타격 회차 0.43블록). 그래서 클립 자체를 다시 타이밍
+     * 조정해 충돌을 앞당겼다 — 사거리를 넓히거나 저항 수치를 바꾸지 않았다.
+     *
+     * <p>재조정한 {@code attack} 클립(여전히 0.9초 = 18틱)의 실측 키값. 충돌 근처 6~10틱은
+     * 정수 틱마다 키가 있어 보간이 최저점을 옮길 수 없다.
      *
      * <pre>
-     *   t=0   0°      t=2  −12°   (짧은 예비 젖힘)
-     *   t=6  150°     t=7  158°   (최고 들어올림)
-     *   t=9  155°  → t=11  30°    (2틱에 125° — 내려찍는 구간)
-     *   t=12  18°               ← 팔이 가장 아래·가장 앞. body 도 여기서 −14° 로 최대 전방 기울임
-     *   t=14  34°     t=16  8°    t=18  0°   (반동과 복귀)
+     *   틱     0     1     4     5     6     7     8     9    10    12    14    16    18
+     *   팔 x   0   −14   150   158   120    55    16    22    38    26    12     4     0
+     *   몸 x   0    −3     8   9.5     7    −6   −15   −13    −8    −5    −2  −0.5     0
      * </pre>
      *
-     * 그래서 12틱이 화면에서 "맞았다"로 보이는 순간이다. 더 이르면(9~11) 팔이 아직 머리 위에
-     * 있는 동안 피가 깎이고, 더 늦으면(14+) 이미 팔이 되돌아오는 중이다.
+     * 5틱에 최고로 들어올렸다가 8틱에서 <b>팔이 들어올림 이후 첫 국소최저(16°)</b>가 되고
+     * <b>몸통도 같은 틱에 최대 전방 기울임(−15°)</b>이다. 9틱부터 22 → 38 로 되돌아오는 반동
+     * 구간이므로 8틱이 화면에서 "맞았다"로 보이는 순간이다. 1틱의 −14° 는 예비 젖힘이지
+     * 내려찍기가 아니다.
      *
      * <p>무적 틱과도 어긋나지 않는다. 타격 간격은 방송 간격과 같은 19틱인데
      * {@code LivingEntity.hurt} 는 {@code invulnerableTime > 10} 일 때만 감쇠 경로로 가고
      * (성공 시 20으로 설정, 매 틱 1씩 감소), 19틱 뒤에는 1이 되어 있으므로 <b>매 회차가 전액</b>
      * 들어간다.
      */
-    public static final int HIT_TICK = 12;
+    public static final int HIT_TICK = 8;
 
     /**
      * 전투 추적 중 navigation 속도 배율. 평상시 배회는 {@code 1.0} 그대로다.
@@ -84,14 +90,36 @@ public class WardenGirlAttackGoal extends Goal {
         return w * 2.0F * w * 2.0F + t.getBbWidth();
     }
 
-    /** 재경로 간격(틱). 바닐라 {@code MeleeAttackGoal} 의 경로 재계산 주기와 같은 자리다. */
-    private static final int REPATH_INTERVAL = 10;
+    /**
+     * 재경로 최소 간격과 변동폭. 바닐라 {@code MeleeAttackGoal} 의
+     * {@code ticksUntilNextPathRecalculation = 4 + random(7)} 와 같다 — 고정 10틱이던 때에는
+     * 경로가 "도착"으로 끝난 뒤 최대 10틱을 그대로 서 있었다(실측 정지 구간 14개 · 83틱 ·
+     * 접근 틱의 15.5%).
+     */
+    private static final int REPATH_MIN = 4;
+    private static final int REPATH_SPREAD = 7;
+
+    /** 경로 생성이 실패했을 때 다음 시도까지 더 기다리는 틱. 바닐라와 같은 값이다. */
+    private static final int REPATH_FAIL_PENALTY = 15;
+
+    /** 마지막 재경로가 기준으로 삼은 대상 위치에서 이만큼 움직이면 즉시 다시 경로를 낸다. */
+    private static final double REPATH_TARGET_MOVE = 1.0D;
+
+    /**
+     * 경로가 끝났는데 아직 사거리 밖일 때 다음 시도까지 기다리는 상한(틱). 즉시 매 틱
+     * 재경로하면 A* 를 매 틱 돌리게 되므로 상한만 낮춘다 — 정지가 최대 10틱에서 이 값으로 준다.
+     */
+    private static final int STALL_RETRY = 2;
 
     /** 재생 나이(틱). 음수면 아직 접근 중이다. */
     private int ticks = -1;
     private int approach;
     /** 다음 재경로까지 남은 틱. */
     private int repath;
+    /** 마지막 재경로 시점의 대상 위치. 대상이 여기서 1블록 이상 벗어나면 즉시 재경로한다. */
+    private double pathedX;
+    private double pathedY;
+    private double pathedZ;
 
     public WardenGirlAttackGoal(WardenGirlEntity mob) {
         this.mob = mob;
@@ -155,10 +183,10 @@ public class WardenGirlAttackGoal extends Goal {
     public void start() {
         this.ticks = -1;
         this.approach = 0;
-        this.repath = REPATH_INTERVAL;
-        if (this.target != null) {
-            this.mob.getNavigation().moveTo(this.target, PURSUE_SPEED);
-        }
+        this.repath = 0;                        // 첫 틱에 즉시 경로를 낸다
+        this.pathedX = Double.NaN;
+        this.pathedY = Double.NaN;
+        this.pathedZ = Double.NaN;
     }
 
     @Override
@@ -167,6 +195,10 @@ public class WardenGirlAttackGoal extends Goal {
             return;
         }
         this.mob.getLookControl().setLookAt(this.target, 30.0F, 30.0F);
+        // 접근 갱신은 모션 분기보다 <b>앞</b>이다. 뒤에 두었을 때에는 모션 재생 중 조기
+        // return 때문에 재경로가 아예 실행되지 않았다(실측 재경로 63회 중 모션 중 5회).
+        // 그래서 넉백으로 벌어진 거리를 18틱 내내 방치했다.
+        updateApproach();
         if (this.ticks >= 0) {
             this.ticks++;
             if (this.ticks == HIT_TICK) {
@@ -181,15 +213,6 @@ public class WardenGirlAttackGoal extends Goal {
             // 그래서 19틱 쿨다운인데도 실측 간격이 20틱으로 밀렸다. tick() 은 매틱 돌므로
             // (requiresUpdateEveryTick) 여기서 끝내면 간격이 쿨다운 값과 정확히 같아진다.
             this.ticks = -1;
-        }
-        // 바닐라 MeleeAttackGoal 은 공격 중에도 대상에게 계속 경로를 새로 낸다. 사거리 안에서
-        // navigation 을 멈춰 두면, 우리 타격과 상대 반격의 넉백으로 벌어진 거리를 18틱 모션
-        // 동안 메우지 못해 12틱 타격이 매번 사거리 밖이 된다 — 반격하는 좀비와 붙여 실측하니
-        // 30회 시작 중 타격 1회, 미스 29회가 전부 reason=range 였다. 그래서 멈추지 않고
-        // 10틱마다 다시 붙는다. 대상이 이미 닿아 있으면 경로가 즉시 끝나므로 제자리다.
-        if (--this.repath <= 0) {
-            this.repath = REPATH_INTERVAL;
-            this.mob.getNavigation().moveTo(this.target, PURSUE_SPEED);
         }
         if (this.mob.distanceToSqr(this.target) <= reachSqr(this.target)) {
             // 사거리 안이면 접근이 막힌 것이 아니므로 포기 시계를 되돌린다.
@@ -209,6 +232,53 @@ public class WardenGirlAttackGoal extends Goal {
             return;
         }
         this.approach++;
+    }
+
+    /**
+     * 대상에게 계속 붙는다. <b>공격 모션 중에도 매 틱 돈다</b> — 바닐라
+     * {@code MeleeAttackGoal.tick()} 이 공격 여부와 무관하게 경로를 갱신하는 것과 같다.
+     * {@code navigation.stop()} 은 {@link #stop()} 에서만 부른다 — 바닐라와 같이
+     * {@code tick()} 경로에서는 한 번도 멈추지 않는다.
+     *
+     * <h2>정지 현상을 없애는 두 조건</h2>
+     *
+     * 고정 10틱 간격만 쓰던 때에는, {@code moveTo} 가 만든 경로가 <b>자기 자리 한 노드</b>로
+     * 즉시 완료 판정되어(실측 {@code nav[done=true nodes=1 idx=1]}) 대상이 1.6~3.9블록 앞인데도
+     * 최대 10틱을 그대로 서 있었다. 그래서 바닐라와 같은 두 트리거를 쓴다.
+     *
+     * <ul>
+     *   <li>간격을 {@value #REPATH_MIN}~{@code 10}틱으로 흔든다.
+     *   <li>대상이 마지막 경로 기준점에서 {@value #REPATH_TARGET_MOVE}블록 이상 움직이거나
+     *       <b>경로가 이미 끝났는데 아직 사거리 밖이면</b> 간격을 기다리지 않고 즉시 다시 낸다.
+     * </ul>
+     *
+     * <p>경로 생성이 실패하면 {@value #REPATH_FAIL_PENALTY}틱을 더 기다린 뒤 <b>다시 시도한다</b> —
+     * 영구 정지하지 않는다.
+     */
+    private void updateApproach() {
+        if (this.repath > 0) {
+            this.repath--;
+        }
+        boolean moved = Double.isNaN(this.pathedX)
+                || this.target.distanceToSqr(this.pathedX, this.pathedY, this.pathedZ)
+                        >= REPATH_TARGET_MOVE * REPATH_TARGET_MOVE;
+        // 경로가 "도착"으로 끝났는데 아직 사거리 밖이면 다음 시도를 앞당긴다.
+        if (this.mob.getNavigation().isDone()
+                && this.mob.distanceToSqr(this.target) > reachSqr(this.target)
+                && this.repath > STALL_RETRY) {
+            this.repath = STALL_RETRY;
+        }
+        if (this.repath > 0 && !moved) {
+            return;
+        }
+        this.pathedX = this.target.getX();
+        this.pathedY = this.target.getY();
+        this.pathedZ = this.target.getZ();
+        this.repath = REPATH_MIN + this.mob.getRandom().nextInt(REPATH_SPREAD);
+        boolean ok = this.mob.getNavigation().moveTo(this.target, PURSUE_SPEED);
+        if (!ok) {
+            this.repath += REPATH_FAIL_PENALTY;
+        }
     }
 
     /**
@@ -242,7 +312,7 @@ public class WardenGirlAttackGoal extends Goal {
             return;                             // 죽음·제거·보호 대상·바닐라 거절 → 피해 없음
         }
         if (this.mob.distanceToSqr(this.target) > reachSqr(this.target)) {
-            return;                             // 12틱 사이에 벗어났다 → 빗나감
+            return;                             // 타격 틱 사이에 벗어났다 → 빗나감
         }
         this.mob.doHurtTarget(this.target);
     }
@@ -254,5 +324,8 @@ public class WardenGirlAttackGoal extends Goal {
         this.ticks = -1;
         this.approach = 0;
         this.repath = 0;
+        this.pathedX = Double.NaN;
+        this.pathedY = Double.NaN;
+        this.pathedZ = Double.NaN;
     }
 }
