@@ -58,8 +58,25 @@ public class WardenGirlSonicBoomGoal extends Goal {
         return true;
     }
 
+    /** 시작을 막는 상태. 충전 <b>도중</b>에는 {@link #cancelled()} 를 쓴다. */
     private boolean blocked() {
-        return this.mob.hurtTime != 0 || this.mob.isSignTest() || this.mob.isPassenger();
+        return this.mob.hurtTime != 0 || cancelled();
+    }
+
+    /**
+     * 이미 시작한 충전을 <b>취소</b>하는 상태. {@code hurtTime} 은 여기 없다.
+     *
+     * <p>{@link #blocked()} 를 그대로 쓰던 때에는 충전 중 한 대만 맞아도 {@code hurtTime} 이
+     * 올라가 {@code canContinueToUse} 가 false 가 되고 {@link #stop()} 이 age 를 −1 로 지웠다.
+     * 무적 틱이 풀리면 {@code canUse} 가 다시 참이 되어 {@link #start()} 가 엔티티 사건을 또
+     * 방송하므로, 서버 age 와 화면 클립이 <b>둘 다 0부터</b> 다시 시작했다. 여럿에게 둘러싸이면
+     * 방출 틱에 영영 도달하지 못한다.
+     *
+     * <p>부호 실측과 탑승은 그대로 취소 조건이다 — 피격과 달리 충전을 이어갈 수 있는 상태가
+     * 아니다. 사망은 여기서 명시적으로 끊는다.
+     */
+    private boolean cancelled() {
+        return !this.mob.isAlive() || this.mob.isSignTest() || this.mob.isPassenger();
     }
 
     /**
@@ -113,7 +130,7 @@ public class WardenGirlSonicBoomGoal extends Goal {
 
     @Override
     public boolean canContinueToUse() {
-        return this.target != null && this.target.isAlive() && !blocked()
+        return this.target != null && this.target.isAlive() && !cancelled()
                 && this.ticks < AnimRegistry.SONIC_LENGTH_TICKS;
     }
 

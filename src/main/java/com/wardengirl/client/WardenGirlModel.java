@@ -773,6 +773,15 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             }
         }
         // ===== T8 끝 =====
+        // 소닉 재생 중에는 피격이 C3 슬롯을 가져가지 않는다. 슬롯이 하나뿐이라 가져가는 순간
+        // 상체 충전 자세가 기본 자세로 튀고, 소닉 블록은 sonicTime 의 상승 에지에서만
+        // syncTo 하므로 되돌아오지도 않는다. 서버는 이제 피격으로 충전을 끊지 않으므로
+        // (WardenGirlSonicBoomGoal.cancelled) 화면도 같은 규칙을 따라야 한다.
+        //
+        // 다른 행동의 피격 규칙은 그대로다 — 이 가드는 소닉이 도는 동안에만 참이다.
+        // 피격 자체의 효과(넉백·붉은 색·소리·체력·무적 틱)는 바닐라 것이라 손대지 않는다.
+        boolean sonicOwnsUpperBody = animatable.getSonicTime() > 0;
+        hurtStarted = hurtStarted && !sonicOwnsUpperBody;
         String requested = hurtStarted ? AnimRegistry.IDLE_HURT : animatable.getActionClip();
         if (hurtStarted) {
             software.bernie.geckolib.core.animation.Animation hurtClip =
