@@ -17,10 +17,10 @@ import java.util.EnumSet;
  *
  * <b>적대 기준의 절대 규칙이 아니다.</b> 대상 판정은 {@link WardenGirlHostiles} 한 곳에만 있다.
  *
- * <h2>피해가 없다</h2>
+ * <h2>피해 (T12.5)</h2>
  *
- * {@code hurt} / {@code doHurtTarget} / {@code setTarget} 을 부르지 않는다. 이 Goal 이 하는 일은
- * 좀비 쪽으로 걸어가 사거리에서 <b>엔티티 사건 하나를 방송</b>하고 18틱을 세는 것뿐이다.
+ * 모션 한 회당 {@link #HIT_TICK} 에서 {@code Mob.doHurtTarget} 을 <b>정확히 한 번</b> 부른다.
+ * {@code setTarget} 은 여전히 부르지 않는다 — 이 Goal 은 자기 {@link #target} 필드만 쓴다.
  *
  * <h2>구조는 4.12 킁킁과 같다</h2>
  *
@@ -38,6 +38,29 @@ public class WardenGirlAttackGoal extends Goal {
      * 소닉과 공유하던 100틱을 그대로 쓰던 때에는 모션 뒤에 81틱의 빈 시간이 남았다.
      */
     public static final int MELEE_COOLDOWN = 19;
+
+    /**
+     * 실제 타격이 일어나는 모션 나이(틱). <b>내려찍기가 바닥에 닿는 프레임이다.</b>
+     *
+     * <p>{@code attack} 클립(0.9초 = 18틱)의 {@code arm_right.rotation.x} 실측:
+     *
+     * <pre>
+     *   t=0   0°      t=2  −12°   (짧은 예비 젖힘)
+     *   t=6  150°     t=7  158°   (최고 들어올림)
+     *   t=9  155°  → t=11  30°    (2틱에 125° — 내려찍는 구간)
+     *   t=12  18°               ← 팔이 가장 아래·가장 앞. body 도 여기서 −14° 로 최대 전방 기울임
+     *   t=14  34°     t=16  8°    t=18  0°   (반동과 복귀)
+     * </pre>
+     *
+     * 그래서 12틱이 화면에서 "맞았다"로 보이는 순간이다. 더 이르면(9~11) 팔이 아직 머리 위에
+     * 있는 동안 피가 깎이고, 더 늦으면(14+) 이미 팔이 되돌아오는 중이다.
+     *
+     * <p>무적 틱과도 어긋나지 않는다. 타격 간격은 방송 간격과 같은 19틱인데
+     * {@code LivingEntity.hurt} 는 {@code invulnerableTime > 10} 일 때만 감쇠 경로로 가고
+     * (성공 시 20으로 설정, 매 틱 1씩 감소), 19틱 뒤에는 1이 되어 있으므로 <b>매 회차가 전액</b>
+     * 들어간다.
+     */
+    public static final int HIT_TICK = 12;
 
     /**
      * 전투 추적 중 navigation 속도 배율. 평상시 배회는 {@code 1.0} 그대로다.
@@ -127,8 +150,10 @@ public class WardenGirlAttackGoal extends Goal {
         }
         this.mob.getLookControl().setLookAt(this.target, 30.0F, 30.0F);
         if (this.ticks >= 0) {
-            // 모션 재생 중. 서버는 틱만 센다 — 피해도, 판정도 없다.
             this.ticks++;
+            if (this.ticks == HIT_TICK) {
+                strike();                       // 모션당 정확히 한 번. 아래 주석 참고.
+            }
             if (this.ticks < AnimRegistry.ATTACK_LENGTH_TICKS) {
                 return;
             }
@@ -161,6 +186,42 @@ public class WardenGirlAttackGoal extends Goal {
         if (this.approach % 10 == 0) {
             this.mob.getNavigation().moveTo(this.target, PURSUE_SPEED);
         }
+    }
+
+    /**
+     * 타격 순간. <b>Goal 은 서버에서만 돈다</b>({@code Mob.serverAiStep} → {@code goalSelector}),
+     * 그래서 별도의 {@code isClientSide} 가드를 두지 않았다.
+     *
+     * <h2>정확히 한 번인 이유</h2>
+     *
+     * {@link #ticks} 는 방송 틱에 0 이 되고 {@link #tick()} 에서만 1씩 오른다. 이 Goal 은
+     * {@code requiresUpdateEveryTick()} 이라 {@code tick()} 이 매 틱 돌므로 카운터가
+     * {@link #HIT_TICK} 을 <b>한 모션에 한 번만</b> 통과한다. 중간에 Goal 이 끊기면
+     * {@link #stop()} 이 −1 로 되돌리므로 그 회차의 타격은 아예 일어나지 않는다.
+     *
+     * <h2>타격 순간에 다시 보는 것</h2>
+     *
+     * 대상은 방송 시점(0틱)에 이미 검사했지만 12틱 사이에 죽거나·제거되거나·보호 대상이 되거나·
+     * 도망칠 수 있다. 그래서 <b>지연 피해를 만들지 않도록</b> 여기서 다시 본다 — 생존·제거·보호·
+     * 바닐라 공격 가능 판정은 T12 의 {@code isValidCombatTarget} 하나로, 사거리는 방송 때와 같은
+     * {@link #reachSqr} 로. 둘 중 하나라도 어긋나면 이번 회차는 <b>빗나감</b>이고 피해가 없다.
+     *
+     * <h2>바닐라 경로를 그대로 쓴다</h2>
+     *
+     * {@code Mob.doHurtTarget} 이 {@code ATTACK_DAMAGE} 를 읽어
+     * {@code target.hurt(damageSources().mobAttack(this), 피해량)} 을 부르고, 성공하면
+     * {@code ATTACK_KNOCKBACK}(기본 0) 넉백·인챈트 효과·{@code setLastHurtMob} 까지 바닐라와
+     * 같은 순서로 처리한다. 우리가 피해 계산식을 새로 쓰지 않으므로 방어구·저항·무적 틱이
+     * 전부 바닐라와 같게 동작한다.
+     */
+    private void strike() {
+        if (!this.mob.isValidCombatTarget(this.target)) {
+            return;                             // 죽음·제거·보호 대상·바닐라 거절 → 피해 없음
+        }
+        if (this.mob.distanceToSqr(this.target) > reachSqr(this.target)) {
+            return;                             // 12틱 사이에 벗어났다 → 빗나감
+        }
+        this.mob.doHurtTarget(this.target);
     }
 
     @Override
