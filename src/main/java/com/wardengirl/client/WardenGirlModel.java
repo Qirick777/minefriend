@@ -804,7 +804,8 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         }
         // ===== T6 끝 =====
         // ===== T7 기본 공격. 판정은 서버 WardenGirlAttackGoal 이 한다 =========================
-        // C3 슬롯은 하나이므로 우선순위는 이 블록들의 순서가 정한다: 피격 > 공격 > 킁킁.
+        // C3 슬롯은 하나다. 확정 우선순위는 소닉 > 공격 > 피격 > 킁킁이며, 전투가 피격보다
+        // 앞서는 부분은 아래 combatOwnsUpperBody 한 줄이 정한다.
         int atk = animatable.getAttackTime();
         Integer prevAtkBoxed = this.lastAttackTime.put(animatable.getId(), atk);
         if (this.lastAttackTime.size() > MAX_TRACKED_ENTITIES) {
@@ -838,15 +839,22 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             }
         }
         // ===== T8 끝 =====
-        // 소닉 재생 중에는 피격이 C3 슬롯을 가져가지 않는다. 슬롯이 하나뿐이라 가져가는 순간
-        // 상체 충전 자세가 기본 자세로 튀고, 소닉 블록은 sonicTime 의 상승 에지에서만
-        // syncTo 하므로 되돌아오지도 않는다. 서버는 이제 피격으로 충전을 끊지 않으므로
-        // (WardenGirlSonicBoomGoal.cancelled) 화면도 같은 규칙을 따라야 한다.
+        // 전투 모션이 도는 동안에는 피격이 C3 슬롯을 가져가지 않는다. 슬롯이 하나뿐이라
+        // 가져가는 순간 상체 자세가 기본으로 튀고, 소닉·공격 블록은 각자 타이머의 상승
+        // 에지에서만 syncTo 하므로 되돌아오지도 않는다. 서버가 피격으로 소닉 충전도
+        // (WardenGirlSonicBoomGoal.cancelled) 근접 모션도 (WardenGirlAttackGoal.blocked)
+        // 끊지 않으므로 화면도 같은 규칙을 따라야 한다.
         //
-        // 다른 행동의 피격 규칙은 그대로다 — 이 가드는 소닉이 도는 동안에만 참이다.
-        // 피격 자체의 효과(넉백·붉은 색·소리·체력·무적 틱)는 바닐라 것이라 손대지 않는다.
-        boolean sonicOwnsUpperBody = animatable.getSonicTime() > 0;
-        hurtStarted = hurtStarted && !sonicOwnsUpperBody;
+        // 이 한 줄이 확정 우선순위의 전부다: 소닉붐 > 근접 공격 > 피격 움찔 > 킁킁.
+        // 소닉과 근접의 선후는 아래 블록 순서가 이미 정한다(소닉이 뒤라 같은 프레임이면
+        // 소닉이 슬롯을 가진다). 킁킁은 원래부터 actionClip·hurtTime 에 끊긴다.
+        //
+        // 전투 중이 아닐 때의 피격 규칙은 그대로다. 피격 자체의 효과(넉백·붉은 색·소리·
+        // 체력·무적 틱)는 전부 바닐라 것이라 손대지 않았고, 서버 피해 판정도 이 값을 보지
+        // 않는다 — 여기는 표시만 정한다.
+        boolean combatOwnsUpperBody = animatable.getSonicTime() > 0
+                || animatable.getAttackTime() > 0;
+        hurtStarted = hurtStarted && !combatOwnsUpperBody;
         String requested = hurtStarted ? AnimRegistry.IDLE_HURT : animatable.getActionClip();
         if (hurtStarted) {
             software.bernie.geckolib.core.animation.Animation hurtClip =

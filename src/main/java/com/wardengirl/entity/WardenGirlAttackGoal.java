@@ -84,9 +84,14 @@ public class WardenGirlAttackGoal extends Goal {
         return w * 2.0F * w * 2.0F + t.getBbWidth();
     }
 
+    /** 재경로 간격(틱). 바닐라 {@code MeleeAttackGoal} 의 경로 재계산 주기와 같은 자리다. */
+    private static final int REPATH_INTERVAL = 10;
+
     /** 재생 나이(틱). 음수면 아직 접근 중이다. */
     private int ticks = -1;
     private int approach;
+    /** 다음 재경로까지 남은 틱. */
+    private int repath;
 
     public WardenGirlAttackGoal(WardenGirlEntity mob) {
         this.mob = mob;
@@ -98,9 +103,21 @@ public class WardenGirlAttackGoal extends Goal {
         return true;
     }
 
-    /** 피격·부호 실측 중에는 시작하지도, 계속하지도 않는다. */
+    /**
+     * 부호 실측 중에는 시작하지도, 계속하지도 않는다.
+     *
+     * <p><b>{@code hurtTime} 은 여기 없다.</b> 바닐라 {@code MeleeAttackGoal} 과 같이 피격은
+     * 근접 공격의 시작도 진행도 막지 않는다. 예전에는 이 조건에 {@code hurtTime != 0} 이 있어
+     * {@code canContinueToUse} 가 false 가 되고 {@link #stop()} 이 {@link #ticks} 를 −1 로
+     * 지웠다 — T12.5 에서 피해를 연결한 뒤 실측하니 대상이 반격하는 순간 모션이 12틱에 닿지
+     * 못해 <b>7회 시작 중 1회만 타격</b>하고 워든걸이 일반 좀비에게 죽었다.
+     *
+     * <p>시작용·진행용 조건을 따로 두지 않는다. 하나뿐이라 피격으로는 {@code ticks} 도
+     * 쿨다운도 초기화되지 않는다. 사망·탑승·대상 무효화는 {@link #canContinueToUse()} 가
+     * 그대로 본다.
+     */
     private boolean blocked() {
-        return this.mob.hurtTime != 0 || this.mob.isSignTest();
+        return this.mob.isSignTest();
     }
 
     /**
@@ -138,6 +155,7 @@ public class WardenGirlAttackGoal extends Goal {
     public void start() {
         this.ticks = -1;
         this.approach = 0;
+        this.repath = REPATH_INTERVAL;
         if (this.target != null) {
             this.mob.getNavigation().moveTo(this.target, PURSUE_SPEED);
         }
@@ -164,8 +182,16 @@ public class WardenGirlAttackGoal extends Goal {
             // (requiresUpdateEveryTick) 여기서 끝내면 간격이 쿨다운 값과 정확히 같아진다.
             this.ticks = -1;
         }
+        // 바닐라 MeleeAttackGoal 은 공격 중에도 대상에게 계속 경로를 새로 낸다. 사거리 안에서
+        // navigation 을 멈춰 두면, 우리 타격과 상대 반격의 넉백으로 벌어진 거리를 18틱 모션
+        // 동안 메우지 못해 12틱 타격이 매번 사거리 밖이 된다 — 반격하는 좀비와 붙여 실측하니
+        // 30회 시작 중 타격 1회, 미스 29회가 전부 reason=range 였다. 그래서 멈추지 않고
+        // 10틱마다 다시 붙는다. 대상이 이미 닿아 있으면 경로가 즉시 끝나므로 제자리다.
+        if (--this.repath <= 0) {
+            this.repath = REPATH_INTERVAL;
+            this.mob.getNavigation().moveTo(this.target, PURSUE_SPEED);
+        }
         if (this.mob.distanceToSqr(this.target) <= reachSqr(this.target)) {
-            this.mob.getNavigation().stop();
             // 사거리 안이면 접근이 막힌 것이 아니므로 포기 시계를 되돌린다.
             this.approach = 0;
             if (this.mob.isMeleeOnCooldown()) {
@@ -183,9 +209,6 @@ public class WardenGirlAttackGoal extends Goal {
             return;
         }
         this.approach++;
-        if (this.approach % 10 == 0) {
-            this.mob.getNavigation().moveTo(this.target, PURSUE_SPEED);
-        }
     }
 
     /**
@@ -230,5 +253,6 @@ public class WardenGirlAttackGoal extends Goal {
         this.target = null;
         this.ticks = -1;
         this.approach = 0;
+        this.repath = 0;
     }
 }
