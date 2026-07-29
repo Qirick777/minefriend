@@ -243,6 +243,35 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     }
 
     /**
+     * 길들여진 워든걸은 거리로 사라지지 않는다.
+     *
+     * <h2>왜 필요한가 — 실측 경로</h2>
+     *
+     * {@code ServerLevel.tickNonPassenger} 가 매 틱 {@code Mob.checkDespawn} 을 부르고, 거기서
+     * {@code isPersistenceRequired() || requiresCustomPersistence()} 가 둘 다 거짓이면 거리
+     * 판정으로 들어간다. 이 엔티티는 {@code MobCategory.CREATURE}(despawn 128 / noDespawn 32)
+     * 이고, {@code Mob.removeWhenFarAway} 는 기본이 {@code return true} 이며 우리는 그것도
+     * {@code setPersistenceRequired()} 도 쓰지 않았다. 즉 <b>소유자가 있든 없든 가장 가까운
+     * 플레이어가 128블록을 넘으면 즉시 {@code discard}</b> 됐다. 지금까지 검증에서 살아남은
+     * 것은 시험 중 플레이어가 늘 가까이 있었기 때문이지 구조가 막고 있어서가 아니었다.
+     *
+     * <h2>{@code setPersistenceRequired()} 대신 이 방법을 쓴 이유</h2>
+     *
+     * {@code persistenceRequired} 는 {@code Mob} 이 {@code PersistenceRequired} 키로 <b>따로
+     * 저장</b>하는 독립 상태다. 각인 시점에 켜는 방식이면 그 키가 없는 기존 저장본 — 이미
+     * {@code OwnerUUID} 만 가진 개체 — 을 로드할 때 영구성이 복구되지 않아 로드 경로에 조건을
+     * 한 번 더 넣어야 한다. 여기서 파생값으로 답하면 저장할 것이 없고, 로드 직후에도 자동으로
+     * 맞으며, 명령이든 나중의 길들이기 상호작용이든 같은 결과가 나온다.
+     *
+     * <p>야생 워든걸의 정책은 건드리지 않는다 — 소유자가 없으면 {@code Mob} 의 기본
+     * ({@code isPassenger()}) 을 그대로 돌려준다.
+     */
+    @Override
+    public boolean requiresCustomPersistence() {
+        return hasOwner() || super.requiresCustomPersistence();
+    }
+
+    /**
      * 소유자와 스택만 저장한다. 계산 가능한 스탯은 저장하지 않는다 — 설계서 11.1.
      * 소유자가 없으면 키 자체를 쓰지 않는다(가짜 UUID 금지).
      */
