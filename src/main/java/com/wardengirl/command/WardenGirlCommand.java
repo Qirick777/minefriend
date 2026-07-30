@@ -89,11 +89,6 @@ public final class WardenGirlCommand {
                                                         StringArgumentType.getString(ctx, "bone"),
                                                         StringArgumentType.getString(ctx, "axis"),
                                                         DoubleArgumentType.getDouble(ctx, "degrees")))))))
-                .then(Commands.literal("ai")
-                        .then(Commands.literal("on")
-                                .executes(ctx -> setAi(ctx.getSource(), true)))
-                        .then(Commands.literal("off")
-                                .executes(ctx -> setAi(ctx.getSource(), false))))
                 .then(Commands.literal("signtest")
                         .then(Commands.literal("on")
                                 .executes(ctx -> setSignTest(ctx.getSource(), true)))
@@ -316,32 +311,6 @@ public final class WardenGirlCommand {
 
     // ---- /wardengirl ai <on|off> --------------------------------------------------------------
 
-    /**
-     * P1-T5 임시 이동 AI 토글. Default off.
-     *
-     * <p>Applies to every loaded WardenGirl rather than a targeted one: the point is to look at the
-     * walk cycle, and having to aim at the mob first is friction in the one loop this command
-     * exists to serve. The look goals are untouched — only the stroll goal moves.
-     */
-    private static int setAi(CommandSourceStack source, boolean on) {
-        int count = 0;
-        for (net.minecraft.server.level.ServerLevel level : source.getServer().getAllLevels()) {
-            for (WardenGirlEntity e : level.getEntities(
-                    com.wardengirl.registry.ModEntities.WARDEN_GIRL.get(), x -> true)) {
-                e.setMovementAi(on);
-                count++;
-            }
-        }
-        final int n = count;
-        source.sendSuccess(() -> Component.literal("[ai] ").withStyle(ChatFormatting.GOLD)
-                .append(Component.literal(String.format(Locale.ROOT,
-                                "이동 AI %s — 대상 %d마리 (WaterAvoidingRandomStrollGoal)%n"
-                                        + "         시선 Goal 2종은 그대로다. T5 걷기 확인용이며 기본값은 off 다.",
-                                on ? "ON" : "OFF", n))
-                        .withStyle(ChatFormatting.WHITE)), true);
-        return 1;
-    }
-
     /** T5 임시 — json 키프레임 부호 실측. See {@link com.wardengirl.anim.AnimRegistry#SIGN_TEST}. */
     private static int setSignTest(CommandSourceStack source, boolean on) {
         int count = 0;
@@ -444,7 +413,7 @@ public final class WardenGirlCommand {
         source.sendSuccess(() -> Component.literal("[blendcheck] ").withStyle(ChatFormatting.GOLD)
                 .append(Component.literal(String.format(Locale.ROOT,
                                 "%d틱 동안 겹치는 4축에서 C2 + C3 합성을 실측한다.%n"
-                                        + "         ai on 과 action actiontest 가 겹쳐야 한다. 겹친 프레임이 0 이면 측정 불가다.%n"
+                                        + "         배회(C2)와 action actiontest 가 겹쳐야 한다. 겹친 프레임이 0 이면 측정 불가다.%n"
                                         + "         head.yRot 판정에는 look_gain 0 이 필요하다.%n"
                                         + "         결과는 로그의 [blendcheck] 행에 나온다.",
                                 ticks))

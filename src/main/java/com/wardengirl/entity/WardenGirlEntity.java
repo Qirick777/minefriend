@@ -17,7 +17,6 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
-import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import com.wardengirl.anim.AnimParams;
@@ -142,43 +141,15 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         // T8 임시 — 근접이 불가하거나 전방에 좀비가 몰리면 소닉붐. 피해 없음.
         // 지울 때는 이 한 줄과 WardenGirlSonicBoomGoal 파일만 지우면 된다.
         this.goalSelector.addGoal(2, new WardenGirlSonicBoomGoal(this));
+        // T13 — 7.2 일반 추종. 전투(2·3)보다 아래, 배회보다 위다. MOVE 만 잡으므로 전투가
+        // 돌고 있으면 navigation 을 빼앗지 못하고, 전투가 끝나면 별도 상태 전환 없이 다시
+        // 선택된다.
+        this.goalSelector.addGoal(5, new WardenGirlFollowOwnerGoal(this));
+        // T13 — 7.1 소유자 중심(야생이면 현재 위치 중심) 자율 배회. 항상 켜져 있다 —
+        // 디버그 명령으로 켜야 하는 구조가 아니다.
+        this.goalSelector.addGoal(6, new WardenGirlOwnerStrollGoal(this, 1.0D));
         this.goalSelector.addGoal(7, new LookAtPlayerGoal(this, Player.class, 12.0F));
         this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
-    }
-
-    // ---- T5 임시 이동 AI 토글 -----------------------------------------------------------------
-
-    /**
-     * The stroll goal, held so it can be added and removed. Default <b>off</b>.
-     *
-     * <p>P1-T5 grants this purely so the walk cycle can be looked at; it is not the phase-2
-     * movement AI. Kept as one instance rather than reconstructed on each toggle so that removing
-     * it removes the same object that was added — {@code GoalSelector.removeGoal} matches by
-     * identity.
-     */
-    private WaterAvoidingRandomStrollGoal strollGoal;
-    private boolean movementAiEnabled = false;
-
-    /** @return the new state */
-    public boolean setMovementAi(boolean enabled) {
-        if (enabled == this.movementAiEnabled) {
-            return this.movementAiEnabled;
-        }
-        if (this.strollGoal == null) {
-            this.strollGoal = new WaterAvoidingRandomStrollGoal(this, 1.0D);
-        }
-        if (enabled) {
-            this.goalSelector.addGoal(6, this.strollGoal);
-        } else {
-            this.goalSelector.removeGoal(this.strollGoal);
-            this.getNavigation().stop();
-        }
-        this.movementAiEnabled = enabled;
-        return enabled;
-    }
-
-    public boolean isMovementAiEnabled() {
-        return this.movementAiEnabled;
     }
 
     // ---- T10 개체별 소유권·강화 데이터 (2차 설계서 4장 / 6장 / 11장) ----------------------
@@ -207,6 +178,30 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
 
     public boolean hasOwner() {
         return this.ownerUuid != null;
+    }
+
+    /**
+     * T13 — 지금 이 워든걸이 생활 중심으로 삼을 수 있는 소유자 엔티티, 없으면 {@code null}.
+     *
+     * <p>{@code Level.getPlayerByUUID} 는 <b>그 레벨의 {@code players()} 만</b> 훑는다. 그래서 이
+     * 한 번의 호출이 UUID 일치 · 접속 중 · <b>같은 차원</b> 세 조건을 동시에 만족시킨다 — 다른
+     * 차원의 같은 좌표를 오인할 경로도, 오프라인 소유자를 대신할 플레이어를 고를 경로도 없다.
+     * 살아 있음과 제거되지 않음만 덧붙인다.
+     *
+     * <p>이름 비교, 가장 가까운 플레이어, 서버의 첫 플레이어, 전역·static 캐시, 마지막 위치
+     * 기억은 어디에도 없다. 야생({@code ownerUuid == null})이면 곧바로 {@code null} 이다.
+     */
+    @javax.annotation.Nullable
+    public net.minecraft.world.entity.player.Player serverOwner() {
+        java.util.UUID id = this.ownerUuid;
+        if (id == null) {
+            return null;
+        }
+        net.minecraft.world.entity.player.Player p = this.level().getPlayerByUUID(id);
+        if (p == null || !p.isAlive() || p.isRemoved()) {
+            return null;
+        }
+        return p;
     }
 
     /**

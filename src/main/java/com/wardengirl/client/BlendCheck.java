@@ -143,7 +143,7 @@ public final class BlendCheck {
             EFF_MAX[i] = Double.NEGATIVE_INFINITY;
         }
         WardenGirlMod.LOGGER.info("[blendcheck] 시작 — {}틱. 걷기와 actiontest 가 겹쳐야 한다"
-                + " (ai on + action play, look_gain 0)", ticks);
+                + " (배회 + action play, look_gain 0)", ticks);
     }
 
     public static boolean isRunning() {
