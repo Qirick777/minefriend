@@ -279,6 +279,171 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         return target != null && target.isAlive() && !target.isRemoved() && canAttack(target);
     }
 
+    // ---- T14 장거리 추종·현지 생활·전투 목줄 ---------------------------------------------------
+    //
+    // 설계서 7.2 / 7.4. 여기 있는 두 값은 <b>서버 런타임 전용</b>이다 — NBT 에 쓰지 않고,
+    // 패킷으로 보내지 않고, SynchedEntityData 에 넣지 않는다. 설계서 7.4 가 현지 생활 중심을
+    // "포기 시점의 임시 생활 중심점" 으로 정의하므로 재시작·청크 언로드로 사라지면 소유자 중심
+    // 생활로 돌아가는 것이 규정된 동작이다. 전역 static 도, manager 도, capability 도 없다.
+
+    /** 설계서 7.2 — 이 거리를 넘으면 추종을 완전히 포기한다. */
+    public static final double GIVE_UP_DISTANCE = 48.0D;
+    /** 설계서 7.2 — 포기 후 현지 배회 반경. */
+    public static final double LOCAL_RADIUS = 10.0D;
+    /** 설계서 7.2 — 현지 생활 중 소유자 재합류 인식 거리. */
+    public static final double REJOIN_DISTANCE = 24.0D;
+
+    /**
+     * 재합류 경로 판정에 쓰는 탐색 반경. {@link #REJOIN_DISTANCE} 보다 커야 한다.
+     *
+     * <p>{@code PathNavigation.createPath(Entity, accuracy)} 는 탐색 반경으로
+     * {@code Attributes.FOLLOW_RANGE} 를 쓴다(바이트코드 확인). 이 엔티티는
+     * {@code Mob.createMobAttributes()} 의 기본값 16 을 그대로 쓰므로, 그 판을 쓰면 24블록
+     * 대상은 <b>평지에서도</b> 절대 도달 가능으로 나오지 않는다 — {@code PathFinder} 가
+     * 시작점에서 탐색 반경 안에 있는 노드만 확장한다. 그래서 탐색 반경을 인자로 직접 받는
+     * 공개 오버로드 {@code createPath(BlockPos, accuracy, maxRange)} 를 쓴다. FOLLOW_RANGE
+     * Attribute 는 건드리지 않는다 — 그것을 올리면 목표 탐색 거리까지 함께 변한다.
+     */
+    private static final int REJOIN_PATH_RANGE = 26;
+
+    /** 상태 재평가 주기(틱). 추종 재경로 주기와 같은 10틱이다. */
+    private static final int STATE_CHECK_INTERVAL = 10;
+
+    /** 설계서 8.5 — 전투 <b>시작</b> 목줄. */
+    public static final double COMBAT_START_SELF = 12.0D;
+    public static final double COMBAT_START_TARGET = 16.0D;
+    /** 설계서 8.5 — 전투 <b>유지</b> 목줄. 시작보다 넓어 경계에서 진동하지 않는다. */
+    public static final double COMBAT_KEEP_SELF = 16.0D;
+    public static final double COMBAT_KEEP_TARGET = 24.0D;
+
+    private boolean fastFollow;
+    @javax.annotation.Nullable
+    private net.minecraft.world.phys.Vec3 localAnchor;
+
+    public boolean isFastFollow() {
+        return this.fastFollow;
+    }
+
+    public void setFastFollow(boolean fast) {
+        this.fastFollow = fast;
+    }
+
+    /** 현지 생활 중심. {@code null} 이면 현지 생활 상태가 아니다. */
+    @javax.annotation.Nullable
+    public net.minecraft.world.phys.Vec3 localAnchor() {
+        return this.localAnchor;
+    }
+
+    /**
+     * 설계서 7.4 완전 포기. 순서까지 규정대로다 — navigation 중단 → 빠른 추종 해제 →
+     * 현재 위치를 현지 생활 중심으로 기록. 추종 Goal 종료는 {@code localAnchor != null} 을
+     * 보는 {@code canContinueToUse} 가 다음 평가에서 처리한다.
+     *
+     * <p>소유자의 마지막 위치를 기억하지 않는다. 순간이동도, 강제 청크 로딩도 없다.
+     */
+    public void giveUpFollowAndSettleHere() {
+        this.getNavigation().stop();
+        this.fastFollow = false;
+        this.localAnchor = this.position();
+    }
+
+    /**
+     * 설계서 7.4 재합류. 현지 생활 중심을 지우고 빠른 추종 상태를 초기화한다. 그 뒤의 행동은
+     * 거리만으로 갈린다 — 12 초과면 추종 Goal 이 스스로 선택되고, 12 이하면 소유자 중심 배회다.
+     */
+    private void rejoinOwner() {
+        this.fastFollow = false;
+        this.localAnchor = null;
+    }
+
+    /**
+     * 소유자에게 <b>실제로 도달하는</b> 경로가 있는가. {@code moveTo} 의 반환값은 쓰지 않는다 —
+     * 바닐라는 닿지 못하는 대상에도 부분 경로를 만들고 {@code true} 를 돌려준다.
+     *
+     * <h3>{@code createPath} 의 부작용을 피하는 조건</h3>
+     *
+     * {@code PathNavigation.createPath} 는 계산 결과의 목표가 있으면 {@code targetPos} 와
+     * {@code reachRange} 를 <b>덮어쓴다</b>(바이트코드 확인). 그 두 필드를 읽는 곳은
+     * {@code recomputePath()} 와 {@code createPath} 자신의 캐시 검사뿐이고, 전자는
+     * {@code shouldRecomputePath} 가 <b>활성 경로가 있을 때만</b> 참이 되어 호출된다. 그래서
+     * {@code navigation.isDone()} 일 때만 물어본다 — 그 순간에는 두 필드를 덮어써도 읽는 쪽이
+     * 없고, 다음 실제 {@code moveTo} 가 정상 값으로 다시 채운다. 이 조건이 없으면 배회 경로가
+     * 블록 변경 때 소유자 쪽으로 재계산되어, "포기 후 소유자 방향으로 이동하지 않는다" 가
+     * 깨진다.
+     *
+     * <p>남는 한계 두 가지는 실측으로 보고한다. {@code createPath} 는 {@code canUpdatePath()}
+     * 가 false 인 순간(공중)에 {@code null} 을 돌려주므로 그때는 "경로 없음" 으로 읽힌다 —
+     * 10틱마다 다시 물어보므로 재합류가 조금 늦어질 뿐이다. 그리고 탐색 노드 상한을 넘는 긴
+     * 우회로는 실제로 길이 있어도 도달 불가로 나온다.
+     */
+    private boolean hasRealPathTo(net.minecraft.world.entity.player.Player owner) {
+        net.minecraft.world.entity.ai.navigation.PathNavigation nav = this.getNavigation();
+        if (!nav.isDone()) {
+            return false;
+        }
+        net.minecraft.world.level.pathfinder.Path path =
+                nav.createPath(owner.blockPosition(), 1, REJOIN_PATH_RANGE);
+        return path != null && path.canReach();
+    }
+
+    /**
+     * 48 포기와 24 재합류를 여기 한 곳에서만 결정한다.
+     *
+     * <p>추종 Goal 안이 아니라 엔티티 쪽에 둔 이유가 있다 — 전투가 워든걸을 48블록 밖으로
+     *끌고 갔을 때는 추종 Goal 이 애초에 돌지 않으므로, Goal 안에서만 판정하면 현지 생활로
+     * 넘어가지 못한다. 설계서 8.5 의 "전투 이탈 후" 표가 요구하는 재평가가 이 한 곳이다.
+     */
+    @Override
+    protected void customServerAiStep() {
+        super.customServerAiStep();
+        if (this.tickCount % STATE_CHECK_INTERVAL != 0) {
+            return;
+        }
+        net.minecraft.world.entity.player.Player owner = serverOwner();
+        if (owner == null) {
+            // 설계서 7.5 — 다른 플레이어를 대신 고르지 않는다. 이미 있는 현지 중심은 그대로 둔다.
+            return;
+        }
+        double d = this.distanceTo(owner);
+        if (this.localAnchor == null) {
+            if (d > GIVE_UP_DISTANCE) {
+                giveUpFollowAndSettleHere();
+            }
+            return;
+        }
+        if (d <= REJOIN_DISTANCE && hasRealPathTo(owner)) {
+            rejoinOwner();
+        }
+    }
+
+    /**
+     * 소유자가 있는 워든걸의 전투 목줄. 소유자에게서 너무 멀어지는 전투를 막는다.
+     *
+     * <p>야생이거나 소유자를 찾을 수 없으면 <b>제한하지 않는다</b> — 설계서 7.5 대로 다른
+     * 플레이어를 대신 기준으로 삼지 않고, 기존 자기 전투 규칙을 그대로 쓴다.
+     */
+    private boolean combatWithinOwnerLeash(@javax.annotation.Nullable LivingEntity target,
+                                           double selfMax, double targetMax) {
+        net.minecraft.world.entity.player.Player owner = serverOwner();
+        if (owner == null) {
+            return true;
+        }
+        if (this.distanceToSqr(owner) > selfMax * selfMax) {
+            return false;
+        }
+        return target == null || target.distanceToSqr(owner) <= targetMax * targetMax;
+    }
+
+    /** 새 전투를 시작해도 되는가. 워든걸-소유자 12 이하 <b>그리고</b> 대상-소유자 16 이하. */
+    public boolean canStartLeashedCombat(@javax.annotation.Nullable LivingEntity target) {
+        return combatWithinOwnerLeash(target, COMBAT_START_SELF, COMBAT_START_TARGET);
+    }
+
+    /** 전투를 이어가도 되는가. 워든걸-소유자 16 이하 <b>그리고</b> 대상-소유자 24 이하. */
+    public boolean canKeepLeashedCombat(@javax.annotation.Nullable LivingEntity target) {
+        return combatWithinOwnerLeash(target, COMBAT_KEEP_SELF, COMBAT_KEEP_TARGET);
+    }
+
     public long getPowerStacks() {
         return this.powerStacks;
     }

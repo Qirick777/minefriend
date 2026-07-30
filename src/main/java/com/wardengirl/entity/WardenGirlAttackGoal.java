@@ -155,8 +155,15 @@ public class WardenGirlAttackGoal extends Goal {
         if (blocked() || this.mob.isPassenger()) {
             return false;
         }
-        this.target = WardenGirlHostiles.nearest(this.mob);
-        return this.target != null;
+        net.minecraft.world.entity.LivingEntity found = WardenGirlHostiles.nearest(this.mob);
+        // T14 — 소유자가 있는 워든걸은 소유자 목줄 안에서만 새 전투를 시작한다(워든걸-소유자 12
+        // 이하, 대상-소유자 16 이하). 야생이거나 소유자를 찾을 수 없으면 제한하지 않는다.
+        // 대상 선정 방식 자체는 건드리지 않았다 — 통과한 뒤에 거리만 한 번 더 본다.
+        if (found == null || !this.mob.canStartLeashedCombat(found)) {
+            return false;
+        }
+        this.target = found;
+        return true;
     }
 
     /**
@@ -167,6 +174,12 @@ public class WardenGirlAttackGoal extends Goal {
     @Override
     public boolean canContinueToUse() {
         if (!this.mob.isValidCombatTarget(this.target) || blocked() || this.mob.isPassenger()) {
+            return false;
+        }
+        // T14 — 유지 목줄(워든걸-소유자 16, 대상-소유자 24). 시작보다 넓으므로 경계에서 전투와
+        // 추종이 번갈아 켜지지 않는다. 넘으면 여기서 끝내고 stop() 이 target 해제와 navigation
+        // 중단을 함께 처리한다. 모션 재생 중이어도 예외를 두지 않는다.
+        if (!this.mob.canKeepLeashedCombat(this.target)) {
             return false;
         }
         if (this.ticks >= 0) {

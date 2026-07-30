@@ -48,6 +48,9 @@ public class WardenGirlOwnerStrollGoal extends WaterAvoidingRandomStrollGoal {
 
     private static final double RADIUS_SQR = OWNER_RADIUS * OWNER_RADIUS;
     private static final double KEEPOUT_SQR = OWNER_KEEPOUT * OWNER_KEEPOUT;
+    /** 2차 설계서 7.4 — 추종 포기 후 현지 배회 반경. */
+    private static final double LOCAL_SQR =
+            WardenGirlEntity.LOCAL_RADIUS * WardenGirlEntity.LOCAL_RADIUS;
 
     /** 바닐라 배회와 같은 후보 범위다. 소유자 고리 전체를 덮을 만큼 넉넉하다. */
     private static final int CANDIDATE_XZ = 10;
@@ -60,20 +63,42 @@ public class WardenGirlOwnerStrollGoal extends WaterAvoidingRandomStrollGoal {
         this.girl = girl;
     }
 
+    /**
+     * T14 — 중심 선택이 세 갈래가 된다. 발동 조건·경로 생성·종료는 여전히 전부 바닐라다.
+     *
+     * <pre>
+     *   현지 생활 중심 있음        → 그 중심 반경 10
+     *   없음 + 유효한 소유자 있음  → 소유자 반경 8
+     *   소유자 없음                → 바닐라 (현재 위치 기준)
+     * </pre>
+     *
+     * <p>현지 생활 중심이 소유자보다 <b>먼저</b>다. 그래야 48블록 포기 뒤에 소유자가 여전히
+     * 유효해도 소유자 쪽 목적지를 고르지 않는다 — "포기 후 소유자 방향으로 계속 이동하지
+     * 않는다" 를 목적지 생성 단계에서 지키는 자리가 여기다.
+     */
     @Override
     protected Vec3 getPosition() {
+        Vec3 anchor = this.girl.localAnchor();
+        if (anchor != null) {
+            // 현지 중심에는 keepout 이 없다 — 비켜줄 소유자가 그 자리에 없다.
+            return around(anchor, LOCAL_SQR, 0.0D);
+        }
         Player owner = this.girl.serverOwner();
         if (owner == null) {
             return super.getPosition();         // 야생·오프라인·다른 차원 → 현재 위치 기준 배회
         }
-        // 중심은 저장하지 않는다. 매번 소유자의 <b>현재</b> 위치에서 파생하므로 소유자가 천천히
-        // 움직이면 다음 배회 중심도 따라온다.
-        Vec3 center = owner.position();
+        // 소유자 중심은 저장하지 않는다. 매번 소유자의 <b>현재</b> 위치에서 파생하므로 소유자가
+        // 천천히 움직이면 다음 배회 중심도 따라온다.
+        return around(owner.position(), RADIUS_SQR, KEEPOUT_SQR);
+    }
+
+    /** 중심에서 수평거리 {@code [√minSqr, √maxSqr]} 안의 후보만 남긴다. */
+    private Vec3 around(Vec3 center, double maxSqr, double minSqr) {
         return LandRandomPos.getPos(this.girl, CANDIDATE_XZ, CANDIDATE_Y, pos -> {
             double dx = (pos.getX() + 0.5D) - center.x;
             double dz = (pos.getZ() + 0.5D) - center.z;
             double d2 = dx * dx + dz * dz;       // 수평 거리다. 반경 규칙이 수평이다.
-            if (d2 > RADIUS_SQR || d2 < KEEPOUT_SQR) {
+            if (d2 > maxSqr || d2 < minSqr) {
                 return Double.NEGATIVE_INFINITY; // 후보 탈락. 전부 탈락이면 이번 회차는 쉰다.
             }
             return 0.0D;

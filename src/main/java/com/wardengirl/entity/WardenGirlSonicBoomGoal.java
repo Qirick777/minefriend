@@ -103,6 +103,11 @@ public class WardenGirlSonicBoomGoal extends Goal {
         if (t == null || !WardenGirlHostiles.inBoomRange(this.mob, t)) {
             return false;
         }
+        // T14 — 근접과 같은 소유자 목줄을 쓴다(시작: 워든걸-소유자 12, 대상-소유자 16).
+        // 야생이거나 소유자를 찾을 수 없으면 제한하지 않는다.
+        if (!this.mob.canStartLeashedCombat(t)) {
+            return false;
+        }
         this.target = t;
         if (WardenGirlHostiles.frontCrowd(this.mob) >= WardenGirlHostiles.CROWD) {
             return true;
@@ -134,7 +139,10 @@ public class WardenGirlSonicBoomGoal extends Goal {
      */
     @Override
     public boolean canContinueToUse() {
+        // T14 — 유지 목줄을 넘으면 충전 중이라도 끝낸다. stop() 이 ticks 를 −1 로 되돌리므로
+        // "진행 중인 소닉 준비 취소" 가 여기서 함께 일어난다. 방출 전에 끊기면 피해도 없다.
         return this.mob.isValidCombatTarget(this.target) && !cancelled()
+                && this.mob.canKeepLeashedCombat(this.target)
                 && this.ticks < AnimRegistry.SONIC_LENGTH_TICKS;
     }
 

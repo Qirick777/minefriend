@@ -27,7 +27,7 @@ import java.util.EnumSet;
  *
  * <h2>경로 실패</h2>
  *
- * 실패는 두 가지이고 <b>같은 카운터</b>로 센다.
+ * 실패는 두 가지이고 <b>같은 시계</b>로 센다(T14 — 예전에는 같은 카운터였다).
  *
  * <ul>
  *   <li>{@code moveTo} 가 {@code false} — 경로를 아예 만들지 못했다.
@@ -46,11 +46,19 @@ import java.util.EnumSet;
  * 소유자를 쫓는 구간이 더 길어졌지만, 그 구간은 워든걸이 실제로 전진하므로 이 판정에 걸리지
  * 않는다.
  *
- * <p>어느 쪽이든 연속 {@value #FAIL_LIMIT}회면 이 Goal 을 <b>끝낸다</b>. 끝내야 플래그가 풀린다.
+ * <p>T14 — 진전이 {@value #STUCK_TIME}틱 동안 없으면 이 Goal 을 <b>끝낸다</b>. 끝내야 플래그가
+ * 풀린다. 횟수가 아니라 <b>실제 서버 시간</b>으로 재는 이유는 {@link #STUCK_TIME} 에 적었다.
  * 끝낸 뒤에는 {@value #RETRY_DELAY}틱 동안 다시 시작하지 않는다 — 그러지 않으면 다음 틱에
  * {@code canUse} 가 또 참이 되어 시작·실패·종료를 매 틱 반복하며 결국 플래그를 독점한다. 대기
  * 시간이 지나면 아무 상태도 남기지 않고 평범하게 재시도하므로, 환경이 다시 유효해지면 그대로
- * 추종이 재개된다(영구 포기 상태와 현지 anchor 는 T14 범위다).
+ * 추종이 재개된다.
+ *
+ * <h2>임시 give-up 과 완전 포기는 다르다</h2>
+ *
+ * <pre>
+ *   진전 없이 60틱      → 임시 give-up. {@value #RETRY_DELAY}틱 뒤 재시도. 상태를 남기지 않는다.
+ *   소유자 거리 &gt; 48  → 완전 포기. 현지 생활 중심을 만들고 재합류까지 추종하지 않는다.
+ * </pre>
  */
 public class WardenGirlFollowOwnerGoal extends Goal {
 
@@ -92,17 +100,47 @@ public class WardenGirlFollowOwnerGoal extends Goal {
     public static final double CRUISE_SPEED = 1.6D;
     public static final double CLOSE_SPEED = 1.3D;
 
+    /** T14 — 빠른 추종 <b>해제</b> 거리. 진입 20 과 달라서 경계에서 진동하지 않는다. */
+    public static final double FAST_EXIT_DISTANCE = 16.0D;
+
     private static final double START_SQR = START_DISTANCE * START_DISTANCE;
     private static final double STOP_SQR = STOP_DISTANCE * STOP_DISTANCE;
     private static final double SPRINT_SQR = SPRINT_DISTANCE * SPRINT_DISTANCE;
     private static final double CRUISE_SQR = CRUISE_DISTANCE * CRUISE_DISTANCE;
+    private static final double FAST_EXIT_SQR = FAST_EXIT_DISTANCE * FAST_EXIT_DISTANCE;
+    private static final double GIVE_UP_SQR =
+            WardenGirlEntity.GIVE_UP_DISTANCE * WardenGirlEntity.GIVE_UP_DISTANCE;
 
     /**
-     * 거리제곱으로 바로 고른다. 제곱근을 뽑지 않으므로 경계가 정확히 {@code 20}·{@code 8} 이다 —
-     * {@code d > 20} 은 {@code d² > 400}, {@code d > 8} 은 {@code d² > 64} 와 같은 판정이다.
+     * T14 — 거리제곱으로 바로 고른다. 제곱근을 뽑지 않으므로 경계가 정확히 {@code 20}·{@code 16}
+     * ·{@code 8} 이다 — {@code d > 20} 은 {@code d² > 400} 과 같은 판정이다.
+     *
+     * <p>T13.5·T13.6 은 거리만 보는 무상태 함수였다. T14 는 거기에 <b>빠른 추종 상태</b> 하나를
+     * 얹는다. 상태는 이 Goal 이 아니라 개체({@code WardenGirlEntity}) 가 들고 있다 — 전투 이탈과
+     * 48 포기, 24 재합류가 Goal 밖에서 이 상태를 초기화해야 하고, Goal 은 종료될 때마다 필드가
+     * 날아가기 때문이다. 별도의 빠른 추종 Goal 은 만들지 않는다.
+     *
+     * <pre>
+     *   빠름 아님 + d &gt; 20   → 빠름 진입
+     *   빠름     + d &gt; 16   → 빠름 유지
+     *   빠름     + d ≤ 16    → 빠름 해제
+     *
+     *   빠름                  → 1.8
+     *   빠름 아님 + d &gt; 8    → 1.6
+     *   빠름 아님 + 5 &lt; d ≤ 8 → 1.3
+     * </pre>
      */
-    private static double followSpeed(double distSqr) {
-        if (distSqr > SPRINT_SQR) {
+    private double followSpeed(double distSqr) {
+        boolean fast = this.mob.isFastFollow();
+        if (!fast) {
+            if (distSqr > SPRINT_SQR) {
+                fast = true;
+            }
+        } else if (distSqr <= FAST_EXIT_SQR) {
+            fast = false;
+        }
+        this.mob.setFastFollow(fast);
+        if (fast) {
             return SPRINT_SPEED;
         }
         if (distSqr > CRUISE_SQR) {
@@ -134,7 +172,20 @@ public class WardenGirlFollowOwnerGoal extends Goal {
     /** 소유자가 마지막 경로 기준점에서 이만큼 벗어나면 간격을 기다리지 않고 갱신한다. */
     private static final double OWNER_MOVE = 1.0D;
 
-    private static final int FAIL_LIMIT = 3;
+    /**
+     * T14 — 제자리 포기 판정을 <b>실제 서버 시간</b>으로 잰다. 단위는 틱이다.
+     *
+     * <p>T13.6 이전에는 "연속 실패 3회" 였다. 재경로가 20틱이던 때 그것은 약 60틱이었지만,
+     * T13.6 이 재경로를 10틱으로 줄이면서 같은 코드가 약 30틱으로 짧아졌다 — 판정 기준이
+     * 재경로 주기에 딸려 움직인 것이다. 그래서 횟수를 버리고 시간으로 바꿨다. 재경로 주기를
+     * 다시 바꿔도 이 값의 뜻은 변하지 않는다.
+     *
+     * <p>"진전" 은 <b>워든걸이 실제로 움직였거나</b> 소유자와 가까워진 것이다. 그래서 다음은
+     * 실패로 세지 않는다 — 워든걸이 이동 중, 소유자가 같은 방향으로 달려 거리가 유지되는 중,
+     * 방향 전환 직후 일시적으로 거리가 늘어난 순간, 짧은 공중 상태.
+     */
+    private static final int STUCK_TIME = 60;
+
     private static final int RETRY_DELAY = 40;
 
     /** 이만큼은 줄어야 "가까워졌다"로 본다. 부동소수점 잡음을 걸러낸다. */
@@ -147,7 +198,8 @@ public class WardenGirlFollowOwnerGoal extends Goal {
     private Player owner;
     /** 이 {@code mob.tickCount} 이상이 되면 다음 재경로를 만든다. */
     private int nextRepathTick;
-    private int fails;
+    /** 마지막으로 진전이 있었던 {@code mob.tickCount}. 제자리 포기를 시간으로 잰다. */
+    private int lastProgressTick;
     /** 이 틱 이전에는 다시 시작하지 않는다. {@code mob.tickCount} 기준이다. */
     private int retryAtTick;
     /** 시작 이후 기록한 최소 거리제곱. */
@@ -173,12 +225,19 @@ public class WardenGirlFollowOwnerGoal extends Goal {
         if (this.mob.tickCount < this.retryAtTick || this.mob.isPassenger()) {
             return false;
         }
+        if (this.mob.localAnchor() != null) {
+            return false;                       // T14 현지 생활 중 — 재합류까지 추종하지 않는다
+        }
         Player found = this.mob.serverOwner();
         if (found == null) {
             return false;                       // 야생·오프라인·다른 차원·사망 → 추종하지 않는다
         }
-        if (this.mob.distanceToSqr(found) <= START_SQR) {
+        double distSqr = this.mob.distanceToSqr(found);
+        if (distSqr <= START_SQR) {
             return false;                       // 12 이하에서는 시작하지 않는다
+        }
+        if (distSqr > GIVE_UP_SQR) {
+            return false;                       // T14 48 초과 — 현지 생활 전환은 개체가 결정한다
         }
         this.owner = found;
         return true;
@@ -186,21 +245,34 @@ public class WardenGirlFollowOwnerGoal extends Goal {
 
     @Override
     public boolean canContinueToUse() {
-        if (this.owner == null || this.mob.isPassenger() || this.fails >= FAIL_LIMIT) {
+        if (this.owner == null || this.mob.isPassenger()) {
             return false;
+        }
+        if (this.mob.localAnchor() != null) {
+            return false;                       // T14 완전 포기가 확정됐다
+        }
+        if (this.mob.tickCount - this.lastProgressTick >= STUCK_TIME) {
+            return false;                       // T14 제자리 60틱 — 임시 give-up 후 재시도
         }
         // 매 틱 다시 찾는다 — 도중에 로그아웃하거나 차원을 옮기면 그 순간 null 이 되어 끝난다.
         // 소유자의 마지막 위치를 기억하지 않으므로 사라진 좌표를 향해 걸어가지 않는다.
         if (this.mob.serverOwner() != this.owner) {
             return false;
         }
-        return this.mob.distanceToSqr(this.owner) > STOP_SQR;
+        double distSqr = this.mob.distanceToSqr(this.owner);
+        if (distSqr > GIVE_UP_SQR) {
+            // T14 설계서 7.4 완전 포기. 순서(navigation 중단 → 빠른 추종 해제 → 현재 위치를
+            // 현지 중심으로 기록)는 개체 쪽 한 메서드가 지킨다. Goal 종료는 이 false 다.
+            this.mob.giveUpFollowAndSettleHere();
+            return false;
+        }
+        return distSqr > STOP_SQR;
     }
 
     @Override
     public void start() {
         this.nextRepathTick = 0;                // 첫 tick 에서 바로 경로를 만든다
-        this.fails = 0;
+        this.lastProgressTick = this.mob.tickCount;
         this.bestSqr = Double.MAX_VALUE;
         this.lastSelfX = Double.NaN;
         this.pathedX = Double.NaN;
@@ -232,17 +304,19 @@ public class WardenGirlFollowOwnerGoal extends Goal {
         if (closer) {
             this.bestSqr = now;
         }
-        // 제자리인가. 걸어가는 중이면 따라잡지 못해도 실패가 아니다.
-        boolean stuck = !Double.isNaN(this.lastSelfX)
-                && this.mob.distanceToSqr(this.lastSelfX, this.lastSelfY, this.lastSelfZ)
-                        < STUCK_STEP * STUCK_STEP;
+        // 스스로 움직였는가. 걸어가는 중이면 따라잡지 못해도 실패가 아니다. 첫 표본은 비교할
+        // 대상이 없으므로 움직인 것으로 본다.
+        boolean movedSelf = Double.isNaN(this.lastSelfX)
+                || this.mob.distanceToSqr(this.lastSelfX, this.lastSelfY, this.lastSelfZ)
+                        >= STUCK_STEP * STUCK_STEP;
         this.lastSelfX = this.mob.getX();
         this.lastSelfY = this.mob.getY();
         this.lastSelfZ = this.mob.getZ();
-        if (ok && (closer || !stuck)) {
-            this.fails = 0;
-        } else {
-            this.fails++;                       // FAIL_LIMIT 에 닿으면 canContinueToUse 가 끝낸다
+        // T14 — 진전이 있으면 시계를 되돌린다. 없으면 그냥 흐르게 두고, STUCK_TIME 을 넘기면
+        // canContinueToUse 가 끝낸다. moveTo 의 false 하나만으로는 실패로 세지 않는다 —
+        // 이전 경로로 계속 전진하는 중이면 그것이 진전이다.
+        if (closer || movedSelf) {
+            this.lastProgressTick = this.mob.tickCount;
         }
     }
 
@@ -254,10 +328,12 @@ public class WardenGirlFollowOwnerGoal extends Goal {
      */
     @Override
     public void stop() {
-        boolean gaveUp = this.fails >= FAIL_LIMIT;
+        boolean gaveUp = this.mob.tickCount - this.lastProgressTick >= STUCK_TIME;
         this.owner = null;
         this.nextRepathTick = 0;
-        this.fails = 0;
+        this.lastProgressTick = this.mob.tickCount;
+        // T14 — 빠른 추종은 추종 중에만 뜻이 있는 상태다. 어떤 이유로 끝나든 여기서 지운다.
+        this.mob.setFastFollow(false);
         this.bestSqr = Double.MAX_VALUE;
         this.lastSelfX = Double.NaN;
         this.pathedX = Double.NaN;
