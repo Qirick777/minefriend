@@ -814,14 +814,15 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         if (atk > (prevAtkBoxed == null ? 0 : prevAtkBoxed)) {
             software.bernie.geckolib.core.animation.Animation attackClip =
                     getAnimation(animatable, AnimRegistry.ATTACK);
-            double atkElapsed = Math.max(0.0D, AnimRegistry.ATTACK_LENGTH_TICKS - atk);
-            // 체감 조절용 임시 배속. 클립 길이와 서버 attackTime 은 건드리지 않고 재생
-            // 시간축만 곱한다 — atkElapsed 는 서버 틱이므로 배속을 곱하면 클립 시간이 된다.
-            double atkSpeed = com.wardengirl.anim.MeleeDebug.animSpeed();
-            if (attackClip != null && atkElapsed * atkSpeed < attackClip.length()) {
+            // atkElapsed 는 공격이 방송된 뒤 흐른 <b>서버 틱</b>이다. attackTime 이 실제 재생
+            // 길이에서 시작해 매 틱 1씩 줄어들므로 그 차가 곧 흐른 틱이다. 클립 시간은
+            // ActionMotion 이 여기에 배속을 곱해 구한다.
+            double atkElapsed = Math.max(0.0D, AnimRegistry.ATTACK_PLAY_TICKS - atk);
+            if (attackClip != null
+                    && atkElapsed * AnimRegistry.ATTACK_SPEED < attackClip.length()) {
                 this.sniffInterrupt.remove(animatable.getId());
                 action.syncTo(-animatable.tickCount - 2, AnimRegistry.ATTACK,
-                        attackClip.length(), now - atkElapsed, atkSpeed);
+                        attackClip.length(), now - atkElapsed, AnimRegistry.ATTACK_SPEED);
             }
         }
         // ===== T7 끝 =====

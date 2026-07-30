@@ -1,7 +1,6 @@
 package com.wardengirl.entity;
 
 import com.wardengirl.anim.AnimRegistry;
-import com.wardengirl.anim.MeleeDebug;
 import net.minecraft.world.entity.ai.goal.Goal;
 
 import java.util.EnumSet;
@@ -20,7 +19,7 @@ import java.util.EnumSet;
  *
  * <h2>피해 (T12.5)</h2>
  *
- * 모션 한 회당 {@link #HIT_TICK} 에서 {@code Mob.doHurtTarget} 을 <b>정확히 한 번</b> 부른다.
+ * 모션이 시작되는 회차에 {@code Mob.doHurtTarget} 을 <b>정확히 한 번</b> 부른다(선딜 0).
  * {@code setTarget} 은 여전히 부르지 않는다 — 이 Goal 은 자기 {@link #target} 필드만 쓴다.
  *
  * <h2>구조는 4.12 킁킁과 같다</h2>
@@ -41,37 +40,14 @@ public class WardenGirlAttackGoal extends Goal {
     public static final int MELEE_COOLDOWN = 19;
 
     /**
-     * 실제 타격이 일어나는 모션 나이(틱). <b>내려찍기가 바닥에 닿는 프레임이다.</b>
+     * 피해가 발생하는 모션 나이는 <b>0틱</b>이다 — 사용자가 확정한 최종값이며 조절 수단은 없다.
+     * 비교할 카운터가 없으므로 상수도, 회차별 상태도 두지 않고 {@link #tick()} 이 공격을
+     * 방송하는 자리에서 곧바로 {@link #strike()} 를 부른다.
      *
-     * <p>선딜이 12틱이던 때에는, 넉백 저항이 0인 저스택 워든걸이 대상의 반격에 맞아 공중으로
-     * 떠오른 채 12틱을 흘려보내 <b>미스의 92%</b>가 발생했다(실측: 미스 회차의 92%가 창 안에서
-     * 피격·공중, 워든걸 이동 1.80블록 대 타격 회차 0.43블록). 그래서 클립 자체를 다시 타이밍
-     * 조정해 충돌을 앞당겼다 — 사거리를 넓히거나 저항 수치를 바꾸지 않았다.
-     *
-     * <p>재조정한 {@code attack} 클립(여전히 0.9초 = 18틱)의 실측 키값. 충돌 근처 6~10틱은
-     * 정수 틱마다 키가 있어 보간이 최저점을 옮길 수 없다.
-     *
-     * <pre>
-     *   틱     0     1     4     5     6     7     8     9    10    12    14    16    18
-     *   팔 x   0   −14   150   158   120    55    16    22    38    26    12     4     0
-     *   몸 x   0    −3     8   9.5     7    −6   −15   −13    −8    −5    −2  −0.5     0
-     * </pre>
-     *
-     * 5틱에 최고로 들어올렸다가 8틱에서 <b>팔이 들어올림 이후 첫 국소최저(16°)</b>가 되고
-     * <b>몸통도 같은 틱에 최대 전방 기울임(−15°)</b>이다. 9틱부터 22 → 38 로 되돌아오는 반동
-     * 구간이므로 8틱이 화면에서 "맞았다"로 보이는 순간이다. 1틱의 −14° 는 예비 젖힘이지
-     * 내려찍기가 아니다.
-     *
-     * <p>무적 틱과도 어긋나지 않는다. 타격 간격은 방송 간격과 같은 19틱인데
-     * {@code LivingEntity.hurt} 는 {@code invulnerableTime > 10} 일 때만 감쇠 경로로 가고
-     * (성공 시 20으로 설정, 매 틱 1씩 감소), 19틱 뒤에는 1이 되어 있으므로 <b>매 회차가 전액</b>
-     * 들어간다.
-     *
-     * <p><b>현재 실제로 쓰이는 값은 {@link MeleeDebug#windup()} 이다</b> — 체감 조절용 임시
-     * 명령이 이 상수를 기본값으로 삼아 덮어쓴다. 임시 도구를 제거하면 {@link #motionWindup} 을
-     * 이 상수로 되돌린다.
+     * <p>화면의 내려찍기가 바닥에 닿는 프레임은 클립 시간 8틱(= 배속 1.2 에서 실제 6.7틱)이지만,
+     * 피해를 그 프레임까지 미루면 넉백 저항이 0인 저스택 워든걸이 그 사이 공중으로 밀려나
+     * 헛공격이 된다(실측 미스 51회가 전부 공중 상태). 그래서 피해는 공격이 성립한 틱에 넣는다.
      */
-    public static final int HIT_TICK = 8;
 
     /**
      * 전투 추적 중 navigation 속도 배율. 평상시 배회는 {@code 1.0} 그대로다.
@@ -100,7 +76,7 @@ public class WardenGirlAttackGoal extends Goal {
      *
      * <p>공격 <b>시작</b> 사거리와 접근·추적 기준은 {@link #reachSqr} 그대로다(0.6/0.6 이면 2.04,
      * 즉 1.4283블록). 둘을 나눈 이유는 하나다 — 저스택 워든걸은 넉백 저항이 0이라 대상의 반격에
-     * 공중으로 떠오르고, 스윙한 뒤 {@link #HIT_TICK}까지 8틱 동안 밀려나 실측 미스 51회가
+     * 공중으로 떠오르고, 선딜이 있던 동안 밀려나 실측 미스 51회가
      * <b>전부</b> 공중 상태였다. 미스 거리는 최소 1.4418 · 중앙값 1.91 · 최대 2.6653 이었다.
      * 시작 거리까지 1.8로 넓히면 멀리서 모션을 시작해 허공을 때리는 그림이 되므로 넓히지 않는다.
      *
@@ -130,24 +106,6 @@ public class WardenGirlAttackGoal extends Goal {
      */
     private static final int STALL_RETRY = 2;
 
-    /**
-     * 이 회차의 선딜레이와 모션 종료 틱. 회차가 <b>시작될 때 한 번</b> 읽어 고정한다 — 진행 중인
-     * 공격에 임시 조절값을 소급 적용하지 않는다.
-     *
-     * <p>고정하는 것이 안전한 이유는 두 가지다. 첫째, 비교 대상이 카운터 밑에서 움직이지 않으므로
-     * {@code ticks == motionWindup} 이 한 회차에 정확히 한 번만 성립한다 — 재생 중에 값을 낮추면
-     * 이미 지나간 틱과 같아질 일이 없고, 높이면 종료 틱을 넘겨 아예 타격이 사라질 일이 없다.
-     * 둘째, 클라이언트는 공격 시작 시점에 {@code EVENT_ATTACK} 한 번만 받으므로 재생 중 서버
-     * 타이밍을 바꾸면 화면과 서버가 그 회차 내내 어긋난다.
-     *
-     * <p>{@link #motionEnd} 는 {@code max(클립 18틱, 선딜)} 이다. 선딜이 클립보다 길면 값을 몰래
-     * 깎지 않고 <b>실제로 그 틱까지 모션 상태를 유지</b>한 뒤 타격한다 — 화면의 클립은 18틱에
-     * 끝나 있고 피해는 그 뒤에 들어가는, 설정한 그대로의 의미다. 그 사이 접근·재경로는 계속
-     * 돌고({@link #updateApproach()} 가 분기 앞에 있다) 다음 공격 시작만 늦어진다. 시작 간격은
-     * {@link #MELEE_COOLDOWN} 틱보다 짧아지지 않는다 — 늘어날 뿐이다.
-     */
-    private int motionWindup = MeleeDebug.DEFAULT_WINDUP;
-    private int motionEnd = (int) AnimRegistry.ATTACK_LENGTH_TICKS;
 
     /** 재생 나이(틱). 음수면 아직 접근 중이다. */
     private int ticks = -1;
@@ -239,10 +197,9 @@ public class WardenGirlAttackGoal extends Goal {
         updateApproach();
         if (this.ticks >= 0) {
             this.ticks++;
-            if (this.ticks == this.motionWindup) {
-                strike();                       // 모션당 정확히 한 번. 아래 주석 참고.
-            }
-            if (this.ticks < this.motionEnd) {
+            // 모션 상태를 화면 클립이 실제로 차지하는 15틱(= 18 / 1.2)만 유지한다. 시작 간격은
+            // MELEE_COOLDOWN 19틱 그대로이므로 모션이 끝난 뒤 다음 공격까지 4틱이 비어 있다.
+            if (this.ticks < AnimRegistry.ATTACK_PLAY_TICKS) {
                 return;
             }
             // 모션이 끝났다. Goal 을 멈췄다 다시 켜는 대신 여기서 접근 상태로 돌아간다.
@@ -265,15 +222,12 @@ public class WardenGirlAttackGoal extends Goal {
                 return;                         // 이번 공격 회차를 시작하지 않는다.
             }
             this.ticks = 0;
-            this.motionWindup = MeleeDebug.windup();
-            this.motionEnd = Math.max((int) AnimRegistry.ATTACK_LENGTH_TICKS, this.motionWindup);
             this.mob.startMeleeCooldown(MELEE_COOLDOWN);
             this.mob.level().broadcastEntityEvent(this.mob, WardenGirlEntity.EVENT_ATTACK);
-            if (this.motionWindup == 0) {
-                // 선딜 0 — 공격 시작과 <b>같은 서버 틱</b>에 판정한다. 다음 틱부터 ticks 는 1
-                // 이상이므로 ticks == 0 이 다시 성립하지 않아 중복 피해가 구조적으로 없다.
-                strike();
-            }
+            // 선딜 0 — 공격이 성립한 <b>같은 서버 틱</b>에 판정한다. 이 자리는 회차당 한 번만
+            // 지나가고(다음 틱부터 ticks 는 1 이상이라 이 분기에 들어오지 못한다) 다른 어떤
+            // 경로도 strike() 를 부르지 않으므로 중복 피해가 구조적으로 없다.
+            strike();
             return;
         }
         this.approach++;
@@ -334,7 +288,7 @@ public class WardenGirlAttackGoal extends Goal {
      *
      * {@link #ticks} 는 방송 틱에 0 이 되고 {@link #tick()} 에서만 1씩 오른다. 이 Goal 은
      * {@code requiresUpdateEveryTick()} 이라 {@code tick()} 이 매 틱 돌므로 카운터가
-     * {@link #HIT_TICK} 을 <b>한 모션에 한 번만</b> 통과한다. 중간에 Goal 이 끊기면
+     * 방송 틱에 <b>한 모션에 한 번만</b> 부른다. 중간에 Goal 이 끊기면
      * {@link #stop()} 이 −1 로 되돌리므로 그 회차의 타격은 아예 일어나지 않는다.
      *
      * <h2>타격 순간에 다시 보는 것</h2>

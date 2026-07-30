@@ -138,8 +138,29 @@ public final class AnimRegistry {
      */
     public static final String ATTACK = "attack";
 
-    /** json {@code animation_length: 0.9} 초 × 20. */
+    /** json {@code animation_length: 0.9} 초 × 20. 저자가 그린 클립 길이다. */
     public static final double ATTACK_LENGTH_TICKS = 18.0D;
+
+    /**
+     * {@code attack} 클립 <b>전용</b> 재생 배속. 사용자가 화면과 전투를 직접 확인해 확정한 값이며
+     * 코드 상수로 고정한다 — 명령·패킷·설정·NBT 로 바꿀 수 없고 모든 클라이언트가 이 숫자를 쓴다.
+     *
+     * <p>소닉·피격·킁킁·걷기·대기·기타 액션에는 적용하지 않는다. 적용 지점은
+     * {@code WardenGirlModel} 의 {@code attack} 분기 한 곳뿐이며, 거기서
+     * {@code ActionMotion} 의 시간축 배율로 넘긴다.
+     */
+    public static final double ATTACK_SPEED = 1.2D;
+
+    /**
+     * 화면에서 {@code attack} 클립이 실제로 차지하는 틱. {@code 18 / 1.2 = 15} 로 나누어떨어진다.
+     *
+     * <p><b>같은 숫자를 여러 파일에 적지 않기 위해 여기서만 파생한다.</b> 서버의 공격 모션 상태
+     * 길이와 클라이언트 {@code attackTime} 카운터가 모두 이 값을 쓰므로, 서버 상태·동기화
+     * 카운터·화면 클립이 같은 틱에 끝난다. 공격 시작 간격
+     * {@code WardenGirlAttackGoal.MELEE_COOLDOWN} 은 19틱 그대로이므로 모션이 끝난 뒤 다음
+     * 공격까지 4틱이 남는다 — 배속이 서버 간격이나 피해 시점을 바꾸지 않는다.
+     */
+    public static final double ATTACK_PLAY_TICKS = ATTACK_LENGTH_TICKS / ATTACK_SPEED;
 
     /**
      * 4.9 소닉붐. 60틱. <b>T8 첫 후보이며 사람 승인 전이다.</b>

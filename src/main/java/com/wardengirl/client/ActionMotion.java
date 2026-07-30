@@ -47,7 +47,8 @@ public final class ActionMotion {
     /**
      * 재생 시간축 배율. 1.0 이 저자가 그린 속도다.
      *
-     * <p><b>근접 체감 조절용 임시 도구만 1.0 이 아닌 값을 넘긴다</b>({@code MeleeDebug}). 4인자
+     * <p><b>1.0 이 아닌 값을 넘기는 곳은 {@code attack} 클립 한 곳뿐이며</b> 그 값은
+     * {@code AnimRegistry.ATTACK_SPEED} 코드 상수다 — 런타임에 바꿀 수단이 없다. 4인자
      * {@link #syncTo} 를 쓰는 소닉·피격·킁킁·임시 클립은 전부 1.0 이므로 영향이 없다.
      */
     private double timeScale = 1.0D;

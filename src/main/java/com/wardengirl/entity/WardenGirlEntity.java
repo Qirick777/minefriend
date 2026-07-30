@@ -719,7 +719,7 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         if (id == EVENT_SNIFF) {
             this.sniffTime = (int) Math.round(AnimRegistry.SNIFF_LENGTH_TICKS);
         } else if (id == EVENT_ATTACK) {
-            this.attackTime = (int) Math.round(AnimRegistry.ATTACK_LENGTH_TICKS);
+            this.attackTime = (int) Math.round(AnimRegistry.ATTACK_PLAY_TICKS);
         } else if (id == EVENT_SONIC) {
             this.sonicTime = (int) Math.round(AnimRegistry.SONIC_LENGTH_TICKS);
         } else {
