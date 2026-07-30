@@ -91,6 +91,20 @@ public class WardenGirlAttackGoal extends Goal {
     }
 
     /**
+     * <b>타격 판정 거리만</b> 쓰는 제곱값. 1.8블록 = 3.24 이며 시험 적용이다.
+     *
+     * <p>공격 <b>시작</b> 사거리와 접근·추적 기준은 {@link #reachSqr} 그대로다(0.6/0.6 이면 2.04,
+     * 즉 1.4283블록). 둘을 나눈 이유는 하나다 — 저스택 워든걸은 넉백 저항이 0이라 대상의 반격에
+     * 공중으로 떠오르고, 스윙한 뒤 {@link #HIT_TICK}까지 8틱 동안 밀려나 실측 미스 51회가
+     * <b>전부</b> 공중 상태였다. 미스 거리는 최소 1.4418 · 중앙값 1.91 · 최대 2.6653 이었다.
+     * 시작 거리까지 1.8로 넓히면 멀리서 모션을 시작해 허공을 때리는 그림이 되므로 넓히지 않는다.
+     *
+     * <p>거리는 {@code Mob.distanceToSqr(Entity)} 로 재며 시작 판정과 같은 척도다 —
+     * 중심 간 거리의 제곱이고, 시작 시점 좌표나 과거 거리를 쓰지 않는다.
+     */
+    private static final double STRIKE_REACH_SQR = 3.24D;
+
+    /**
      * 재경로 최소 간격과 변동폭. 바닐라 {@code MeleeAttackGoal} 의
      * {@code ticksUntilNextPathRecalculation = 4 + random(7)} 와 같다 — 고정 10틱이던 때에는
      * 경로가 "도착"으로 끝난 뒤 최대 10틱을 그대로 서 있었다(실측 정지 구간 14개 · 83틱 ·
@@ -294,10 +308,11 @@ public class WardenGirlAttackGoal extends Goal {
      *
      * <h2>타격 순간에 다시 보는 것</h2>
      *
-     * 대상은 방송 시점(0틱)에 이미 검사했지만 12틱 사이에 죽거나·제거되거나·보호 대상이 되거나·
+     * 대상은 방송 시점(0틱)에 이미 검사했지만 8틱 사이에 죽거나·제거되거나·보호 대상이 되거나·
      * 도망칠 수 있다. 그래서 <b>지연 피해를 만들지 않도록</b> 여기서 다시 본다 — 생존·제거·보호·
-     * 바닐라 공격 가능 판정은 T12 의 {@code isValidCombatTarget} 하나로, 사거리는 방송 때와 같은
-     * {@link #reachSqr} 로. 둘 중 하나라도 어긋나면 이번 회차는 <b>빗나감</b>이고 피해가 없다.
+     * 바닐라 공격 가능 판정은 T12 의 {@code isValidCombatTarget} 하나로, 거리는
+     * {@link #STRIKE_REACH_SQR} 로. 둘 중 하나라도 어긋나면 이번 회차는 <b>빗나감</b>이고 피해가
+     * 없다.
      *
      * <h2>바닐라 경로를 그대로 쓴다</h2>
      *
@@ -311,7 +326,7 @@ public class WardenGirlAttackGoal extends Goal {
         if (!this.mob.isValidCombatTarget(this.target)) {
             return;                             // 죽음·제거·보호 대상·바닐라 거절 → 피해 없음
         }
-        if (this.mob.distanceToSqr(this.target) > reachSqr(this.target)) {
+        if (this.mob.distanceToSqr(this.target) > STRIKE_REACH_SQR) {
             return;                             // 타격 틱 사이에 벗어났다 → 빗나감
         }
         this.mob.doHurtTarget(this.target);
