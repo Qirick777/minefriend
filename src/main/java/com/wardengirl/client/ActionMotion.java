@@ -44,6 +44,13 @@ public final class ActionMotion {
     private double lengthTicks;
     /** The sequence number this playback was started from; see {@link #syncTo}. */
     private int lastSeq = 0;
+    /**
+     * 재생 시간축 배율. 1.0 이 저자가 그린 속도다.
+     *
+     * <p><b>근접 체감 조절용 임시 도구만 1.0 이 아닌 값을 넘긴다</b>({@code MeleeDebug}). 4인자
+     * {@link #syncTo} 를 쓰는 소닉·피격·킁킁·임시 클립은 전부 1.0 이므로 영향이 없다.
+     */
+    private double timeScale = 1.0D;
 
     /**
      * Starts {@code clip} if {@code seq} differs from the last one started.
@@ -56,6 +63,14 @@ public final class ActionMotion {
      * @return true if this call started a new playback
      */
     public boolean syncTo(int seq, String clip, double lengthTicks, double now) {
+        return syncTo(seq, clip, lengthTicks, now, 1.0D);
+    }
+
+    /**
+     * 시간축 배율을 지정하는 판. {@code lengthTicks} 는 <b>저자가 그린 클립 길이 그대로</b>
+     * 넘긴다 — 배율은 {@link #age} 가 시간을 읽는 속도만 바꾸고 클립의 길이 정의는 바꾸지 않는다.
+     */
+    public boolean syncTo(int seq, String clip, double lengthTicks, double now, double timeScale) {
         if (seq == this.lastSeq) {
             return false;
         }
@@ -63,6 +78,7 @@ public final class ActionMotion {
         this.clip = clip;
         this.lengthTicks = lengthTicks;
         this.startTime = now;
+        this.timeScale = Double.isFinite(timeScale) && timeScale > 0.0D ? timeScale : 1.0D;
         return true;
     }
 
@@ -87,12 +103,19 @@ public final class ActionMotion {
      * rather than on a tick handler keeps the "is it over" test on the same clock as the value
      * that is about to be drawn — a separate handler could end it one frame late and leave a
      * single frame of full-weight pose after the fade had already reached zero.
+     *
+     * <p><b>돌려주는 값은 클립 시간이다</b> — 흐른 실제 틱에 {@link #timeScale} 을 곱한다. 이
+     * 한 줄이 배속의 전부이므로 샘플러와 페이드 엔벨로프가 <b>같은</b> 시간축을 쓴다. 그래서
+     * 배속을 올리면 클립도 페이드도 같은 비율로 빨라지고, 클립 시간이 저자가 그린 길이에 닿는
+     * 순간 그대로 끝난다 — 비루프 클립이 처음으로 되감기지 않고, 종료 후 자세 복귀는 기존
+     * {@code attack_fade_out} 엔벨로프가 그대로 처리한다({@code attack} 클립은 18틱 키가 전부 0
+     * 이므로 복귀 자세도 원래와 같다).
      */
     public double age(double now) {
         if (Double.isNaN(this.startTime)) {
             return -1.0D;
         }
-        double age = now - this.startTime;
+        double age = (now - this.startTime) * this.timeScale;
         if (age < 0.0D || age > this.lengthTicks) {
             stop();
             return -1.0D;

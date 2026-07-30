@@ -1,6 +1,7 @@
 package com.wardengirl.entity;
 
 import com.wardengirl.anim.AnimRegistry;
+import com.wardengirl.anim.MeleeDebug;
 import net.minecraft.world.entity.ai.goal.Goal;
 
 import java.util.EnumSet;
@@ -65,6 +66,10 @@ public class WardenGirlAttackGoal extends Goal {
      * {@code LivingEntity.hurt} 는 {@code invulnerableTime > 10} 일 때만 감쇠 경로로 가고
      * (성공 시 20으로 설정, 매 틱 1씩 감소), 19틱 뒤에는 1이 되어 있으므로 <b>매 회차가 전액</b>
      * 들어간다.
+     *
+     * <p><b>현재 실제로 쓰이는 값은 {@link MeleeDebug#windup()} 이다</b> — 체감 조절용 임시
+     * 명령이 이 상수를 기본값으로 삼아 덮어쓴다. 임시 도구를 제거하면 {@link #motionWindup} 을
+     * 이 상수로 되돌린다.
      */
     public static final int HIT_TICK = 8;
 
@@ -124,6 +129,25 @@ public class WardenGirlAttackGoal extends Goal {
      * 재경로하면 A* 를 매 틱 돌리게 되므로 상한만 낮춘다 — 정지가 최대 10틱에서 이 값으로 준다.
      */
     private static final int STALL_RETRY = 2;
+
+    /**
+     * 이 회차의 선딜레이와 모션 종료 틱. 회차가 <b>시작될 때 한 번</b> 읽어 고정한다 — 진행 중인
+     * 공격에 임시 조절값을 소급 적용하지 않는다.
+     *
+     * <p>고정하는 것이 안전한 이유는 두 가지다. 첫째, 비교 대상이 카운터 밑에서 움직이지 않으므로
+     * {@code ticks == motionWindup} 이 한 회차에 정확히 한 번만 성립한다 — 재생 중에 값을 낮추면
+     * 이미 지나간 틱과 같아질 일이 없고, 높이면 종료 틱을 넘겨 아예 타격이 사라질 일이 없다.
+     * 둘째, 클라이언트는 공격 시작 시점에 {@code EVENT_ATTACK} 한 번만 받으므로 재생 중 서버
+     * 타이밍을 바꾸면 화면과 서버가 그 회차 내내 어긋난다.
+     *
+     * <p>{@link #motionEnd} 는 {@code max(클립 18틱, 선딜)} 이다. 선딜이 클립보다 길면 값을 몰래
+     * 깎지 않고 <b>실제로 그 틱까지 모션 상태를 유지</b>한 뒤 타격한다 — 화면의 클립은 18틱에
+     * 끝나 있고 피해는 그 뒤에 들어가는, 설정한 그대로의 의미다. 그 사이 접근·재경로는 계속
+     * 돌고({@link #updateApproach()} 가 분기 앞에 있다) 다음 공격 시작만 늦어진다. 시작 간격은
+     * {@link #MELEE_COOLDOWN} 틱보다 짧아지지 않는다 — 늘어날 뿐이다.
+     */
+    private int motionWindup = MeleeDebug.DEFAULT_WINDUP;
+    private int motionEnd = (int) AnimRegistry.ATTACK_LENGTH_TICKS;
 
     /** 재생 나이(틱). 음수면 아직 접근 중이다. */
     private int ticks = -1;
@@ -215,10 +239,10 @@ public class WardenGirlAttackGoal extends Goal {
         updateApproach();
         if (this.ticks >= 0) {
             this.ticks++;
-            if (this.ticks == HIT_TICK) {
+            if (this.ticks == this.motionWindup) {
                 strike();                       // 모션당 정확히 한 번. 아래 주석 참고.
             }
-            if (this.ticks < AnimRegistry.ATTACK_LENGTH_TICKS) {
+            if (this.ticks < this.motionEnd) {
                 return;
             }
             // 모션이 끝났다. Goal 을 멈췄다 다시 켜는 대신 여기서 접근 상태로 돌아간다.
@@ -241,8 +265,15 @@ public class WardenGirlAttackGoal extends Goal {
                 return;                         // 이번 공격 회차를 시작하지 않는다.
             }
             this.ticks = 0;
+            this.motionWindup = MeleeDebug.windup();
+            this.motionEnd = Math.max((int) AnimRegistry.ATTACK_LENGTH_TICKS, this.motionWindup);
             this.mob.startMeleeCooldown(MELEE_COOLDOWN);
             this.mob.level().broadcastEntityEvent(this.mob, WardenGirlEntity.EVENT_ATTACK);
+            if (this.motionWindup == 0) {
+                // 선딜 0 — 공격 시작과 <b>같은 서버 틱</b>에 판정한다. 다음 틱부터 ticks 는 1
+                // 이상이므로 ticks == 0 이 다시 성립하지 않아 중복 피해가 구조적으로 없다.
+                strike();
+            }
             return;
         }
         this.approach++;

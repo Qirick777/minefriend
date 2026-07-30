@@ -51,6 +51,9 @@ public final class ModNetwork {
                 ActionCheckPacket::encode, ActionCheckPacket::decode, ActionCheckPacket::handle);
         CHANNEL.registerMessage(4, BlendCheckPacket.class,
                 BlendCheckPacket::encode, BlendCheckPacket::decode, BlendCheckPacket::handle);
+        // 근접 체감 조절용 임시 도구. 제거 시 이 한 줄과 아래 레코드를 지운다.
+        CHANNEL.registerMessage(5, MeleeDebugPacket.class,
+                MeleeDebugPacket::encode, MeleeDebugPacket::decode, MeleeDebugPacket::handle);
     }
 
     /** Asks every client to measure C2+C3 composition on the shared axes. */
@@ -139,6 +142,36 @@ public final class ModNetwork {
             // classloader entirely rather than merely unreached.
             ctx.get().enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
                     () -> () -> com.wardengirl.client.BoneTrace.start(packet.ticks)));
+            ctx.get().setPacketHandled(true);
+        }
+    }
+
+    /**
+     * 근접 애니메이션 배속을 모든 접속 클라이언트에 밀어 넣는다. <b>체감 조절용 임시 도구다.</b>
+     *
+     * <p>선딜레이는 서버 판정이라 보내지 않는다 — 클라이언트가 알아야 할 값이 아니다. 값은
+     * 서버 메모리에만 있고 NBT·설정 파일에 저장하지 않으므로, 나중에 접속하는 클라이언트는
+     * 기본값 1.0 으로 시작한다(기존 {@code param set} 과 같은 성질이다). 명령을 다시 실행하면
+     * 전원이 같은 값이 된다.
+     */
+    public static void broadcastMeleeDebug(double animSpeed) {
+        CHANNEL.send(PacketDistributor.ALL.noArg(), new MeleeDebugPacket(animSpeed));
+    }
+
+    /** 체감 조절용 임시 도구. 제거 시 이 레코드째로 지운다. */
+    public record MeleeDebugPacket(double animSpeed) {
+
+        public static void encode(MeleeDebugPacket packet, FriendlyByteBuf buf) {
+            buf.writeDouble(packet.animSpeed);
+        }
+
+        public static MeleeDebugPacket decode(FriendlyByteBuf buf) {
+            return new MeleeDebugPacket(buf.readDouble());
+        }
+
+        public static void handle(MeleeDebugPacket packet, Supplier<NetworkEvent.Context> ctx) {
+            ctx.get().enqueueWork(
+                    () -> com.wardengirl.anim.MeleeDebug.setAnimSpeed(packet.animSpeed));
             ctx.get().setPacketHandled(true);
         }
     }

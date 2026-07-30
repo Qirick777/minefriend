@@ -9,6 +9,7 @@ import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.wardengirl.anim.AnimParams;
 import com.wardengirl.anim.AnimRegistry;
 import com.wardengirl.anim.Bones;
+import com.wardengirl.anim.MeleeDebug;
 import com.wardengirl.config.ClientConfig;
 import com.wardengirl.network.ModNetwork;
 import com.wardengirl.entity.WardenGirlEntity;
@@ -180,7 +181,93 @@ public final class WardenGirlCommand {
                         .then(Commands.literal("get")
                                 .then(Commands.argument("target", EntityArgument.entity())
                                         .executes(ctx -> statsGet(ctx.getSource(),
-                                                EntityArgument.getEntity(ctx, "target")))))));
+                                                EntityArgument.getEntity(ctx, "target"))))))
+                // ---- 근접 체감 조절용 임시 도구. 제거 시 이 then 블록째로 지운다. ------------
+                .then(Commands.literal("debug")
+                        .then(Commands.literal("melee")
+                                .then(Commands.literal("get")
+                                        .executes(ctx -> meleeDebugGet(ctx.getSource())))
+                                .then(Commands.literal("reset")
+                                        .executes(ctx -> meleeDebugReset(ctx.getSource())))
+                                .then(Commands.literal("windup")
+                                        .then(Commands.argument("ticks", IntegerArgumentType.integer(
+                                                        MeleeDebug.WINDUP_MIN, MeleeDebug.WINDUP_MAX))
+                                                .executes(ctx -> meleeDebugWindup(ctx.getSource(),
+                                                        IntegerArgumentType.getInteger(ctx, "ticks")))))
+                                .then(Commands.literal("animspeed")
+                                        .then(Commands.argument("multiplier",
+                                                        DoubleArgumentType.doubleArg(
+                                                                MeleeDebug.ANIM_SPEED_MIN,
+                                                                MeleeDebug.ANIM_SPEED_MAX))
+                                                .executes(ctx -> meleeDebugAnimSpeed(ctx.getSource(),
+                                                        DoubleArgumentType.getDouble(ctx,
+                                                                "multiplier"))))))));
+    }
+
+    // ---- 근접 체감 조절용 임시 도구 -----------------------------------------------------------
+    //
+    // 값과 검증은 전부 MeleeDebug 한곳에 있다. 여기는 진입점과 출력만 담당한다.
+    // Brigadier 의 IntegerArgumentType / DoubleArgumentType 이 범위 밖과 NaN·무한대를 파싱
+    // 단계에서 이미 거절하지만, 명령이 유일한 경로라고 가정하지 않도록 MeleeDebug 가 한 번 더
+    // 검사하고 false 를 돌려준다.
+
+    private static int meleeDebugStatus(CommandSourceStack source, String prefix) {
+        source.sendSuccess(() -> Component.literal("[debug melee] ").withStyle(ChatFormatting.GOLD)
+                .append(Component.literal(String.format(Locale.ROOT,
+                                "%s선딜 %d틱 (기본 %d, 범위 %d~%d)  ·  애니 배속 %s배 (기본 %s, 범위 %s~%s)%n"
+                                        + "         두 값은 독립이다 — 선딜은 서버 판정, 배속은 클라이언트 재생만 바꾼다.%n"
+                                        + "         공격 시작 간격 %d틱 · 타격 거리 1.8 · 공격력은 두 값에 영향받지 않는다.",
+                                prefix, MeleeDebug.windup(), MeleeDebug.DEFAULT_WINDUP,
+                                MeleeDebug.WINDUP_MIN, MeleeDebug.WINDUP_MAX,
+                                trim(MeleeDebug.animSpeed()), trim(MeleeDebug.DEFAULT_ANIM_SPEED),
+                                trim(MeleeDebug.ANIM_SPEED_MIN), trim(MeleeDebug.ANIM_SPEED_MAX),
+                                com.wardengirl.entity.WardenGirlAttackGoal.MELEE_COOLDOWN))
+                        .withStyle(ChatFormatting.WHITE)), false);
+        return 1;
+    }
+
+    private static int meleeDebugGet(CommandSourceStack source) {
+        return meleeDebugStatus(source, "");
+    }
+
+    private static int meleeDebugWindup(CommandSourceStack source, int ticks) {
+        int before = MeleeDebug.windup();
+        if (!MeleeDebug.setWindup(ticks)) {
+            source.sendFailure(Component.literal(String.format(Locale.ROOT,
+                    "[debug melee] windup 은 %d~%d 정수여야 한다. 받은 값: %d",
+                    MeleeDebug.WINDUP_MIN, MeleeDebug.WINDUP_MAX, ticks)));
+            return 0;
+        }
+        if (ticks > (int) AnimRegistry.ATTACK_LENGTH_TICKS) {
+            source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                    "[debug melee] 선딜 %d틱은 클립 %d틱보다 길다 — 값을 보정하지 않는다. "
+                            + "화면 클립이 끝난 뒤 그 틱에 피해가 들어가고 다음 공격 시작이 그만큼 늦어진다.",
+                    ticks, (int) AnimRegistry.ATTACK_LENGTH_TICKS)).withStyle(ChatFormatting.YELLOW),
+                    false);
+        }
+        // 진행 중인 공격에는 소급하지 않는다 — 회차 시작 때 읽어 고정한다.
+        return meleeDebugStatus(source, String.format(Locale.ROOT, "선딜 %d -> %d 적용. ",
+                before, ticks));
+    }
+
+    private static int meleeDebugAnimSpeed(CommandSourceStack source, double multiplier) {
+        double before = MeleeDebug.animSpeed();
+        if (!MeleeDebug.setAnimSpeed(multiplier)) {
+            source.sendFailure(Component.literal(String.format(Locale.ROOT,
+                    "[debug melee] animspeed 는 %s~%s 의 유한한 실수여야 한다. 받은 값: %s",
+                    trim(MeleeDebug.ANIM_SPEED_MIN), trim(MeleeDebug.ANIM_SPEED_MAX),
+                    trim(multiplier))));
+            return 0;
+        }
+        ModNetwork.broadcastMeleeDebug(multiplier);
+        return meleeDebugStatus(source, String.format(Locale.ROOT, "배속 %s -> %s 적용. ",
+                trim(before), trim(multiplier)));
+    }
+
+    private static int meleeDebugReset(CommandSourceStack source) {
+        MeleeDebug.reset();
+        ModNetwork.broadcastMeleeDebug(MeleeDebug.DEFAULT_ANIM_SPEED);
+        return meleeDebugStatus(source, "기준값 복구. ");
     }
 
     // ---- T10 /wardengirl owner|power -------------------------------------------------------
