@@ -115,7 +115,6 @@ public class WardenGirlAttackGoal extends Goal {
      */
     private static final int STALL_RETRY = 2;
 
-
     /** 재생 나이(틱). 음수면 아직 접근 중이다. */
     private int ticks = -1;
     private int approach;
@@ -150,7 +149,10 @@ public class WardenGirlAttackGoal extends Goal {
      * 그대로 본다.
      */
     private boolean blocked() {
-        return this.mob.isSignTest();
+        // T20 — 후퇴 중에는 시작도 계속도 없다. priority 1 후퇴 Goal 이 MOVE 를 선점해 이미
+        // 막히지만, 우선순위 충돌 하나에만 맡기지 않는다. 이 한 줄이 canUse 와
+        // canContinueToUse 양쪽에 동시에 걸리므로 진행 중인 공격도 여기서 끊긴다.
+        return this.mob.isRetreating() || this.mob.isSignTest();
     }
 
     /**

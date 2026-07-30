@@ -132,6 +132,9 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     @Override
     protected void registerGoals() {
         this.goalSelector.addGoal(0, new FloatGoal(this));
+        // T20 — 4.2 저체력 후퇴. Float 바로 아래, 소닉·근접 위다. MOVE 하나만 잡으므로 소닉(2)·
+        // 근접(3)·추종(5)·배회(6) 를 전부 선점하면서 시선 Goal 은 막지 않는다.
+        this.goalSelector.addGoal(1, new WardenGirlRetreatGoal(this));
         // 4.12 킁킁. 플래그가 없으므로 두 시선 Goal 과 동시에 돈다 — 킁킁 중에도 고개는 계속
         // 움직인다. 우선순위는 시선보다 아래에 둔다.
         this.goalSelector.addGoal(9, new WardenGirlSniffGoal(this));
@@ -465,6 +468,106 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     /** 전투를 이어가도 되는가. 워든걸-소유자 16 이하 <b>그리고</b> 대상-소유자 24 이하. */
     public boolean canKeepLeashedCombat(@javax.annotation.Nullable LivingEntity target) {
         return combatWithinOwnerLeash(target, COMBAT_KEEP_SELF, COMBAT_KEEP_TARGET);
+    }
+
+    // ---- T20 저체력 후퇴 --------------------------------------------------------------------
+    //
+    // 설계서 4.2. T14 의 두 값과 마찬가지로 <b>서버 런타임 전용</b>이다 — NBT 도, 패킷도,
+    // SynchedEntityData 도 없다. 상태 자체가 현재 체력의 함수라서 로드 뒤 첫 AI 평가에 그대로
+    // 다시 계산된다. 클라이언트는 이 값을 결정하지 않는다.
+
+    /** 설계서 4.2.1 — 진입·해제 경계(퍼센트). 경계값은 포함한다. */
+    public static final double RETREAT_ENTER_PERCENT = 25.0D;
+    public static final double RETREAT_EXIT_PERCENT = 45.0D;
+
+    private boolean retreating;
+
+    /**
+     * 후퇴 전용 현지 중심. T14 의 {@link #localAnchor} 와 <b>다른 값</b>이고 서로 건드리지
+     * 않는다. 소유자를 쓸 수 없게 된 <b>그 순간</b>의 위치를 담고, 워든걸을 따라 움직이지
+     * 않는다. 후퇴가 끝나면 지운다.
+     */
+    @javax.annotation.Nullable
+    private net.minecraft.world.phys.Vec3 retreatAnchor;
+
+    /** 지금 후퇴 중인가. T20 의 유일한 공개 조회다. */
+    public boolean isRetreating() {
+        return this.retreating;
+    }
+
+    private void setRetreating(boolean value) {
+        this.retreating = value;
+        if (!value) {
+            this.retreatAnchor = null;              // 후퇴가 끝나면 현지 중심을 버린다
+        }
+    }
+
+    /**
+     * 설계서 4.2.1 히스테리시스.
+     *
+     * <p>비율을 나눗셈으로 만들지 않는다. {@code health / maxHealth >= 0.45} 는 0.45 가 이진
+     * 소수로 정확하지 않아 경계에서 실제로 어긋난다 — 예를 들어 최대 500 · 현재 225 는
+     * {@code 500 * 0.45} 가 225.00000000000003 이 되어 <b>해제되지 않는다</b>. 그래서 양변에
+     * 100 을 곱한 정수형 비교로 쓴다.
+     */
+    private void updateRetreatState() {
+        float max = getMaxHealth();
+        if (max <= 0.0F) {
+            return;                                 // 비정상 상태에서 새로 시작하지 않는다
+        }
+        double hp = getHealth() * 100.0D;
+        if (this.retreating) {
+            if (hp >= max * RETREAT_EXIT_PERCENT) {
+                setRetreating(false);
+            }
+        } else if (hp <= max * RETREAT_ENTER_PERCENT) {
+            setRetreating(true);
+        }
+    }
+
+    /**
+     * 설계서 4.2.2 후퇴 행동 중심.
+     *
+     * <p>소유자가 같은 서버 레벨에 살아 있고 48블록 안이면 <b>현재</b> 소유자 위치다. 그 밖의
+     * 모든 경우(없음·오프라인·사망·제거·다른 차원·48 초과)에는 전환하는 <b>그 순간</b>의
+     * 워든걸 위치를 한 번 붙잡아 계속 쓴다. 대체 플레이어는 찾지 않는다.
+     *
+     * <p>{@code serverOwner()} 가 {@code Level.getPlayerByUUID} 를 쓰므로 다른 차원의 소유자는
+     * 이미 {@code null} 이다. 아래 레벨 비교는 그 사실을 코드에 남겨 둔 것이다.
+     */
+    public net.minecraft.world.phys.Vec3 retreatCenter() {
+        net.minecraft.world.entity.player.Player owner = serverOwner();
+        if (owner != null && owner.level() == this.level()
+                && this.distanceTo(owner) <= GIVE_UP_DISTANCE) {
+            this.retreatAnchor = null;              // 소유자 중심으로 돌아왔다
+            return owner.position();
+        }
+        if (this.retreatAnchor == null) {
+            this.retreatAnchor = this.position();   // 전환 순간 고정
+        }
+        return this.retreatAnchor;
+    }
+
+    /** 후퇴 현지 중심. {@code null} 이면 소유자 중심을 쓰고 있다는 뜻이다. */
+    @javax.annotation.Nullable
+    public net.minecraft.world.phys.Vec3 retreatAnchor() {
+        return this.retreatAnchor;
+    }
+
+    /**
+     * 후퇴 상태를 <b>Goal 평가 직전</b>에 갱신한다.
+     *
+     * <p>{@code customServerAiStep()} 은 {@code goalSelector.tick()} <b>뒤</b>에 불리므로 거기
+     * 두면 진입이 한 틱 늦는다. {@code Mob.serverAiStep()} 은 {@code protected final} 이라
+     * 재정의할 수 없고, 그것을 부르는 곳은 {@code LivingEntity.aiStep()} 하나뿐이다(바이트코드
+     * 확인). 그래서 여기가 매 서버틱 · Goal 평가 직전인 유일한 자리다.
+     */
+    @Override
+    public void aiStep() {
+        if (!level().isClientSide) {
+            updateRetreatState();
+        }
+        super.aiStep();
     }
 
     public long getPowerStacks() {
@@ -937,7 +1040,6 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
             }
         }
     }
-
 
     public boolean isWalkingForAnimation() {
         // 4.13. 탈것에 타면 몹 좌표가 탈것을 따라 움직여 이동으로 잡힌다. 별도 게이트를 두면

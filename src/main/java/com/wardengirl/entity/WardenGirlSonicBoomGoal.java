@@ -122,7 +122,12 @@ public class WardenGirlSonicBoomGoal extends Goal {
      * 아니다. 사망은 여기서 명시적으로 끊는다.
      */
     private boolean cancelled() {
-        return !this.mob.isAlive() || this.mob.isSignTest() || this.mob.isPassenger();
+        // T20 — 후퇴 중에는 일반 소닉을 전부 금지한다. 여기에 넣으면 {@link #blocked()} 를 통해
+        // canUse 가, 직접 참조하는 canContinueToUse 가 함께 막히므로 충전 중이던 것도 이번
+        // 평가에서 stop() 으로 끊기고 age 가 −1 로 돌아간다 — 34틱 방출에 도달하지 못한다.
+        // T21 의 "후퇴 중 안전한 소닉" 은 여기 없다. 그것은 별도 판정을 갖는 다음 태스크다.
+        return this.mob.isRetreating() || !this.mob.isAlive() || this.mob.isSignTest()
+                || this.mob.isPassenger();
     }
 
     /**
