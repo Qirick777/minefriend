@@ -18,10 +18,10 @@ import java.util.EnumSet;
  *
  * <pre>
  *   시작: 거리 &gt; 12
- *   유지: 거리 &gt; 8
+ *   유지: 거리 &gt; 5      (T13.5 — 배회 반경 8과 분리했다)
  * </pre>
  *
- * 시작 문턱과 종료 문턱이 다르므로 8~12 구간에서는 <b>현재 상태가 유지</b>된다. 문턱이 하나면
+ * 시작 문턱과 종료 문턱이 다르므로 5~12 구간에서는 <b>현재 상태가 유지</b>된다. 문턱이 하나면
  * 그 값 근처에서 {@code canUse} 와 {@code canContinueToUse} 가 매 틱 엇갈려 Goal 이 켜졌다
  * 꺼지고, 그때마다 {@link #stop()} 의 {@code navigation.stop()} 이 경로를 지운다.
  *
@@ -42,7 +42,9 @@ import java.util.EnumSet;
  * 소유자를 못 따라잡는 것과 제자리에 굳은 것은 다른 상태인데 거리 기준은 둘을 구별하지 못한다.
  * 그래서 요구사항 그대로 <b>"제자리"</b>를 본다 — 재경로 사이에 워든걸이 스스로
  * {@value #STUCK_STEP}블록도 움직이지 않았고 소유자와도 가까워지지 않았을 때만 실패다.
- * 걸어가는 중이면 따라잡지 못해도 걸리지 않는다.
+ * 걸어가는 중이면 따라잡지 못해도 걸리지 않는다. T13.5 에서 속도가 최대 2.8배가 되어
+ * 달리는 소유자를 쫓는 구간이 길어졌는데, 그 구간은 워든걸이 실제로 전진하므로 이 판정에
+ * 걸리지 않는다.
  *
  * <p>어느 쪽이든 연속 {@value #FAIL_LIMIT}회면 이 Goal 을 <b>끝낸다</b>. 끝내야 플래그가 풀린다.
  * 끝낸 뒤에는 {@value #RETRY_DELAY}틱 동안 다시 시작하지 않는다 — 그러지 않으면 다음 틱에
@@ -55,14 +57,53 @@ public class WardenGirlFollowOwnerGoal extends Goal {
     /** 2차 설계서 7.2 — 일반 추종 시작. 거리 12블록 <b>초과</b>. */
     public static final double START_DISTANCE = 12.0D;
 
-    /** 2차 설계서 7.2 — 일반 추종 종료. 거리 8블록 <b>이하</b>. */
-    public static final double STOP_DISTANCE = 8.0D;
+    /**
+     * T13.5 — 추종 <b>완료</b> 거리. 5블록 이하면 끝난다.
+     *
+     * <p>배회 반경 8과는 <b>다른 값이고 다른 뜻이다</b>. 8은
+     * {@link WardenGirlOwnerStrollGoal#OWNER_RADIUS} 즉 생활 반경이고, 5는 "따라붙기를 끝내도
+     * 되는 거리"다. 둘을 같은 값으로 두던 때에는 생활 반경 경계에 닿자마자 추적이 끝나
+     * 체감상 계속 낙오했다. 여기서 끝나면 배회 Goal 이 반경 2~8 안에서 다음 행동을 고른다.
+     */
+    public static final double STOP_DISTANCE = 5.0D;
 
-    /** 2차 설계서 7.3 — 일반 추종 속도. */
-    public static final double FOLLOW_SPEED = 1.0D;
+    /**
+     * T13.5 — 거리별 추종 속도. 상태를 저장하지 않고 <b>매 재경로마다 현재 거리로만</b> 고른다.
+     *
+     * <pre>
+     *   d &gt; 20      2.8   전력 추격 — 달리는 소유자를 실제로 좁힐 수 있어야 한다
+     *   8 &lt; d ≤ 20  2.0   정상 추격
+     *   5 &lt; d ≤ 8   1.3   감속 접근 — 소유자 몸속으로 돌진하지 않는다
+     * </pre>
+     *
+     * <p>{@code 20} 은 여기서 <b>속도 전환 경계일 뿐</b>이다. T14 의 빠른 추종 상태(20/16)와는
+     * 무관하며 전환 상태나 저장값을 만들지 않는다. 이동속도 Attribute 의 base value 를 바꾸거나
+     * modifier 를 붙이지 않는다 — {@code PathNavigation.moveTo} 의 속도 배율 인자만 쓴다.
+     */
+    public static final double SPRINT_DISTANCE = 20.0D;
+    public static final double CRUISE_DISTANCE = 8.0D;
+    public static final double SPRINT_SPEED = 2.8D;
+    public static final double CRUISE_SPEED = 2.0D;
+    public static final double CLOSE_SPEED = 1.3D;
 
     private static final double START_SQR = START_DISTANCE * START_DISTANCE;
     private static final double STOP_SQR = STOP_DISTANCE * STOP_DISTANCE;
+    private static final double SPRINT_SQR = SPRINT_DISTANCE * SPRINT_DISTANCE;
+    private static final double CRUISE_SQR = CRUISE_DISTANCE * CRUISE_DISTANCE;
+
+    /**
+     * 거리제곱으로 바로 고른다. 제곱근을 뽑지 않으므로 경계가 정확히 {@code 20}·{@code 8} 이다 —
+     * {@code d > 20} 은 {@code d² > 400}, {@code d > 8} 은 {@code d² > 64} 와 같은 판정이다.
+     */
+    private static double followSpeed(double distSqr) {
+        if (distSqr > SPRINT_SQR) {
+            return SPRINT_SPEED;
+        }
+        if (distSqr > CRUISE_SQR) {
+            return CRUISE_SPEED;
+        }
+        return CLOSE_SPEED;
+    }
 
     /** 경로 갱신 간격(틱). 바닐라 {@code FollowOwnerGoal} 과 같은 값이다. */
     private static final int REPATH_INTERVAL = 10;
@@ -161,9 +202,11 @@ public class WardenGirlFollowOwnerGoal extends Goal {
         this.pathedX = this.owner.getX();
         this.pathedY = this.owner.getY();
         this.pathedZ = this.owner.getZ();
-        boolean ok = this.mob.getNavigation().moveTo(this.owner, FOLLOW_SPEED);
-        // 가까워졌는가. moveTo 가 true 라도 부분 경로면 거리가 줄지 않는다.
+        // 이번 재경로의 속도는 <b>지금 거리</b>로 고른다. 경계를 넘어도 Goal 을 다시 시작하거나
+        // navigation 을 멈추지 않는다 — 다음 정상 갱신부터 새 배율이 실릴 뿐이다.
         double now = this.mob.distanceToSqr(this.owner);
+        boolean ok = this.mob.getNavigation().moveTo(this.owner, followSpeed(now));
+        // 가까워졌는가. moveTo 가 true 라도 부분 경로면 거리가 줄지 않는다.
         boolean closer = now < this.bestSqr - PROGRESS_EPSILON;
         if (closer) {
             this.bestSqr = now;
