@@ -42,9 +42,9 @@ import java.util.EnumSet;
  * 소유자를 못 따라잡는 것과 제자리에 굳은 것은 다른 상태인데 거리 기준은 둘을 구별하지 못한다.
  * 그래서 요구사항 그대로 <b>"제자리"</b>를 본다 — 재경로 사이에 워든걸이 스스로
  * {@value #STUCK_STEP}블록도 움직이지 않았고 소유자와도 가까워지지 않았을 때만 실패다.
- * 걸어가는 중이면 따라잡지 못해도 걸리지 않는다. T13.5 에서 속도가 최대 2.8배가 되어
- * 달리는 소유자를 쫓는 구간이 길어졌는데, 그 구간은 워든걸이 실제로 전진하므로 이 판정에
- * 걸리지 않는다.
+ * 걸어가는 중이면 따라잡지 못해도 걸리지 않는다. T13.6 에서 최고속도가 1.8로 낮아져 달리는
+ * 소유자를 쫓는 구간이 더 길어졌지만, 그 구간은 워든걸이 실제로 전진하므로 이 판정에 걸리지
+ * 않는다.
  *
  * <p>어느 쪽이든 연속 {@value #FAIL_LIMIT}회면 이 Goal 을 <b>끝낸다</b>. 끝내야 플래그가 풀린다.
  * 끝낸 뒤에는 {@value #RETRY_DELAY}틱 동안 다시 시작하지 않는다 — 그러지 않으면 다음 틱에
@@ -69,12 +69,18 @@ public class WardenGirlFollowOwnerGoal extends Goal {
 
     /**
      * T13.5 — 거리별 추종 속도. 상태를 저장하지 않고 <b>매 재경로마다 현재 거리로만</b> 고른다.
+     * T13.6 에서 최고속도를 낮췄다.
      *
      * <pre>
-     *   d &gt; 20      2.8   전력 추격 — 달리는 소유자를 실제로 좁힐 수 있어야 한다
-     *   8 &lt; d ≤ 20  2.0   정상 추격
-     *   5 &lt; d ≤ 8   1.3   감속 접근 — 소유자 몸속으로 돌진하지 않는다
+     *   d &gt; 20      1.8   먼 거리 추격 (T13.6: 2.8 → 1.8)
+     *   8 &lt; d ≤ 20  1.6   정상 추격   (T13.6: 2.0 → 1.6)
+     *   5 &lt; d ≤ 8   1.3   감속 접근 — 소유자 몸속으로 돌진하지 않는다 (변경 없음)
      * </pre>
+     *
+     * <p>T13.5 의 2.8·2.0 은 실제로는 따라잡았지만 눈으로 보면 미끄러지듯 순간이동하는 속도였다.
+     * 다리 모션은 T9 의 실제 이동속도 기반 walk/run 을 그대로 쓰므로, 화면상의 부자연스러움을
+     * 없애는 방법은 <b>실제 이동속도를 낮추는 것</b> 하나뿐이다. 모션을 빠르게 재생해 속도를
+     * 가리거나 추종 전용 애니메이션 상태를 만들지 않는다.
      *
      * <p>{@code 20} 은 여기서 <b>속도 전환 경계일 뿐</b>이다. T14 의 빠른 추종 상태(20/16)와는
      * 무관하며 전환 상태나 저장값을 만들지 않는다. 이동속도 Attribute 의 base value 를 바꾸거나
@@ -82,8 +88,8 @@ public class WardenGirlFollowOwnerGoal extends Goal {
      */
     public static final double SPRINT_DISTANCE = 20.0D;
     public static final double CRUISE_DISTANCE = 8.0D;
-    public static final double SPRINT_SPEED = 2.8D;
-    public static final double CRUISE_SPEED = 2.0D;
+    public static final double SPRINT_SPEED = 1.8D;
+    public static final double CRUISE_SPEED = 1.6D;
     public static final double CLOSE_SPEED = 1.3D;
 
     private static final double START_SQR = START_DISTANCE * START_DISTANCE;
@@ -105,7 +111,24 @@ public class WardenGirlFollowOwnerGoal extends Goal {
         return CLOSE_SPEED;
     }
 
-    /** 경로 갱신 간격(틱). 바닐라 {@code FollowOwnerGoal} 과 같은 값이다. */
+    /**
+     * T13.6 — 경로 갱신 간격. 단위는 <b>서버 틱</b>이다. {@code mob.tickCount} 로 직접 잰다.
+     *
+     * <h3>왜 "감소 카운터 10"이 10틱이 아니었나</h3>
+     *
+     * {@code Mob.serverAiStep} 은 {@code MinecraftServer.getTickCount() + getId()} 가 홀수이고
+     * {@code tickCount > 1} 이면 {@code goalSelector.tickRunningGoals(false)} 만 부르고, 그
+     * 경우 {@code WrappedGoal.requiresUpdateEveryTick()} 이 참인 Goal 만 {@code tick()} 된다.
+     * 이 Goal 은 그것을 재정의하지 않으므로 <b>두 틱에 한 번</b>만(개체마다 고정된 홀짝으로)
+     * tick 된다. 그래서 틱마다 1씩 줄이는 카운터 10은 실제로 <b>20 서버 틱</b>이었다.
+     *
+     * <p>고치는 방법은 두 가지였다. {@code requiresUpdateEveryTick()} 을 참으로 바꾸면 카운터
+     * 단위가 실제 틱과 같아지지만, 함께 있는 "소유자가 {@value #OWNER_MOVE}블록 움직이면 즉시
+     * 갱신" 검사까지 두 배로 자주 돌아 달리는 소유자를 쫓을 때 재경로가 매 틱 쪽으로 몰린다.
+     * 그래서 tick 주기는 그대로 두고 <b>기준을 카운터에서 {@code tickCount} 시각으로</b> 바꿨다.
+     * Goal 의 tick 홀짝이 개체마다 고정이므로 {@code tickCount + 10} 은 정확히 10틱 뒤의 tick
+     * 호출에 걸린다. 엔진의 tick 주기가 바뀌어도 이 값의 뜻은 변하지 않는다.
+     */
     private static final int REPATH_INTERVAL = 10;
 
     /** 소유자가 마지막 경로 기준점에서 이만큼 벗어나면 간격을 기다리지 않고 갱신한다. */
@@ -122,7 +145,8 @@ public class WardenGirlFollowOwnerGoal extends Goal {
 
     private final WardenGirlEntity mob;
     private Player owner;
-    private int repath;
+    /** 이 {@code mob.tickCount} 이상이 되면 다음 재경로를 만든다. */
+    private int nextRepathTick;
     private int fails;
     /** 이 틱 이전에는 다시 시작하지 않는다. {@code mob.tickCount} 기준이다. */
     private int retryAtTick;
@@ -175,7 +199,7 @@ public class WardenGirlFollowOwnerGoal extends Goal {
 
     @Override
     public void start() {
-        this.repath = 0;
+        this.nextRepathTick = 0;                // 첫 tick 에서 바로 경로를 만든다
         this.fails = 0;
         this.bestSqr = Double.MAX_VALUE;
         this.lastSelfX = Double.NaN;
@@ -189,16 +213,13 @@ public class WardenGirlFollowOwnerGoal extends Goal {
         if (this.owner == null) {
             return;
         }
-        if (this.repath > 0) {
-            this.repath--;
-        }
         boolean moved = Double.isNaN(this.pathedX)
                 || this.owner.distanceToSqr(this.pathedX, this.pathedY, this.pathedZ)
                         >= OWNER_MOVE * OWNER_MOVE;
-        if (this.repath > 0 && !moved) {
+        if (this.mob.tickCount < this.nextRepathTick && !moved) {
             return;
         }
-        this.repath = REPATH_INTERVAL;
+        this.nextRepathTick = this.mob.tickCount + REPATH_INTERVAL;
         this.pathedX = this.owner.getX();
         this.pathedY = this.owner.getY();
         this.pathedZ = this.owner.getZ();
@@ -226,7 +247,8 @@ public class WardenGirlFollowOwnerGoal extends Goal {
     }
 
     /**
-     * 8블록 안으로 들어왔거나 소유자가 사라졌거나 경로를 못 만들어 끝나는 자리다. 어느 경우든
+     * {@value #STOP_DISTANCE}블록 안으로 들어왔거나 소유자가 사라졌거나 경로를 못 만들어 끝나는
+     * 자리다. 어느 경우든
      * navigation 을 멈춰 자율행동에 넘긴다 — 남은 경로가 있으면 배회 Goal 의
      * {@code canContinueToUse}({@code !navigation.isDone()}) 가 엉뚱하게 참이 된다.
      */
@@ -234,7 +256,7 @@ public class WardenGirlFollowOwnerGoal extends Goal {
     public void stop() {
         boolean gaveUp = this.fails >= FAIL_LIMIT;
         this.owner = null;
-        this.repath = 0;
+        this.nextRepathTick = 0;
         this.fails = 0;
         this.bestSqr = Double.MAX_VALUE;
         this.lastSelfX = Double.NaN;
