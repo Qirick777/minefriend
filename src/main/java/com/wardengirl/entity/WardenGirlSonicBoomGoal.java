@@ -18,7 +18,11 @@ import java.util.EnumSet;
  * <h2>제거 방법</h2>
  *
  * 이 파일과 {@code WardenGirlEntity.registerGoals()} 의 {@code addGoal(2, ...)} 한 줄이면 된다.
- * 임시 좀비 규칙은 여기에 없다 — {@link WardenGirlHostiles} 한 곳에만 있다.
+ *
+ * <h2>대상은 이 Goal 이 고르지 않는다 (T15)</h2>
+ *
+ * {@code targetSelector} 의 {@link WardenGirlTargetGoal} 이 고른 {@code mob.getTarget()} 을
+ * <b>읽기만</b> 한다. 주변을 훑는 코드는 없다.
  *
  * <h2>바닐라 재사용</h2>
  *
@@ -36,6 +40,15 @@ public class WardenGirlSonicBoomGoal extends Goal {
 
     /** 소닉붐 <b>전용</b> 쿨다운. 방출(34틱) 시점부터 센다 — 시작 간격은 34 + 100 = 134틱. */
     public static final int SONIC_COOLDOWN = 100;
+
+    /** 바닐라 {@code SonicBoom} 과 같은 수평·수직 사거리. T15 에서 여기로 옮겼다. */
+    public static final double RANGE_XZ = 15.0D;
+    public static final double RANGE_Y = 20.0D;
+
+    /** 소닉붐 사거리 안인가. 바닐라 {@code Warden.closerThan(target, 15, 20)} 과 같다. */
+    private boolean inBoomRange(LivingEntity target) {
+        return this.mob.closerThan(target, RANGE_XZ, RANGE_Y);
+    }
 
     /**
      * 방출 뒤 근접을 막는 시간. 34 + 26 = 60, 즉 <b>소닉 모션이 끝나는 순간</b> 근접이 풀린다.
@@ -84,12 +97,17 @@ public class WardenGirlSonicBoomGoal extends Goal {
      *
      * <pre>
      *   소닉 쿨다운 없음 && 근접 모션 중 아님 && 실행 가능 상태 && 대상이 수평 15 · 수직 20 안
-     *   && ( 전방 군중 3마리 이상  ||  근접이 불가능 )
+     *   && 근접이 불가능
      * </pre>
      *
      * <p>"근접이 불가능" 은 거리 이력이 아니라 두 가지 <b>즉시 판정</b>이다 — 이미 근접 사거리
      * 안이면 T7 이 처리하므로 양보하고, 사거리 밖이면 경로가 아예 없을 때(벽 너머·높은 곳)만
      * 소닉붐이다. 상태를 남기지 않는다.
+     *
+     * <p><b>T15 에서 "전방 군중 3마리 이상" 조건을 뺐다.</b> 그 조건은 주변에서
+     * {@code Zombie.class} 를 세는 코드였고, 그것이 바로 이번에 제거해야 하는 좀비 전용 탐색이다.
+     * 중립 개체에는 "적 무리"를 정의할 집합 자체가 없으므로 임의로 발명하지 않고 조건을 없앴다.
+     * 방출 34틱 · 길이 60틱 · 쿨다운 100틱은 그대로다.
      */
     @Override
     public boolean canUse() {
@@ -99,8 +117,9 @@ public class WardenGirlSonicBoomGoal extends Goal {
         if (this.mob.isSonicOnCooldown() || this.mob.isMeleeOnCooldown() || blocked()) {
             return false;
         }
-        LivingEntity t = WardenGirlHostiles.nearest(this.mob);
-        if (t == null || !WardenGirlHostiles.inBoomRange(this.mob, t)) {
+        // T15 — 주변을 훑지 않는다. targetSelector 가 골라 둔 대상만 본다.
+        LivingEntity t = this.mob.getTarget();
+        if (t == null || !this.mob.isValidCombatTarget(t) || !inBoomRange(t)) {
             return false;
         }
         // T14 — 근접과 같은 소유자 목줄을 쓴다(시작: 워든걸-소유자 12, 대상-소유자 16).
@@ -109,9 +128,6 @@ public class WardenGirlSonicBoomGoal extends Goal {
             return false;
         }
         this.target = t;
-        if (WardenGirlHostiles.frontCrowd(this.mob) >= WardenGirlHostiles.CROWD) {
-            return true;
-        }
         float w = this.mob.getBbWidth();
         double meleeSqr = w * 2.0F * w * 2.0F + t.getBbWidth();
         if (this.mob.distanceToSqr(t) <= meleeSqr) {
@@ -201,6 +217,8 @@ public class WardenGirlSonicBoomGoal extends Goal {
 
     @Override
     public void stop() {
+        // 서버 target 은 지우지 않는다 — 쓰는 쪽은 WardenGirlTargetGoal 하나다. 여기서
+        // ticks 를 −1 로 되돌리는 것이 "진행 중인 소닉 준비 취소" 그 자체다.
         this.target = null;
         this.ticks = -1;
     }

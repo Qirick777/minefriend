@@ -135,16 +135,18 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         // 4.12 킁킁. 플래그가 없으므로 두 시선 Goal 과 동시에 돈다 — 킁킁 중에도 고개는 계속
         // 움직인다. 우선순위는 시선보다 아래에 둔다.
         this.goalSelector.addGoal(9, new WardenGirlSniffGoal(this));
-        // T7 임시 — 좀비를 향해 걸어가 사거리에서 18틱 공격 모션만 낸다. 피해 없음.
-        // 지울 때는 이 한 줄과 WardenGirlAttackGoal 파일만 지우면 된다.
+        // 4.8 근접. targetSelector 가 고른 대상에게만 걸어가 때린다 — T15 부터 이 Goal 은
+        // 대상을 고르지 않는다.
         this.goalSelector.addGoal(3, new WardenGirlAttackGoal(this));
-        // T8 임시 — 근접이 불가하거나 전방에 좀비가 몰리면 소닉붐. 피해 없음.
-        // 지울 때는 이 한 줄과 WardenGirlSonicBoomGoal 파일만 지우면 된다.
+        // 4.9 소닉붐. 대상에게 근접이 불가능할 때만 쓴다. 피해는 아직 없다(T16 범위).
         this.goalSelector.addGoal(2, new WardenGirlSonicBoomGoal(this));
         // T13 — 7.2 일반 추종. 전투(2·3)보다 아래, 배회보다 위다. MOVE 만 잡으므로 전투가
         // 돌고 있으면 navigation 을 빼앗지 못하고, 전투가 끝나면 별도 상태 전환 없이 다시
         // 선택된다.
         this.goalSelector.addGoal(5, new WardenGirlFollowOwnerGoal(this));
+        // T15 — 중립 전투 대상 선정. 선제공격은 없다. targetSelector 에 들어가므로 goalSelector
+        // 의 우선순위와 겹치지 않고, TARGET 플래그만 잡아 이동·시선 Goal 을 막지 않는다.
+        this.targetSelector.addGoal(1, new WardenGirlTargetGoal(this));
         // T13 — 7.1 소유자 중심(야생이면 현재 위치 중심) 자율 배회. 항상 켜져 있다 —
         // 디버그 명령으로 켜야 하는 구조가 아니다.
         this.goalSelector.addGoal(6, new WardenGirlOwnerStrollGoal(this, 1.0D));
@@ -215,6 +217,13 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
             return false;
         }
         this.ownerUuid = owner;
+        // T15 — 각인이 성립한 <b>이 틱</b>에 현재 대상을 다시 본다. 각인 전에는 새 소유자도,
+        // 같은 소유자가 될 다른 워든걸도 평범한 대상이었으므로, 소인 직후 한 틱이라도 그 공격이
+        // 이어지면 안 된다. isOwnerOrSameOwnerWardenGirl 은 방금 채운 ownerUuid 를 쓴다.
+        LivingEntity current = getTarget();
+        if (current != null && isOwnerOrSameOwnerWardenGirl(current)) {
+            setTarget(null);
+        }
         return true;
     }
 
@@ -276,7 +285,21 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
      * 이 하나를 부른다. 죽음·제거는 여기서, 보호와 바닐라 규칙은 {@link #canAttack} 에서 본다.
      */
     public boolean isValidCombatTarget(@javax.annotation.Nullable LivingEntity target) {
-        return target != null && target.isAlive() && !target.isRemoved() && canAttack(target);
+        if (target == null || target == this) {
+            return false;                       // 자기 자신은 대상이 아니다
+        }
+        if (!target.isAlive() || target.isRemoved()) {
+            return false;
+        }
+        if (target.level() != this.level()) {
+            return false;                       // 다른 차원. Level 인스턴스가 곧 차원이다.
+        }
+        // T15 — 크리에이티브·관전자 플레이어는 제외한다. TargetingConditions 는 관전자만
+        // 걸러내고 크리에이티브는 통과시키므로(바닐라 확인) 여기서 함께 본다.
+        if (target instanceof Player p && (p.isCreative() || p.isSpectator())) {
+            return false;
+        }
+        return canAttack(target);
     }
 
     // ---- T14 장거리 추종·현지 생활·전투 목줄 ---------------------------------------------------

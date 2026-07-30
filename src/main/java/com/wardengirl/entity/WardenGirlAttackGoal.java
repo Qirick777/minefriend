@@ -13,14 +13,15 @@ import java.util.EnumSet;
  * 이 파일 하나와 {@code WardenGirlEntity.registerGoals()} 의 {@code addGoal(3, ...)} 한 줄을
  * 지우면 끝난다. 다른 어떤 파일도 이 클래스를 참조하지 않는다.
  *
- * <h2>좀비는 임시 대상이다</h2>
+ * <h2>대상은 이 Goal 이 고르지 않는다 (T15)</h2>
  *
- * <b>적대 기준의 절대 규칙이 아니다.</b> 대상 판정은 {@link WardenGirlHostiles} 한 곳에만 있다.
+ * T15 부터 대상 선정은 {@link WardenGirlTargetGoal} 하나가 {@code targetSelector} 에서 한다.
+ * 이 Goal 은 {@code mob.getTarget()} 을 <b>읽기만</b> 하고 절대 쓰지 않는다 — 그래서 각인
+ * 직후 {@code setTarget(null)} 이 들어오면 다음 틱에 곧바로 멈춘다.
  *
  * <h2>피해 (T12.5)</h2>
  *
  * 모션이 시작되는 회차에 {@code Mob.doHurtTarget} 을 <b>정확히 한 번</b> 부른다(선딜 0).
- * {@code setTarget} 은 여전히 부르지 않는다 — 이 Goal 은 자기 {@link #target} 필드만 쓴다.
  *
  * <h2>구조는 4.12 킁킁과 같다</h2>
  *
@@ -59,7 +60,15 @@ public class WardenGirlAttackGoal extends Goal {
     private static final double PURSUE_SPEED = 1.3D;
 
     private final WardenGirlEntity mob;
-    private net.minecraft.world.entity.LivingEntity target;
+
+    /**
+     * 현재 대상. <b>서버 권위 값 하나만 본다</b> — 자기 복사본을 들고 있으면 각인 직후
+     * {@code setTarget(null)} 이나 목줄 이탈이 한 틱 늦게 반영된다.
+     */
+    @javax.annotation.Nullable
+    private net.minecraft.world.entity.LivingEntity target() {
+        return this.mob.getTarget();
+    }
 
     /**
      * 바닐라 근접 사거리 제곱. {@code MeleeAttackGoal.getAttackReachSqr} 와 같은 식이다 —
@@ -155,31 +164,28 @@ public class WardenGirlAttackGoal extends Goal {
         if (blocked() || this.mob.isPassenger()) {
             return false;
         }
-        net.minecraft.world.entity.LivingEntity found = WardenGirlHostiles.nearest(this.mob);
+        // T15 — 주변을 훑지 않는다. targetSelector 가 이미 골라 둔 대상만 본다.
+        net.minecraft.world.entity.LivingEntity found = target();
         // T14 — 소유자가 있는 워든걸은 소유자 목줄 안에서만 새 전투를 시작한다(워든걸-소유자 12
         // 이하, 대상-소유자 16 이하). 야생이거나 소유자를 찾을 수 없으면 제한하지 않는다.
-        // 대상 선정 방식 자체는 건드리지 않았다 — 통과한 뒤에 거리만 한 번 더 본다.
-        if (found == null || !this.mob.canStartLeashedCombat(found)) {
-            return false;
-        }
-        this.target = found;
-        return true;
+        return found != null && this.mob.isValidCombatTarget(found)
+                && this.mob.canStartLeashedCombat(found);
     }
 
     /**
      * 대상 유지 판정. 죽음·제거·보호 대상 전환을 한 번에 본다 — T12 공통 판정 재사용.
-     * 대상 <b>최초 선정</b>은 {@link WardenGirlHostiles#nearest} 가 {@code TargetingConditions
-     * .forCombat()} 을 통과시키면서 이미 같은 필터를 건다.
+     * 대상 <b>최초 선정</b>은 {@link WardenGirlTargetGoal} 이 같은 필터를 걸어 이미 끝냈다.
      */
     @Override
     public boolean canContinueToUse() {
-        if (!this.mob.isValidCombatTarget(this.target) || blocked() || this.mob.isPassenger()) {
+        net.minecraft.world.entity.LivingEntity t = target();
+        if (!this.mob.isValidCombatTarget(t) || blocked() || this.mob.isPassenger()) {
             return false;
         }
         // T14 — 유지 목줄(워든걸-소유자 16, 대상-소유자 24). 시작보다 넓으므로 경계에서 전투와
         // 추종이 번갈아 켜지지 않는다. 넘으면 여기서 끝내고 stop() 이 target 해제와 navigation
         // 중단을 함께 처리한다. 모션 재생 중이어도 예외를 두지 않는다.
-        if (!this.mob.canKeepLeashedCombat(this.target)) {
+        if (!this.mob.canKeepLeashedCombat(t)) {
             return false;
         }
         if (this.ticks >= 0) {
@@ -200,10 +206,10 @@ public class WardenGirlAttackGoal extends Goal {
 
     @Override
     public void tick() {
-        if (this.target == null) {
+        if (target() == null) {
             return;
         }
-        this.mob.getLookControl().setLookAt(this.target, 30.0F, 30.0F);
+        this.mob.getLookControl().setLookAt(target(), 30.0F, 30.0F);
         // 접근 갱신은 모션 분기보다 <b>앞</b>이다. 뒤에 두었을 때에는 모션 재생 중 조기
         // return 때문에 재경로가 아예 실행되지 않았다(실측 재경로 63회 중 모션 중 5회).
         // 그래서 넉백으로 벌어진 거리를 18틱 내내 방치했다.
@@ -222,7 +228,7 @@ public class WardenGirlAttackGoal extends Goal {
             // (requiresUpdateEveryTick) 여기서 끝내면 간격이 쿨다운 값과 정확히 같아진다.
             this.ticks = -1;
         }
-        if (this.mob.distanceToSqr(this.target) <= reachSqr(this.target)) {
+        if (this.mob.distanceToSqr(target()) <= reachSqr(target())) {
             // 사거리 안이면 접근이 막힌 것이 아니므로 포기 시계를 되돌린다.
             this.approach = 0;
             if (this.mob.isMeleeOnCooldown()) {
@@ -231,7 +237,7 @@ public class WardenGirlAttackGoal extends Goal {
             // 방송 직전 마지막 재검사. 여기가 T12.5 에서 실제 피해를 붙일 자리이므로, 그때
             // 조건을 다시 쓰지 않도록 지금부터 이 한 줄이 관문이다. 사거리는 바로 위 if 가,
             // 죽음·제거·보호 대상 전환은 isValidCombatTarget 이 본다.
-            if (!this.mob.isValidCombatTarget(this.target)) {
+            if (!this.mob.isValidCombatTarget(target())) {
                 return;                         // 이번 공격 회차를 시작하지 않는다.
             }
             this.ticks = 0;
@@ -272,22 +278,22 @@ public class WardenGirlAttackGoal extends Goal {
             this.repath--;
         }
         boolean moved = Double.isNaN(this.pathedX)
-                || this.target.distanceToSqr(this.pathedX, this.pathedY, this.pathedZ)
+                || target().distanceToSqr(this.pathedX, this.pathedY, this.pathedZ)
                         >= REPATH_TARGET_MOVE * REPATH_TARGET_MOVE;
         // 경로가 "도착"으로 끝났는데 아직 사거리 밖이면 다음 시도를 앞당긴다.
         if (this.mob.getNavigation().isDone()
-                && this.mob.distanceToSqr(this.target) > reachSqr(this.target)
+                && this.mob.distanceToSqr(target()) > reachSqr(target())
                 && this.repath > STALL_RETRY) {
             this.repath = STALL_RETRY;
         }
         if (this.repath > 0 && !moved) {
             return;
         }
-        this.pathedX = this.target.getX();
-        this.pathedY = this.target.getY();
-        this.pathedZ = this.target.getZ();
+        this.pathedX = target().getX();
+        this.pathedY = target().getY();
+        this.pathedZ = target().getZ();
         this.repath = REPATH_MIN + this.mob.getRandom().nextInt(REPATH_SPREAD);
-        boolean ok = this.mob.getNavigation().moveTo(this.target, PURSUE_SPEED);
+        boolean ok = this.mob.getNavigation().moveTo(target(), PURSUE_SPEED);
         if (!ok) {
             this.repath += REPATH_FAIL_PENALTY;
         }
@@ -321,19 +327,19 @@ public class WardenGirlAttackGoal extends Goal {
      * 전부 바닐라와 같게 동작한다.
      */
     private void strike() {
-        if (!this.mob.isValidCombatTarget(this.target)) {
+        if (!this.mob.isValidCombatTarget(target())) {
             return;                             // 죽음·제거·보호 대상·바닐라 거절 → 피해 없음
         }
-        if (this.mob.distanceToSqr(this.target) > STRIKE_REACH_SQR) {
+        if (this.mob.distanceToSqr(target()) > STRIKE_REACH_SQR) {
             return;                             // 타격 틱 사이에 벗어났다 → 빗나감
         }
-        this.mob.doHurtTarget(this.target);
+        this.mob.doHurtTarget(target());
     }
 
     @Override
     public void stop() {
+        // 대상은 지우지 않는다 — 쓰는 쪽은 WardenGirlTargetGoal 하나다.
         this.mob.getNavigation().stop();
-        this.target = null;
         this.ticks = -1;
         this.approach = 0;
         this.repath = 0;
