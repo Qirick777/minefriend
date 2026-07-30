@@ -7,6 +7,7 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
@@ -34,10 +35,18 @@ import java.util.EnumSet;
  * {@code ai.behavior.warden.SonicBoom} 의 값과 경로를 그대로 옮긴 것이다. 빔 생성 루프도
  * 바닐라 것과 같은 식이다.
  *
- * <h2>넣지 않은 것</h2>
+ * <h2>피해·넉백·다중 판정 (T16)</h2>
  *
- * 피해, 넉백, 방어구 관통, 고정 공격력, 성장 스탯, 새 패킷, 동기화 각도, 클라이언트 판정.
- * 바닐라가 방출부에서 하는 {@code hurt} 와 넉백은 의도적으로 빠져 있다.
+ * 방출 틱(age 34)에 바닐라 {@code DamageSources.sonicBoom} 으로 피해를 주고 바닐라 워든과
+ * 같은 넉백을 건다. 피해량만 워든걸 자신의 강화 스택에서 나온다
+ * ({@code WardenGirlEntity.getSonicDamage()}). 대상은 하나가 아니라 발사점~종점 선분을 축으로
+ * 하는 반경 {@value #CAPSULE_RADIUS} 캡슐 안의 <b>유효 대상 전부</b>이며 각각 정확히 한 번씩
+ * 맞는다. 자세한 것은 {@link #strike}.
+ *
+ * <h2>여전히 넣지 않은 것</h2>
+ *
+ * 새 패킷, 새 NBT, 새 SynchedEntityData, 동기화 각도, 클라이언트 피해 판정, 별도 투사체 엔티티.
+ * 적중 판정은 전부 서버에서 한다.
  */
 public class WardenGirlSonicBoomGoal extends Goal {
 
@@ -50,6 +59,17 @@ public class WardenGirlSonicBoomGoal extends Goal {
 
     /** 군중으로 보는 최소 활성 위협 수. */
     public static final int CROWD = 3;
+
+    /** 2차 설계서 9.2 — 빔 선분을 축으로 하는 피해 판정 반경. */
+    public static final double CAPSULE_RADIUS = 1.0D;
+
+    /**
+     * 바닐라 워든 소닉의 넉백 수치다. {@code SonicBoom} 이
+     * {@code push(dir.x*2.5*r, dir.y*0.5*r, dir.z*2.5*r)} 를 쓰고 {@code r} 은
+     * {@code 1 - KNOCKBACK_RESISTANCE} 다(바이트코드 확인). 그대로 재사용한다.
+     */
+    private static final double KNOCKBACK_HORIZONTAL = 2.5D;
+    private static final double KNOCKBACK_VERTICAL = 0.5D;
 
     /**
      * 소닉붐 사거리 안인가. 바닐라 {@code Warden.closerThan(target, 15, 20)} 을 그대로 쓴다.
@@ -240,21 +260,28 @@ public class WardenGirlSonicBoomGoal extends Goal {
     }
 
     /**
-     * 바닐라 {@code SonicBoom} 방출부와 같은 빔이다 — 눈높이에서 대상 눈까지 정규화한 방향으로
-     * 1블록 간격 파티클을 {@code floor(거리) + 7} 개까지 놓고 소리를 낸다. <b>피해와 넉백은 뺐다.</b>
+     * T16 — 방출. 빔 연출은 바닐라 {@code SonicBoom} 그대로이고, 여기에 <b>실제 피해와
+     * 넉백</b>, 그리고 설계서 9.2 의 <b>반경 1.0 캡슐 다중 판정</b>이 붙는다.
+     *
+     * <p>발사점과 종점은 바닐라와 같다 — {@code position().add(0,1.6,0)} 에서 대상의
+     * {@code getEyePosition()} 까지다(바이트코드 확인). 파티클은 바닐라처럼 대상 너머까지
+     * 그려지지만 <b>피해 판정은 그 유한 선분만</b> 쓴다.
      */
     private void emit() {
         if (!(this.mob.level() instanceof ServerLevel server)) {
             return;
         }
-        // 방출 직전 마지막 재검사. T16 이 여기에 피해와 넉백을 붙이므로, 그때 조건을 새로
-        // 쓰지 않도록 지금부터 이 한 줄이 관문이다. canContinueToUse 는 goalSelector 가
-        // 두 틱에 한 번만 평가하므로 방출 틱과 한 틱 어긋날 수 있다 — 그 틈을 여기서 막는다.
-        if (!this.mob.isValidCombatTarget(this.target)) {
-            return;                             // 이번 방출 회차를 시작하지 않는다.
+        // 방출 직전 최종 재검사. 여기서 걸리면 <b>피해 판정 전체</b>를 취소한다 — 이전 위치를
+        // 기억해 빈 곳으로 쏘거나 주변 개체만 때리는 경로는 없다. canContinueToUse 는
+        // goalSelector 가 두 틱에 한 번만 평가하므로 방출 틱과 어긋날 수 있어 여기서 다시 본다.
+        LivingEntity aim = this.target;
+        if (aim == null || !this.mob.isValidCombatTarget(aim)
+                || !this.mob.canKeepLeashedCombat(aim) || !inBoomRange(aim)) {
+            return;
         }
         Vec3 from = this.mob.position().add(0.0D, 1.6D, 0.0D);
-        Vec3 delta = this.target.getEyePosition().subtract(from);
+        Vec3 to = aim.getEyePosition();
+        Vec3 delta = to.subtract(from);
         Vec3 dir = delta.normalize();
         int steps = Mth.floor(delta.length()) + 7;
         for (int i = 1; i < steps; i++) {
@@ -262,9 +289,51 @@ public class WardenGirlSonicBoomGoal extends Goal {
             server.sendParticles(ParticleTypes.SONIC_BOOM, p.x, p.y, p.z, 1, 0.0D, 0.0D, 0.0D, 0.0D);
         }
         this.mob.playSound(SoundEvents.WARDEN_SONIC_BOOM, 3.0F, 1.0F);
+        strike(server, from, to, dir);
         // 두 쿨다운 모두 타격 순간부터 센다 — 근접이 공격 방송 시점에 거는 것과 같은 규칙이다.
         this.mob.startSonicCooldown(SONIC_COOLDOWN);
         this.mob.startMeleeCooldown(MELEE_LOCK_AFTER_EMIT);
+    }
+
+    /**
+     * 설계서 9.2 — 선분 {@code from→to} 를 축으로 하는 반경 {@value #CAPSULE_RADIUS} 캡슐 안의
+     * 유효 대상 <b>전부</b>에게 각각 한 번씩 피해와 넉백을 준다.
+     *
+     * <h3>기하 판정</h3>
+     *
+     * 후보는 선분을 감싸는 AABB 를 반경만큼 부풀려 <b>한 번만</b> 조회한다. 개체별 판정은
+     * 바닐라 투사체와 같은 방식이다 — 대상의 bounding box 를 반경만큼 부풀리고 선분을
+     * {@code clip} 한다. 점 중심이 아니라 <b>bounding box 를 고려</b>하며, {@code clip} 이
+     * 선분 밖으로 나가지 않으므로 발사자 뒤로도 대상 너머로도 연장되지 않는다.
+     * 발사점이 이미 부푼 상자 안이면 {@code clip} 이 비어 나오므로 {@code contains} 로 함께 본다
+     * (바닐라 {@code ProjectileUtil.getEntityHitResult} 도 같은 예외 처리를 한다).
+     *
+     * <p>부푼 AABB 기준이므로 판정면은 정확한 원기둥이 아니라 <b>모서리가 각진 캡슐</b>이다.
+     * 축에서 수직으로 잰 경계는 {@code 대상 반폭 + 1.0} 이 된다.
+     *
+     * <h3>벽·중복·감쇠</h3>
+     *
+     * 시야도 블록 충돌도 보지 않는다 — 벽 뒤도 맞는다. 조회 결과는 개체마다 하나뿐이라
+     * 중복 피해가 구조적으로 없고, 첫 적중에서 멈추지 않으며 거리 감쇠도 없다.
+     * 소유자와 같은 소유자의 워든걸은 {@code isValidCombatTarget} 에서 걸러지므로 피해도
+     * 넉백도 받지 않고, 걸러질 뿐이라 <b>뒤쪽 대상을 막지도 않는다</b>.
+     */
+    private void strike(ServerLevel server, Vec3 from, Vec3 to, Vec3 dir) {
+        float damage = (float) this.mob.getSonicDamage();
+        AABB span = new AABB(from, to).inflate(CAPSULE_RADIUS);
+        for (LivingEntity e : server.getEntitiesOfClass(LivingEntity.class, span,
+                x -> x != this.mob && this.mob.isValidCombatTarget(x))) {
+            AABB hull = e.getBoundingBox().inflate(CAPSULE_RADIUS);
+            if (!hull.contains(from) && hull.clip(from, to).isEmpty()) {
+                continue;                       // 캡슐 밖 — 선분 종점 너머와 뒤쪽이 여기서 빠진다
+            }
+            e.hurt(server.damageSources().sonicBoom(this.mob), damage);
+            // 바닐라 워든과 같은 넉백이다 — 수평 2.5, 수직 0.5 에 각각 넉백 저항을 곱한다.
+            double resist = 1.0D - e.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE);
+            e.push(dir.x() * KNOCKBACK_HORIZONTAL * resist,
+                    dir.y() * KNOCKBACK_VERTICAL * resist,
+                    dir.z() * KNOCKBACK_HORIZONTAL * resist);
+        }
     }
 
     @Override
