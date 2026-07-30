@@ -6,7 +6,10 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.Vec3;
 
@@ -45,7 +48,17 @@ public class WardenGirlSonicBoomGoal extends Goal {
     public static final double RANGE_XZ = 15.0D;
     public static final double RANGE_Y = 20.0D;
 
-    /** 소닉붐 사거리 안인가. 바닐라 {@code Warden.closerThan(target, 15, 20)} 과 같다. */
+    /** 군중으로 보는 최소 활성 위협 수. */
+    public static final int CROWD = 3;
+
+    /**
+     * 소닉붐 사거리 안인가. 바닐라 {@code Warden.closerThan(target, 15, 20)} 을 그대로 쓴다.
+     *
+     * <p>{@code Entity.closerThan} 은 두 축 모두 <b>엄격 부등호</b>다 —
+     * {@code lengthSquared(dx,dz) < square(15)} 이고 {@code square(dy) < square(20)}
+     * (바이트코드 확인). 즉 실제 경계는 수평 {@code < 15} · 수직 {@code < 20} 이며 정확히
+     * 15.0 · 20.0 은 사거리 <b>밖</b>이다. 사거리를 바꾸지 말라는 요구에 따라 그대로 둔다.
+     */
     private boolean inBoomRange(LivingEntity target) {
         return this.mob.closerThan(target, RANGE_XZ, RANGE_Y);
     }
@@ -96,18 +109,23 @@ public class WardenGirlSonicBoomGoal extends Goal {
      * 발동식.
      *
      * <pre>
-     *   소닉 쿨다운 없음 && 근접 모션 중 아님 && 실행 가능 상태 && 대상이 수평 15 · 수직 20 안
-     *   && 근접이 불가능
+     *   유효한 현재 target && T14 시작 목줄 && 소닉 쿨다운·행동 상태 통과
+     *   && target 이 수평 15 · 수직 20 안
+     *   && ( 활성 위협 3 이상 || 근접으로 도달 불가 )
      * </pre>
      *
      * <p>"근접이 불가능" 은 거리 이력이 아니라 두 가지 <b>즉시 판정</b>이다 — 이미 근접 사거리
      * 안이면 T7 이 처리하므로 양보하고, 사거리 밖이면 경로가 아예 없을 때(벽 너머·높은 곳)만
      * 소닉붐이다. 상태를 남기지 않는다.
      *
-     * <p><b>T15 에서 "전방 군중 3마리 이상" 조건을 뺐다.</b> 그 조건은 주변에서
-     * {@code Zombie.class} 를 세는 코드였고, 그것이 바로 이번에 제거해야 하는 좀비 전용 탐색이다.
-     * 중립 개체에는 "적 무리"를 정의할 집합 자체가 없으므로 임의로 발명하지 않고 조건을 없앴다.
-     * 방출 34틱 · 길이 60틱 · 쿨다운 100틱은 그대로다.
+     * <p>T15.5 — 다수전 조건이 <b>종류가 아니라 위협 여부</b>로 돌아왔다. T15 에서 뺐던 조건은
+     * 주변의 {@code Zombie.class} 를 세는 코드여서 제거 대상이었다. 지금 세는 것은
+     * {@link #activeThreats} 가 정의하는 "이 워든걸이나 소유자를 실제로 노리고 있는 개체" 이며,
+     * 어떤 종류인지는 보지 않고 {@code setTarget} 도 하지 않는다.
+     *
+     * <p><b>시야는 조건이 아니다.</b> 벽 뒤의 적을 치는 것이 이 기능의 목적이므로
+     * {@code hasLineOfSight} 같은 판정을 넣지 않는다. 방출 34틱 · 길이 60틱 · 쿨다운 100틱과
+     * 사거리 15/20 도 그대로다.
      */
     @Override
     public boolean canUse() {
@@ -119,7 +137,12 @@ public class WardenGirlSonicBoomGoal extends Goal {
         }
         // T15 — 주변을 훑지 않는다. targetSelector 가 골라 둔 대상만 본다.
         LivingEntity t = this.mob.getTarget();
-        if (t == null || !this.mob.isValidCombatTarget(t) || !inBoomRange(t)) {
+        if (t == null || !this.mob.isValidCombatTarget(t)) {
+            return false;
+        }
+        // T15.5 — 사거리 판정이 <b>두 갈래 모두</b>의 선행 조건이다. 사거리 밖 대상에게는
+        // 다수전이든 근접 불가든 충전을 시작하지 않는다.
+        if (!inBoomRange(t)) {
             return false;
         }
         // T14 — 근접과 같은 소유자 목줄을 쓴다(시작: 워든걸-소유자 12, 대상-소유자 16).
@@ -127,26 +150,55 @@ public class WardenGirlSonicBoomGoal extends Goal {
         if (!this.mob.canStartLeashedCombat(t)) {
             return false;
         }
-        this.target = t;
-        float w = this.mob.getBbWidth();
-        double meleeSqr = w * 2.0F * w * 2.0F + t.getBbWidth();
-        if (this.mob.distanceToSqr(t) <= meleeSqr) {
+        boolean use = activeThreats(t) >= CROWD || meleeUnreachable(t);
+        if (use) {
+            this.target = t;
+        }
+        return use;
+    }
+
+    /**
+     * T15.5 — 근접으로 <b>닿을 수 없는가</b>. 벽 뒤, 올라갈 수 없는 발판, 부분 경로가 전부
+     * 여기 하나로 판정된다.
+     *
+     * <p>{@code moveTo} 의 반환값은 쓰지 않는다 — 바닐라는 닿지 못하는 대상에도 부분 경로를
+     * 만들고 {@code true} 를 돌려준다. 실제 {@code Path} 의 도달 여부를 본다(기둥 위 좀비
+     * 실측: {@code n=1, reach=false, distToTgt=7.00}).
+     *
+     * <p>{@code null} 도 도달 불가로 센다. {@code createPath} 는 {@code canUpdatePath()} 가
+     * false 인 틱(땅에 닿지 않았고 액체·탑승도 아닐 때)에 A* 를 돌리지 않고 {@code null} 을
+     * 돌려주므로, 공중에 뜬 순간에는 "계산하지 않았다" 와 "길이 없다" 가 구분되지 않는다.
+     * 요구사항이 {@code path == null || !path.canReach()} 로 확정됐으므로 그대로 따른다.
+     */
+    private boolean meleeUnreachable(LivingEntity t) {
+        if (this.mob.isWithinMeleeAttackRange(t)) {
             return false;                       // 근접 사거리 안 — T7 이 한다
         }
-        // 도달 불가는 "경로가 있는데 대상에 닿지 못한다" 하나뿐이다.
-        //
-        // 바닐라 PathNavigation.createPath 는 닿지 못하는 대상에도 canReach()==false 인 부분
-        // 경로를 돌려준다(기둥 위 좀비 실측: n=1, reach=false, distToTgt=7.00). null 만 보던
-        // 첫 구현은 그래서 한 번도 발동하지 않았다.
-        //
-        // 반대로 null 은 "도달 불가" 가 아니라 "이번 틱에는 계산하지 않았다" 다 — createPath 는
-        // canUpdatePath() 가 false 일 때(땅에 닿지 않았고 액체 속도 탑승 중도 아닐 때) A* 를
-        // 돌리지 않고 그대로 null 을 반환한다. 스폰 직후가 정확히 그 상태여서, 평지 8블록 앞의
-        // 접근 가능한 좀비에게 소닉이 오발됐다(실측 t=1 발동, 첫 접근이 t=136 까지 135틱 지연).
-        // canUpdatePath() 는 protected 라 여기서 부를 수 없으므로 그 상태의 신호인 null 을
-        // "발동하지 않음" 으로 읽는다. 땅에 닿는 다음 틱이면 정상 판정이 된다.
         Path path = this.mob.getNavigation().createPath(t, 0);
-        return path != null && !path.canReach();
+        return path == null || !path.canReach();
+    }
+
+    /**
+     * T15.5 — 활성 위협 수. <b>종류를 보지 않는다.</b>
+     *
+     * <p>현재 대상은 정의상 위협이므로 1로 센다. 그 밖에는 소닉 사거리 안에서 이 워든걸이나
+     * 소유자를 <b>실제로 노리고 있는</b>({@code getTarget()}) 개체만 센다. 세기만 할 뿐
+     * {@code setTarget} 은 하지 않으므로 T15 가 없앤 자동 어그로가 되살아나지 않는다.
+     */
+    private int activeThreats(LivingEntity current) {
+        Player owner = this.mob.serverOwner();
+        AABB box = this.mob.getBoundingBox().inflate(RANGE_XZ, RANGE_Y, RANGE_XZ);
+        int n = 0;
+        for (LivingEntity e : this.mob.level().getEntitiesOfClass(LivingEntity.class, box,
+                x -> x != this.mob && this.mob.isValidCombatTarget(x) && inBoomRange(x))) {
+            if (e == current) {
+                n++;
+            } else if (e instanceof Mob m
+                    && (m.getTarget() == this.mob || (owner != null && m.getTarget() == owner))) {
+                n++;
+            }
+        }
+        return n;
     }
 
     /**
