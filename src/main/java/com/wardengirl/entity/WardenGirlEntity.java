@@ -132,17 +132,20 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     @Override
     protected void registerGoals() {
         this.goalSelector.addGoal(0, new FloatGoal(this));
-        // T20 — 4.2 저체력 후퇴. Float 바로 아래, 소닉·근접 위다. MOVE 하나만 잡으므로 소닉(2)·
-        // 근접(3)·추종(5)·배회(6) 를 전부 선점하면서 시선 Goal 은 막지 않는다.
-        this.goalSelector.addGoal(1, new WardenGirlRetreatGoal(this));
+        // T21 — 소닉이 후퇴보다 위로 올라왔다. 안전 판정을 통과한 후퇴 소닉만 후퇴의 MOVE 를
+        // 잠시 선점하고, 안전하지 않으면 소닉 canUse 가 false 라 후퇴가 계속 돈다. 일반 소닉은
+        // 예전처럼 근접보다 우선이다.
+        // T20 — 4.2 저체력 후퇴. MOVE 하나만 잡으므로 근접(3)·추종(5)·배회(6) 를 전부
+        // 선점하면서 시선 Goal 은 막지 않는다.
+        this.goalSelector.addGoal(2, new WardenGirlRetreatGoal(this));
         // 4.12 킁킁. 플래그가 없으므로 두 시선 Goal 과 동시에 돈다 — 킁킁 중에도 고개는 계속
         // 움직인다. 우선순위는 시선보다 아래에 둔다.
         this.goalSelector.addGoal(9, new WardenGirlSniffGoal(this));
         // 4.8 근접. targetSelector 가 고른 대상에게만 걸어가 때린다 — T15 부터 이 Goal 은
         // 대상을 고르지 않는다.
         this.goalSelector.addGoal(3, new WardenGirlAttackGoal(this));
-        // 4.9 소닉붐. 대상에게 근접이 불가능할 때만 쓴다. 피해는 아직 없다(T16 범위).
-        this.goalSelector.addGoal(2, new WardenGirlSonicBoomGoal(this));
+        // 4.9 소닉붐. T21 부터 우선순위 1 이다 — 위 주석 참조.
+        this.goalSelector.addGoal(1, new WardenGirlSonicBoomGoal(this));
         // T13 — 7.2 일반 추종. 전투(2·3)보다 아래, 배회보다 위다. MOVE 만 잡으므로 전투가
         // 돌고 있으면 navigation 을 빼앗지 못하고, 전투가 끝나면 별도 상태 전환 없이 다시
         // 선택된다.

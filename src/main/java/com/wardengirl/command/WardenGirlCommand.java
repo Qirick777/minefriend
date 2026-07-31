@@ -171,6 +171,8 @@ public final class WardenGirlCommand {
                                                         EntityArgument.getEntity(ctx, "target"),
                                                         LongArgumentType.getLong(ctx, "amount")))))))
                 // ---- T11 실제 Attribute 조회 -------------------------------------------------
+                // T21 사람 확인 전용. T22 시작 시 이 한 줄과 WardenGirlT21TestCommand 를 지운다.
+                .then(WardenGirlT21TestCommand.node())
                 .then(Commands.literal("stats")
                         .then(Commands.literal("get")
                                 .then(Commands.argument("target", EntityArgument.entity())

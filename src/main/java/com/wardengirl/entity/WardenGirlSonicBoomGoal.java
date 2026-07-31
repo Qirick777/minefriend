@@ -89,10 +89,28 @@ public class WardenGirlSonicBoomGoal extends Goal {
      */
     public static final int MELEE_LOCK_AFTER_EMIT = 26;
 
+    /**
+     * T21 — 이번 회차가 어느 규칙으로 시작했는가. <b>서버 Goal 내부 runtime 상태</b>다 —
+     * NBT 도, SynchedEntityData 도, 패킷도 없다. {@link #start()} 에서 확정하고 실행 도중
+     * 바꾸지 않는다. {@link #stop()} 이 {@link CastMode#NONE} 으로 되돌린다.
+     */
+    private enum CastMode { NONE, NORMAL, RETREAT }
+
     private final WardenGirlEntity mob;
     private LivingEntity target;
     /** 재생 나이(틱). 음수면 재생 중이 아니다. */
     private int ticks = -1;
+    private CastMode mode = CastMode.NONE;
+    /**
+     * RETREAT 회차에서 {@link #tick()} 이 안전을 잃었다고 판단했는가.
+     *
+     * <p>{@code goalSelector} 는 {@code canContinueToUse} 를 <b>두 틱에 한 번</b>만 부르는데
+     * 설계서 4.3.7 은 <b>매 서버틱</b> 재검사를 요구한다. {@code tick()} 은
+     * {@code requiresUpdateEveryTick()} 덕에 매 틱 도므로 거기서 판정하고, 이 깃발이 다음
+     * 평가에서 Goal 을 끝낸다. 깃발이 선 틱에는 age 도 올리지 않고 방출도 하지 않으므로
+     * 피해는 그 틱에 이미 막혀 있다.
+     */
+    private boolean retreatUnsafe;
 
     public WardenGirlSonicBoomGoal(WardenGirlEntity mob) {
         this.mob = mob;
@@ -122,12 +140,7 @@ public class WardenGirlSonicBoomGoal extends Goal {
      * 아니다. 사망은 여기서 명시적으로 끊는다.
      */
     private boolean cancelled() {
-        // T20 — 후퇴 중에는 일반 소닉을 전부 금지한다. 여기에 넣으면 {@link #blocked()} 를 통해
-        // canUse 가, 직접 참조하는 canContinueToUse 가 함께 막히므로 충전 중이던 것도 이번
-        // 평가에서 stop() 으로 끊기고 age 가 −1 로 돌아간다 — 34틱 방출에 도달하지 못한다.
-        // T21 의 "후퇴 중 안전한 소닉" 은 여기 없다. 그것은 별도 판정을 갖는 다음 태스크다.
-        return this.mob.isRetreating() || !this.mob.isAlive() || this.mob.isSignTest()
-                || this.mob.isPassenger();
+        return !this.mob.isAlive() || this.mob.isSignTest() || this.mob.isPassenger();
     }
 
     /**
@@ -175,7 +188,12 @@ public class WardenGirlSonicBoomGoal extends Goal {
         if (!this.mob.canStartLeashedCombat(t)) {
             return false;
         }
-        boolean use = activeThreats(t) >= CROWD || meleeUnreachable(t);
+        // T21 — 후퇴 중이면 기존 다수전·근접불가 방아쇠 대신 안전 판정을 쓴다. 위협이
+        // 하나뿐이어도 방출 시점까지 아무도 닿지 못하면 쏜다. 후퇴가 아니면 T15.5 그대로다.
+        boolean use = this.mob.isRetreating()
+                ? WardenGirlRetreatSonicSafety.evaluate(this.mob, t,
+                        WardenGirlRetreatSonicSafety.requiredArrival(0)).safe()
+                : activeThreats(t) >= CROWD || meleeUnreachable(t);
         if (use) {
             this.target = t;
         }
@@ -234,13 +252,24 @@ public class WardenGirlSonicBoomGoal extends Goal {
     public boolean canContinueToUse() {
         // T14 — 유지 목줄을 넘으면 충전 중이라도 끝낸다. stop() 이 ticks 를 −1 로 되돌리므로
         // "진행 중인 소닉 준비 취소" 가 여기서 함께 일어난다. 방출 전에 끊기면 피해도 없다.
-        return this.mob.isValidCombatTarget(this.target) && !cancelled()
-                && this.mob.canKeepLeashedCombat(this.target)
-                && this.ticks < AnimRegistry.SONIC_LENGTH_TICKS;
+        if (!this.mob.isValidCombatTarget(this.target) || cancelled()
+                || !this.mob.canKeepLeashedCombat(this.target)
+                || this.ticks >= AnimRegistry.SONIC_LENGTH_TICKS) {
+            return false;
+        }
+        if (this.mode == CastMode.RETREAT) {
+            // 후퇴가 풀리면 취소한다. 이미 시작한 RETREAT 회차를 NORMAL 로 바꾸지 않는다.
+            return this.mob.isRetreating() && !this.retreatUnsafe;
+        }
+        // T20 — NORMAL 회차는 후퇴에 들어가는 순간 취소된다. RETREAT 로 갈아타지 않는다.
+        return !this.mob.isRetreating();
     }
 
     @Override
     public void start() {
+        // 모드는 여기서 확정한다. canUse 와 같은 goalSelector.tick() 안이라 상태가 같다.
+        this.mode = this.mob.isRetreating() ? CastMode.RETREAT : CastMode.NORMAL;
+        this.retreatUnsafe = false;
         this.ticks = 0;
         this.mob.getNavigation().stop();
         this.mob.level().broadcastEntityEvent(this.mob, WardenGirlEntity.EVENT_SONIC);
@@ -258,6 +287,15 @@ public class WardenGirlSonicBoomGoal extends Goal {
         // 복귀했다. LookControl.getWantedY 는 LivingEntity 에 눈높이를 쓰므로, 이 한 줄로
         // 시선 목표가 emit() 의 target.getEyePosition() 과 같아진다.
         this.mob.getLookControl().setLookAt(this.target);
+        // 설계서 4.3.7 — RETREAT 회차는 방출 전 <b>매 서버틱</b> 다시 본다. {@code <=} 인 것이
+        // 4.3.7 이 요구하는 "방출 직전 최종 게이트" 다 — age 34 인 틱에도 한 번 더 걸린다.
+        if (this.mode == CastMode.RETREAT && this.ticks <= AnimRegistry.SONIC_EMIT_TICK
+                && !WardenGirlRetreatSonicSafety.evaluate(this.mob, this.target,
+                        WardenGirlRetreatSonicSafety.requiredArrival(this.ticks)).safe()) {
+            // 이 틱에는 age 를 올리지도, 방출하지도 않는다. 피해·넉백·파티클·소리·사건 전부 없다.
+            this.retreatUnsafe = true;
+            return;
+        }
         if (this.ticks == AnimRegistry.SONIC_EMIT_TICK) {
             emit();
         }
@@ -347,5 +385,7 @@ public class WardenGirlSonicBoomGoal extends Goal {
         // ticks 를 −1 로 되돌리는 것이 "진행 중인 소닉 준비 취소" 그 자체다.
         this.target = null;
         this.ticks = -1;
+        this.mode = CastMode.NONE;
+        this.retreatUnsafe = false;
     }
 }
