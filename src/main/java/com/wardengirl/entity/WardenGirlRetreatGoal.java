@@ -108,12 +108,34 @@ public class WardenGirlRetreatGoal extends Goal {
         this.mob.getNavigation().stop();
         this.destination = null;
         this.destinationPos = null;
+        this.holding = false;
         this.nextEvalTick = this.mob.tickCount;      // 이번 틱에 바로 평가한다
         tick();
     }
 
+    /**
+     * T22 — 지금 도주(FLEE)가 아니라 제자리 대기(HOLD)인가.
+     *
+     * <p>영구 상태도 synched 값도 아니다. 재평가마다 활성 위협 유무 하나로 정해지는 이 Goal
+     * 내부의 runtime boolean 이다. {@code isRetreating()} 은 저체력 보호 상태 그대로 유지되고,
+     * 이 Goal 은 계속 실행되며 MOVE 도 놓지 않는다 — 놓으면 추종·배회가 끼어들어 적도 없는데
+     * 다시 돌아다니게 된다.
+     */
+    private boolean holding;
+
+    /** T22 — 지금 제자리 대기 중인가. 계측·보고용 조회다. */
+    public boolean isHolding() {
+        return this.holding;
+    }
+
     @Override
     public void tick() {
+        // T22 — 대상이 죽거나·제거되거나·다른 차원으로 갔으면 10틱 주기를 기다리지 않는다.
+        // AABB 조회가 아니라 현재 target 한 개만 보는 값싼 검사다.
+        LivingEntity target = this.mob.getTarget();
+        if (!this.holding && target != null && !this.mob.isValidCombatTarget(target)) {
+            this.nextEvalTick = this.mob.tickCount;
+        }
         if (this.mob.tickCount - this.nextEvalTick < 0) {
             return;
         }
@@ -122,6 +144,24 @@ public class WardenGirlRetreatGoal extends Goal {
         Vec3 center = this.mob.retreatCenter();
         List<LivingEntity> threats = WardenGirlThreats.collect(this.mob);
         PathNavigation nav = this.mob.getNavigation();
+
+        // T22 4.2.6 — 활성 위협이 하나도 없으면 도주할 이유가 없다. 후보 생성도 Path probe 도
+        // LandRandomPos 호출도 여기서 끊긴다.
+        if (threats.isEmpty()) {
+            if (!this.holding) {
+                this.holding = true;
+                nav.stop();
+                this.destination = null;
+                this.destinationPos = null;
+            }
+            return;
+        }
+        if (this.holding) {
+            // 위협이 다시 생겼다. 이전 목적지를 되쓰지 않고 지금 위협 위치로 새로 고른다.
+            this.holding = false;
+            this.destination = null;
+            this.destinationPos = null;
+        }
 
         // 유효한 목적지를 붙들고 있는 동안에는 후보를 <b>아예 만들지 않는다</b>.
         boolean incumbentUsable = usable(center, nav);
@@ -354,6 +394,7 @@ public class WardenGirlRetreatGoal extends Goal {
         this.mob.getNavigation().stop();
         this.destination = null;
         this.destinationPos = null;
+        this.holding = false;
     }
 
     /** 현재 후퇴 목적지. 없으면 {@code null}. */

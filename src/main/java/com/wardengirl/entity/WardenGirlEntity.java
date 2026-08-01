@@ -574,9 +574,105 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     @Override
     public void aiStep() {
         if (!level().isClientSide) {
+            // T22 — 회복이 먼저다. 회복으로 45% 에 닿은 틱에 바로 후퇴가 풀리고, 같은
+            // goalSelector 평가에서 후퇴 Goal 이 끝난다.
+            passiveHealTick();
             updateRetreatState();
         }
         super.aiStep();
+    }
+
+    // ---- T22 비전투 체력 회복 (서버 runtime 전용) ---------------------------------------------
+    //
+    // NBT 도, SynchedEntityData 도, 패킷도, 전역 관리자도 없다. 개체마다 독립이며 저장하지
+    // 않으므로 로드·청크 재로드 뒤에는 새로 280틱을 기다린다.
+
+    /** 마지막 <b>실제</b> 피해 뒤 회복이 시작되기까지의 무피격 대기(틱). */
+    public static final long HEAL_QUIET_TICKS = 200L;
+
+    /** 회복 간격(틱). 첫 회복도 이 간격을 한 번 더 기다린 뒤에 온다. */
+    public static final long HEAL_INTERVAL_TICKS = 80L;
+
+    /** 회복량 비율. 실제 회복량은 {@code max(1.0, maxHealth × 이 값)} 이다. */
+    public static final double HEAL_PERCENT = 0.01D;
+
+    private long lastActualDamageTick;
+    private long nextPassiveHealTick;
+    private boolean passiveHealScheduleInitialized;
+
+    /** 이번 개체의 다음 자연 회복 예정 서버틱. 계측·보고용 조회다. */
+    public long nextPassiveHealTick() {
+        return this.nextPassiveHealTick;
+    }
+
+    /** 마지막으로 <b>실제 체력이 줄어든</b> 서버틱. 계측·보고용 조회다. */
+    public long lastActualDamageTick() {
+        return this.lastActualDamageTick;
+    }
+
+    /** 이번 회복 주기에 더할 양. 스택별 분기 없이 현재 최대 체력 하나로 정한다. */
+    public float passiveHealAmount() {
+        return (float) Math.max(1.0D, getMaxHealth() * HEAL_PERCENT);
+    }
+
+    /**
+     * 실제 피해가 <b>정말로</b> 있었는지 여기서 정한다.
+     *
+     * <p>{@code super.hurt} 전후의 {@code getHealth()} 를 비교한다. 화염 면역·관계 필터·무적
+     * 프레임·최종 피해 0·흡수 체력만 감소는 전부 체력이 줄지 않으므로 자연히 제외된다 —
+     * 그런 사례를 하나씩 나열하는 목록을 만들지 않는다.
+     *
+     * <p>스택 증가·감소로 최대 체력이 바뀌며 {@code setHealth} 가 값을 자르는 경로는 여기를
+     * 지나지 않으므로 실제 피해로 기록되지 않는다(2차 설계서 6.4).
+     */
+    @Override
+    public boolean hurt(net.minecraft.world.damagesource.DamageSource source, float amount) {
+        if (level().isClientSide) {
+            return super.hurt(source, amount);
+        }
+        float before = getHealth();
+        boolean applied = super.hurt(source, amount);
+        if (getHealth() < before) {
+            noteActualDamage();
+        }
+        return applied;
+    }
+
+    /**
+     * 같은 틱에 여러 번 불려도 마지막 값이 남는다. 초기화 깃발도 함께 세워, 아직 첫 서버틱을
+     * 지나지 않은 개체가 피해를 먼저 받은 경우 뒤이은 초기화가 이 기준을 <b>덮어쓰지 않게</b>
+     * 한다(설계서 15).
+     */
+    private void noteActualDamage() {
+        long now = level().getGameTime();
+        this.passiveHealScheduleInitialized = true;
+        this.lastActualDamageTick = now;
+        this.nextPassiveHealTick = now + HEAL_QUIET_TICKS + HEAL_INTERVAL_TICKS;
+    }
+
+    /**
+     * 설계서 17. 밀린 회복을 몰아서 하지 않는다 — 다음 예정 시각은 <b>지금</b> 기준으로만
+     * 다시 잡는다. 시간 기준은 {@code level().getGameTime()} 이다. 개체의 {@code tickCount} 는
+     * 청크 재로드로 되돌아갈 수 있고 서버 전체가 공유하는 시각이 아니라서 쓰지 않는다.
+     */
+    private void passiveHealTick() {
+        long now = level().getGameTime();
+        if (!this.passiveHealScheduleInitialized) {
+            this.passiveHealScheduleInitialized = true;
+            this.lastActualDamageTick = now;
+            this.nextPassiveHealTick = now + HEAL_QUIET_TICKS + HEAL_INTERVAL_TICKS;
+            return;                                 // 소환·로드 직후에도 새로 280틱을 기다린다
+        }
+        if (!isAlive() || isRemoved()) {
+            return;
+        }
+        if (now - this.nextPassiveHealTick < 0L) {
+            return;
+        }
+        if (getHealth() < getMaxHealth()) {
+            heal(passiveHealAmount());              // 바닐라. 최대 체력 초과는 heal 이 자른다
+        }
+        this.nextPassiveHealTick = now + HEAL_INTERVAL_TICKS;
     }
 
     public long getPowerStacks() {
