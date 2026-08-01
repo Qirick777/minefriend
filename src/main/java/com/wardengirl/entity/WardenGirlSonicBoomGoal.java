@@ -114,7 +114,27 @@ public class WardenGirlSonicBoomGoal extends Goal {
 
     public WardenGirlSonicBoomGoal(WardenGirlEntity mob) {
         this.mob = mob;
-        setFlags(EnumSet.of(Goal.Flag.MOVE, Goal.Flag.LOOK));
+        // T21.5 — MOVE 를 놓았다. 소닉은 이제 상체·조준·방출만 맡고, 실제 이동은 후퇴
+        // ({@link WardenGirlRetreatGoal}) 또는 소닉 추적({@link WardenGirlSonicPursuitGoal}) 이
+        // 정한다. LOOK 은 그대로 잡는다 — priority 1 이라 근접(4)·시선(7·8) 이 뺏지 못하고,
+        // 그 한 가지가 "소닉 중 근접 금지" 를 flag 만으로 보장한다.
+        setFlags(EnumSet.of(Goal.Flag.LOOK));
+    }
+
+    /** T21.5 — 지금 충전·재생 중인가. 소닉 추적 Goal 이 읽는다. */
+    boolean isCasting() {
+        return this.ticks >= 0;
+    }
+
+    /** T21.5 — 이번 회차가 NORMAL 인가. 모드는 {@link #start()} 이후 바뀌지 않는다. */
+    boolean isNormalCast() {
+        return this.mode == CastMode.NORMAL;
+    }
+
+    /** T21.5 — 이번 회차가 겨누고 있는 대상. 추적도 방출과 같은 대상을 쫓는다. */
+    @javax.annotation.Nullable
+    LivingEntity castTarget() {
+        return this.target;
     }
 
     @Override
@@ -271,7 +291,9 @@ public class WardenGirlSonicBoomGoal extends Goal {
         this.mode = this.mob.isRetreating() ? CastMode.RETREAT : CastMode.NORMAL;
         this.retreatUnsafe = false;
         this.ticks = 0;
-        this.mob.getNavigation().stop();
+        // T21.5 — 여기 있던 getNavigation().stop() 을 지웠다. 소닉이라는 이유만으로 이동을
+        // 끊지 않는다. 제자리에 서야 하는 상황(대상이 이미 근접 사거리 안, 경로 없음)은
+        // 소닉 추적 Goal 이 스스로 판단하고, 후퇴 중이면 후퇴 Goal 이 계속 움직인다.
         this.mob.level().broadcastEntityEvent(this.mob, WardenGirlEntity.EVENT_SONIC);
         this.mob.playSound(SoundEvents.WARDEN_SONIC_CHARGE, 3.0F, 1.0F);
     }

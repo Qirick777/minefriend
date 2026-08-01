@@ -203,6 +203,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         // C2 first, exactly where the controller used to write it, so every layer below sits on
         // top of the same value it always did. walkOnly is what C2 contributed on the four axes it
         // shares with C3 - now known directly instead of read back off the bone.
+        this.locoMoveWeight = 0.0D;     // 이관 전 경로에서는 C2 세기를 알 수 없다 → 정지 취급
         double[] walkOnly = AnimParams.C2_SOURCE.get() < 0.5D
                 ? readBlendAxes()               // 이관 전: 컨트롤러가 이미 본에 썼다
                 : applyLocomotionMotion(animatable, animationState);
@@ -485,6 +486,21 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
     private final Map<Integer, LocomotionMotion> locomotions = new HashMap<>();
 
     /**
+     * T21.5 — 이번 프레임 C2 가 실제로 그린 걷기의 세기. {@code 로코모션 fade weight ×
+     * swingAmount} 이며 0 이면 서 있는 것이다.
+     *
+     * <p><b>새 이동 판정을 만들지 않았다.</b> 두 값 모두 {@link #applyLocomotionMotion} 이
+     * 이미 계산해 쓰던 것 그대로다 — fade weight 는 {@code isWalkingForAnimation()} 의
+     * 임계·이력이 만들고, swingAmount 는 바닐라 {@code limbSwingAmount} 다. 경로가 있다고
+     * 켜지지 않고 <b>실제 위치 이동</b>이 있어야 올라간다. 전이도 로코모션의 기존 6틱
+     * fade 를 그대로 타므로 새 전이 시간이 없다.
+     *
+     * <p>프레임 안에서만 산다: {@link #applyLocomotionMotion} 이 쓰고 곧바로 이어지는
+     * {@link #applyActionMotion} 이 읽는다. 개체별로 남길 상태가 아니다.
+     */
+    private double locoMoveWeight;
+
+    /**
      * Adds the walk cycle, cross-faded against idle. Design doc 4.4.1 / 4.4.2.
      *
      * <p>See {@link LocomotionMotion} for why this is not a controller any more. The clip, the
@@ -557,6 +573,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         if (traced) {
             BoneTrace.noteFade(weight, loco.lastDt(), now);
         }
+        this.locoMoveWeight = Math.max(0.0D, Math.min(1.0D, weight * swingAmount));
         if (weight <= 0.0D) {
             if (traced) {
                 BoneTrace.noteLocoState(weight, swingAmount, distance, loco.phase(), legAmp,
@@ -935,8 +952,18 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
                     }
                     addRotZ(e.getKey(), e.getValue()[2] * zAmp);
                 }
+                // T21.5 10.2 — 실제로 걷는 동안에는 소닉 클립의 root 이동 채널을 쓰지 않는다.
+                // 소닉 클립이 건드리는 하체 계열 채널은 root.position 하나뿐이다 — hip·leg_left·
+                // leg_right 에는 키프레임이 아예 없어서 걷기와 겹치지 않는다(실측). root.position
+                // 은 C2 걷기 바운스와 같은 채널에 <b>더해지므로</b> 두 상하 운동이 겹친다.
+                // 정지 중에는 마스크가 0 이라 기존 전신 소닉 그대로다(10.4).
+                boolean sonicClip = AnimRegistry.SONIC_BOOM.equals(action.clip());
                 for (Map.Entry<String, double[]> e : pose.positionsRaw().entrySet()) {
-                    addPositionRaw(e.getKey(), e.getValue(), amp);
+                    double posAmp = amp;
+                    if (sonicClip && Bones.ROOT.equals(e.getKey())) {
+                        posAmp *= 1.0D - this.locoMoveWeight;
+                    }
+                    addPositionRaw(e.getKey(), e.getValue(), posAmp);
                 }
                 // The one axis 4.4.2 and 4.11 share. Walk writes body.xRot as walk_body_lean;
                 // the flinch writes its own. Simple addition may read wrong, so the walk's share
@@ -964,6 +991,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         }
         // After the check, so the measured delta is C3's own contribution and not C3 plus a walk
         // rescale that has nothing to do with the clip.
+
         double[] eff = applyWalkBlend(walkOnly, weight);
         return new ActionInfo(blendChannels(pose, weight), eff, weight);
     }
@@ -1194,4 +1222,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             getBone(name).ifPresent(AxisConvention::zero);
         }
     }
+
+
+
 }

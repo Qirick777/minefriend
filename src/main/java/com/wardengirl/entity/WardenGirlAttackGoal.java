@@ -51,13 +51,11 @@ public class WardenGirlAttackGoal extends Goal {
      */
 
     /**
-     * 전투 추적 중 navigation 속도 배율. 평상시 배회는 {@code 1.0} 그대로다.
-     *
-     * <p>클라이언트는 이 값을 모른다 — 실제 이동량이 커지면 {@code limbSwingAmount} 가 올라
-     * 보폭·다리 진폭·상체 기울임이 따라 커진다. 나중에 소유자를 따라갈 때도 같은 배율을
-     * 넘기면 같은 표현이 나온다.
+     * 전투 추적 중 navigation 속도 배율과 재경로 주기는 T21.5 에서 {@link WardenGirlApproach}
+     * 로 옮겼다. 값도 절차도 그대로이며, 소닉 추적({@link WardenGirlSonicPursuitGoal}) 이 같은
+     * 것을 쓴다.
      */
-    private static final double PURSUE_SPEED = 1.3D;
+    private final WardenGirlApproach pursuit = new WardenGirlApproach();
 
     private final WardenGirlEntity mob;
 
@@ -76,8 +74,7 @@ public class WardenGirlAttackGoal extends Goal {
      * 고정 상수 2.4 를 쓰면 히트박스 표면 사이에 1.8블록이 남아 허공을 때리는 그림이 됐다.
      */
     private double reachSqr(net.minecraft.world.entity.LivingEntity t) {
-        float w = this.mob.getBbWidth();
-        return w * 2.0F * w * 2.0F + t.getBbWidth();
+        return WardenGirlApproach.reachSqr(this.mob, t);
     }
 
     /**
@@ -94,36 +91,9 @@ public class WardenGirlAttackGoal extends Goal {
      */
     private static final double STRIKE_REACH_SQR = 3.24D;
 
-    /**
-     * 재경로 최소 간격과 변동폭. 바닐라 {@code MeleeAttackGoal} 의
-     * {@code ticksUntilNextPathRecalculation = 4 + random(7)} 와 같다 — 고정 10틱이던 때에는
-     * 경로가 "도착"으로 끝난 뒤 최대 10틱을 그대로 서 있었다(실측 정지 구간 14개 · 83틱 ·
-     * 접근 틱의 15.5%).
-     */
-    private static final int REPATH_MIN = 4;
-    private static final int REPATH_SPREAD = 7;
-
-    /** 경로 생성이 실패했을 때 다음 시도까지 더 기다리는 틱. 바닐라와 같은 값이다. */
-    private static final int REPATH_FAIL_PENALTY = 15;
-
-    /** 마지막 재경로가 기준으로 삼은 대상 위치에서 이만큼 움직이면 즉시 다시 경로를 낸다. */
-    private static final double REPATH_TARGET_MOVE = 1.0D;
-
-    /**
-     * 경로가 끝났는데 아직 사거리 밖일 때 다음 시도까지 기다리는 상한(틱). 즉시 매 틱
-     * 재경로하면 A* 를 매 틱 돌리게 되므로 상한만 낮춘다 — 정지가 최대 10틱에서 이 값으로 준다.
-     */
-    private static final int STALL_RETRY = 2;
-
     /** 재생 나이(틱). 음수면 아직 접근 중이다. */
     private int ticks = -1;
     private int approach;
-    /** 다음 재경로까지 남은 틱. */
-    private int repath;
-    /** 마지막 재경로 시점의 대상 위치. 대상이 여기서 1블록 이상 벗어나면 즉시 재경로한다. */
-    private double pathedX;
-    private double pathedY;
-    private double pathedZ;
 
     public WardenGirlAttackGoal(WardenGirlEntity mob) {
         this.mob = mob;
@@ -200,10 +170,7 @@ public class WardenGirlAttackGoal extends Goal {
     public void start() {
         this.ticks = -1;
         this.approach = 0;
-        this.repath = 0;                        // 첫 틱에 즉시 경로를 낸다
-        this.pathedX = Double.NaN;
-        this.pathedY = Double.NaN;
-        this.pathedZ = Double.NaN;
+        this.pursuit.reset();                 // 첫 틱에 즉시 경로를 낸다
     }
 
     @Override
@@ -260,45 +227,11 @@ public class WardenGirlAttackGoal extends Goal {
      * {@code navigation.stop()} 은 {@link #stop()} 에서만 부른다 — 바닐라와 같이
      * {@code tick()} 경로에서는 한 번도 멈추지 않는다.
      *
-     * <h2>정지 현상을 없애는 두 조건</h2>
-     *
-     * 고정 10틱 간격만 쓰던 때에는, {@code moveTo} 가 만든 경로가 <b>자기 자리 한 노드</b>로
-     * 즉시 완료 판정되어(실측 {@code nav[done=true nodes=1 idx=1]}) 대상이 1.6~3.9블록 앞인데도
-     * 최대 10틱을 그대로 서 있었다. 그래서 바닐라와 같은 두 트리거를 쓴다.
-     *
-     * <ul>
-     *   <li>간격을 {@value #REPATH_MIN}~{@code 10}틱으로 흔든다.
-     *   <li>대상이 마지막 경로 기준점에서 {@value #REPATH_TARGET_MOVE}블록 이상 움직이거나
-     *       <b>경로가 이미 끝났는데 아직 사거리 밖이면</b> 간격을 기다리지 않고 즉시 다시 낸다.
-     * </ul>
-     *
-     * <p>경로 생성이 실패하면 {@value #REPATH_FAIL_PENALTY}틱을 더 기다린 뒤 <b>다시 시도한다</b> —
-     * 영구 정지하지 않는다.
+     * <p>정지 현상을 없앤 두 트리거(간격 흔들기·조기 재시도)는 T21.5 에서
+     * {@link WardenGirlApproach} 로 옮겼다. 값도 절차도 그대로다.
      */
     private void updateApproach() {
-        if (this.repath > 0) {
-            this.repath--;
-        }
-        boolean moved = Double.isNaN(this.pathedX)
-                || target().distanceToSqr(this.pathedX, this.pathedY, this.pathedZ)
-                        >= REPATH_TARGET_MOVE * REPATH_TARGET_MOVE;
-        // 경로가 "도착"으로 끝났는데 아직 사거리 밖이면 다음 시도를 앞당긴다.
-        if (this.mob.getNavigation().isDone()
-                && this.mob.distanceToSqr(target()) > reachSqr(target())
-                && this.repath > STALL_RETRY) {
-            this.repath = STALL_RETRY;
-        }
-        if (this.repath > 0 && !moved) {
-            return;
-        }
-        this.pathedX = target().getX();
-        this.pathedY = target().getY();
-        this.pathedZ = target().getZ();
-        this.repath = REPATH_MIN + this.mob.getRandom().nextInt(REPATH_SPREAD);
-        boolean ok = this.mob.getNavigation().moveTo(target(), PURSUE_SPEED);
-        if (!ok) {
-            this.repath += REPATH_FAIL_PENALTY;
-        }
+        this.pursuit.update(this.mob, target());
     }
 
     /**
@@ -344,9 +277,6 @@ public class WardenGirlAttackGoal extends Goal {
         this.mob.getNavigation().stop();
         this.ticks = -1;
         this.approach = 0;
-        this.repath = 0;
-        this.pathedX = Double.NaN;
-        this.pathedY = Double.NaN;
-        this.pathedZ = Double.NaN;
+        this.pursuit.reset();
     }
 }
