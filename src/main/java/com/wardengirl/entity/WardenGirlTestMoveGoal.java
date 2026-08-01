@@ -74,6 +74,11 @@ public class WardenGirlTestMoveGoal extends Goal {
         return usable();
     }
 
+    /** T28 route resume — 특수 이동이 끝난 직후 다음 tick 에 새 path 를 만들게 한다. */
+    void allowImmediateRepath() {
+        this.nextRepathTick = 0;
+    }
+
     @Override
     public void start() {
         this.nextRepathTick = 0;                // 첫 tick 에서 바로 경로를 만든다

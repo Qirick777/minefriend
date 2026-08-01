@@ -506,15 +506,30 @@ public final class WardenGirlTestCommand {
         Double diag = g.getTestDodgeChanceOverride(WardenGirlEntity.DodgeType.DIAGONAL);
         Double pl = g.getTestDodgeChanceOverride(WardenGirlEntity.DodgeType.PLAYER);
         Double dmg = g.getTestAttackDamageOverride();
+        com.wardengirl.entity.WardenGirlSpecialMovement sm = g.specialMovement();
+        com.wardengirl.entity.WardenGirlSpecialMovement.Plan plan = sm.getPlan();
+        com.wardengirl.entity.WardenGirlSpecialMovement.Failure fail = sm.getLastFailure();
         ok(source, String.format(Locale.ROOT,
                 "state %s%n"
                         + "         owner uuid              = %s%n"
                         + "         target                  = %s%n"
                         + "         test destination        = %s%n"
-                        + "         special movement        = NONE%n"
-                        + "         recent failed connection= none%n"
+                        + "         special movement        = %s (age %d tick)%n"
+                        + "         plan                    = %s%n"
+                        + "         plan origin             = %s%n"
+                        + "         plan landing/end        = %s%n"
+                        + "         original purpose        = %s%n"
+                        + "         original goal           = %s%n"
+                        + "         related entity          = %s%n"
+                        + "         wall block              = %s%n"
+                        + "         tracked projectile      = %s%n"
+                        + "         plan start gameTime     = %s%n"
+                        + "         expected end tick       = %s%n"
+                        + "         recent failed connection= %s%n"
+                        + "         failure reason          = %s%n"
+                        + "         failure gameTime        = %s%n"
+                        + "         failure remaining ticks = %d%n"
                         + "         player aim evade        = none%n"
-                        + "         tracked projectile      = none%n"
                         + "         onGround                = %s%n"
                         + "         horizontalCollision     = %s%n"
                         + "         fallDistance            = %.4f%n"
@@ -532,6 +547,26 @@ public final class WardenGirlTestCommand {
                         t.getType().getDescriptionId(), t.getUUID()),
                 dest == null ? "none" : String.format(Locale.ROOT, "(%.3f, %.3f, %.3f)",
                         dest.x, dest.y, dest.z),
+                sm.getState(), sm.getStateAge(),
+                plan == null ? "none" : plan.kind().toString(),
+                plan == null ? "none" : String.format(Locale.ROOT, "(%.3f, %.3f, %.3f)",
+                        plan.origin().x, plan.origin().y, plan.origin().z),
+                plan == null ? "none" : String.format(Locale.ROOT, "(%.3f, %.3f, %.3f)",
+                        plan.landing().x, plan.landing().y, plan.landing().z),
+                plan == null ? "none" : plan.purpose().toString(),
+                plan == null ? "none" : String.format(Locale.ROOT, "(%.3f, %.3f, %.3f)",
+                        plan.goal().x, plan.goal().y, plan.goal().z),
+                plan == null || plan.relatedEntity() == null ? "none" : plan.relatedEntity().toString(),
+                plan == null || plan.wall() == null ? "none" : plan.wall().toString(),
+                plan == null || plan.projectile() == null ? "none" : plan.projectile().toString(),
+                plan == null ? "none" : Long.toString(plan.startGameTime()),
+                plan == null || plan.expectedEndTick() == null ? "none"
+                        : plan.expectedEndTick().toString(),
+                fail == null ? "none" : String.format(Locale.ROOT, "%s origin=%s landing=%s",
+                        fail.key().kind(), fail.key().originSupport(), fail.key().landingSupport()),
+                fail == null ? "none" : fail.reason().toString(),
+                fail == null ? "none" : Long.toString(fail.gameTime()),
+                sm.failureRemainingTicks(),
                 g.onGround(), g.horizontalCollision, g.fallDistance, v.x, v.y, v.z,
                 path == null ? "없음" : String.format(Locale.ROOT, "nodes=%d next=%d canReach=%s",
                         path.getNodeCount(), path.getNextNodeIndex(), path.canReach()),

@@ -158,7 +158,11 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         // T27 — 시험 고정 목적지 이동. 후퇴(2)·소닉 추적(3)·근접(4) 보다 아래, 일반 추종(6)·
         // 배회(7) 보다 위다. runtime 목적지가 없으면 canUse 가 false 라 평소에는 없는 Goal 과
         // 같다.
-        this.goalSelector.addGoal(5, new WardenGirlTestMoveGoal(this));
+        // T28 — 특수 이동. 활성일 때만 canUse 가 참이라 평소에는 없는 Goal 과 같다. priority 1
+        // 의 소닉은 LOOK 만 잡으므로 함께 실행된다.
+        this.goalSelector.addGoal(1, new WardenGirlSpecialMovementGoal(this));
+        this.testMoveGoal = new WardenGirlTestMoveGoal(this);
+        this.goalSelector.addGoal(5, this.testMoveGoal);
         this.goalSelector.addGoal(6, new WardenGirlFollowOwnerGoal(this));
         // T15 — 중립 전투 대상 선정. 선제공격은 없다. targetSelector 에 들어가므로 goalSelector
         // 의 우선순위와 겹치지 않고, TARGET 플래그만 잡아 이동·시선 Goal 을 막지 않는다.
@@ -685,6 +689,30 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         this.nextPassiveHealTick = now + HEAL_INTERVAL_TICKS;
     }
 
+    // ---- T28 특수 이동 controller (서버 전용, 저장 안 함) ------------------------------------
+
+    /**
+     * 특수 이동 상태·계획·실패 기억을 드는 controller. 개체마다 하나이며 안전 검사는
+     * {@link WardenGirlMovementSafety}, MOVE 점유는 {@link WardenGirlSpecialMovementGoal} 이
+     * 맡는다 — 여기에는 위임 API 만 둔다.
+     */
+    private final WardenGirlSpecialMovement specialMovement = new WardenGirlSpecialMovement(this);
+
+    public WardenGirlSpecialMovement specialMovement() {
+        return this.specialMovement;
+    }
+
+    /**
+     * 특수 이동이 끝난 뒤의 route resume. 기존 Goal 의 속도·재경로 타이머를 여기서 복제하지
+     * 않는다 — {@link WardenGirlTestMoveGoal} 의 다음 재경로만 즉시 가능하게 열어 주고, 나머지
+     * Goal 은 다음 selector 평가에서 스스로 새 path 를 만든다.
+     */
+    void resumeRouteAfterSpecialMovement() {
+        if (this.testMoveGoal != null) {   // registerGoals 는 서버에서만 돈다
+            this.testMoveGoal.allowImmediateRepath();
+        }
+    }
+
     // ---- T27 4차 검증용 runtime 상태 (서버 전용, 저장 안 함) --------------------------------
     //
     // 설계서 4차 Part 3.11 — 전부 runtime only 다. NBT·SynchedEntityData·SavedData·전역
@@ -706,6 +734,9 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
             return null;
         }
     }
+
+    /** T27 시험 이동 Goal. route resume 때 재경로만 열어 주기 위해 참조를 둔다. */
+    private WardenGirlTestMoveGoal testMoveGoal;
 
     /** 시험용 고정 목적지. 명령 실행 <b>순간</b>의 좌표이며 이후 따라 움직이지 않는다. */
     @javax.annotation.Nullable
@@ -767,6 +798,8 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
      * navigation 을 멈추는 것이 전부다. 소유자·target·PowerStacks 는 건드리지 않는다.
      */
     public void cancelTestMovement() {
+        // T28 — 특수 이동 취소가 여기 한 곳에 연결된다. 실패 기억은 새로 만들지 않는다.
+        this.specialMovement.cancel(WardenGirlSpecialMovement.Reason.ADMIN_CANCEL);
         clearTestDestination();
         getNavigation().stop();
     }
