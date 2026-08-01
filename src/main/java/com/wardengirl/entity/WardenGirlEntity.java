@@ -431,6 +431,10 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     @Override
     protected void customServerAiStep() {
         super.customServerAiStep();
+        // T23 — goalSelector.tick() 과 navigation.tick() 뒤라 여기서 보는 경로가 이번 틱에
+        // 확정된 최신 경로다(바이트코드 확인). 아래 T14 상태 점검의 20틱 간격과 달리 문은
+        // 매 서버틱 봐야 하므로 게이트보다 앞에 둔다.
+        this.doorHelper.tick();
         if (this.tickCount % STATE_CHECK_INTERVAL != 0) {
             return;
         }
@@ -574,6 +578,8 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     @Override
     public void aiStep() {
         if (!level().isClientSide) {
+            // T23 — 길들여짐이 바뀌었을 때만 navigation 의 문 설정을 고친다.
+            this.doorHelper.syncNavigation();
             // T22 — 회복이 먼저다. 회복으로 45% 에 닿은 틱에 바로 후퇴가 풀리고, 같은
             // goalSelector 평가에서 후퇴 Goal 이 끝난다.
             passiveHealTick();
@@ -673,6 +679,19 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
             heal(passiveHealAmount());              // 바닐라. 최대 체력 초과는 heal 이 자른다
         }
         this.nextPassiveHealTick = now + HEAL_INTERVAL_TICKS;
+    }
+
+    // ---- T23 나무문 길찾기·개폐 --------------------------------------------------------------
+
+    /**
+     * 문 보조 controller. Goal 이 아니라 현재 경로를 읽어 필요한 문만 여닫는 도우미다.
+     * 개체마다 하나이고 서버 runtime 전용이다 — NBT 도 패킷도 없다.
+     */
+    private final WardenGirlDoorHelper doorHelper = new WardenGirlDoorHelper(this);
+
+    /** 계측·보고용. 지금 추적 중인 "자신이 연 문" 수. */
+    public int trackedDoorCount() {
+        return this.doorHelper.recordCount();
     }
 
     public long getPowerStacks() {
