@@ -268,7 +268,9 @@ public class WardenGirlAttackGoal extends Goal {
         if (this.mob.distanceToSqr(target()) > STRIKE_REACH_SQR) {
             return;                             // 타격 틱 사이에 벗어났다 → 빗나감
         }
-        this.mob.doHurtTarget(target());
+        // T27 — 유효 공격력 한 곳(WardenGirlEntity.performMeleeAttack)을 지난다. override 가
+        // 없으면 이 호출은 예전과 똑같이 바닐라 doHurtTarget 이다.
+        this.mob.performMeleeAttack(target());
     }
 
     @Override

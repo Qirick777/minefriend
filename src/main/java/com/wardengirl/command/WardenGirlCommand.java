@@ -171,6 +171,8 @@ public final class WardenGirlCommand {
                                                         EntityArgument.getEntity(ctx, "target"),
                                                         LongArgumentType.getLong(ctx, "amount")))))))
                 // ---- T11 실제 Attribute 조회 -------------------------------------------------
+                // 4차 T27 — 검증 명령 기반. 등록은 이 한 줄이고 본문은 WardenGirlTestCommand 다.
+                .then(WardenGirlTestCommand.node())
                 .then(Commands.literal("stats")
                         .then(Commands.literal("get")
                                 .then(Commands.argument("target", EntityArgument.entity())

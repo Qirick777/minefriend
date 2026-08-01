@@ -155,13 +155,17 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         // T13 — 7.2 일반 추종. 전투(2·3·4)보다 아래, 배회보다 위다. MOVE 만 잡으므로 전투가
         // 돌고 있으면 navigation 을 빼앗지 못하고, 전투가 끝나면 별도 상태 전환 없이 다시
         // 선택된다.
-        this.goalSelector.addGoal(5, new WardenGirlFollowOwnerGoal(this));
+        // T27 — 시험 고정 목적지 이동. 후퇴(2)·소닉 추적(3)·근접(4) 보다 아래, 일반 추종(6)·
+        // 배회(7) 보다 위다. runtime 목적지가 없으면 canUse 가 false 라 평소에는 없는 Goal 과
+        // 같다.
+        this.goalSelector.addGoal(5, new WardenGirlTestMoveGoal(this));
+        this.goalSelector.addGoal(6, new WardenGirlFollowOwnerGoal(this));
         // T15 — 중립 전투 대상 선정. 선제공격은 없다. targetSelector 에 들어가므로 goalSelector
         // 의 우선순위와 겹치지 않고, TARGET 플래그만 잡아 이동·시선 Goal 을 막지 않는다.
         this.targetSelector.addGoal(1, new WardenGirlTargetGoal(this));
         // T13 — 7.1 소유자 중심(야생이면 현재 위치 중심) 자율 배회. 항상 켜져 있다 —
         // 디버그 명령으로 켜야 하는 구조가 아니다.
-        this.goalSelector.addGoal(6, new WardenGirlOwnerStrollGoal(this, 1.0D));
+        this.goalSelector.addGoal(7, new WardenGirlOwnerStrollGoal(this, 1.0D));
         this.goalSelector.addGoal(7, new LookAtPlayerGoal(this, Player.class, 12.0F));
         this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
     }
@@ -679,6 +683,137 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
             heal(passiveHealAmount());              // 바닐라. 최대 체력 초과는 heal 이 자른다
         }
         this.nextPassiveHealTick = now + HEAL_INTERVAL_TICKS;
+    }
+
+    // ---- T27 4차 검증용 runtime 상태 (서버 전용, 저장 안 함) --------------------------------
+    //
+    // 설계서 4차 Part 3.11 — 전부 runtime only 다. NBT·SynchedEntityData·SavedData·전역
+    // static 컬렉션·플레이어 persistent data 어디에도 쓰지 않는다. 청크 재로드나 재접속으로
+    // 개체가 새로 만들어지면 필드 기본값(null)이라 자동으로 해제된 상태가 된다.
+
+    /** 회피 확률 override 분류. 문자열 키를 여기저기서 비교하지 않기 위한 타입이다. */
+    public enum DodgeType {
+        BACK, DIAGONAL, PLAYER;
+
+        /** 명령 인수 문자열 → 분류. 알 수 없으면 {@code null}. */
+        @javax.annotation.Nullable
+        public static DodgeType parse(String raw) {
+            for (DodgeType t : values()) {
+                if (t.name().equalsIgnoreCase(raw)) {
+                    return t;
+                }
+            }
+            return null;
+        }
+    }
+
+    /** 시험용 고정 목적지. 명령 실행 <b>순간</b>의 좌표이며 이후 따라 움직이지 않는다. */
+    @javax.annotation.Nullable
+    private net.minecraft.world.phys.Vec3 testDestination;
+
+    /** 시험용 근접 피해 override. {@code null} 이면 현재 살아 있는 ATTACK_DAMAGE 를 쓴다. */
+    @javax.annotation.Nullable
+    private Double testAttackDamageOverride;
+
+    /** 회피 확률 override(%). 값이 없는 칸은 {@code null} 이다. */
+    private final java.util.EnumMap<DodgeType, Double> testDodgeChance =
+            new java.util.EnumMap<>(DodgeType.class);
+
+    public void setTestDestination(net.minecraft.world.phys.Vec3 pos) {
+        this.testDestination = pos;
+    }
+
+    public void clearTestDestination() {
+        this.testDestination = null;
+    }
+
+    @javax.annotation.Nullable
+    public net.minecraft.world.phys.Vec3 getTestDestination() {
+        return this.testDestination;
+    }
+
+    public void setTestAttackDamageOverride(double value) {
+        this.testAttackDamageOverride = value;
+    }
+
+    public void clearTestAttackDamageOverride() {
+        this.testAttackDamageOverride = null;
+    }
+
+    @javax.annotation.Nullable
+    public Double getTestAttackDamageOverride() {
+        return this.testAttackDamageOverride;
+    }
+
+    public void setTestDodgeChanceOverride(DodgeType type, double percent) {
+        this.testDodgeChance.put(type, percent);
+    }
+
+    public void clearTestDodgeChanceOverride(DodgeType type) {
+        this.testDodgeChance.remove(type);
+    }
+
+    public void clearAllTestDodgeChanceOverrides() {
+        this.testDodgeChance.clear();
+    }
+
+    @javax.annotation.Nullable
+    public Double getTestDodgeChanceOverride(DodgeType type) {
+        return this.testDodgeChance.get(type);
+    }
+
+    /**
+     * T28 이후의 특수 이동 취소가 <b>여기 한 곳</b>에 연결된다. 지금은 시험 목적지를 지우고
+     * navigation 을 멈추는 것이 전부다. 소유자·target·PowerStacks 는 건드리지 않는다.
+     */
+    public void cancelTestMovement() {
+        clearTestDestination();
+        getNavigation().stop();
+    }
+
+    /**
+     * 지금 이 개체의 <b>유효 근접 공격력</b>. 일반 근접 공격이 실제로 쓰는 단 하나의 값이며,
+     * T36·T37 의 대각선 카운터도 같은 것을 쓰게 된다.
+     *
+     * <p>override 가 있으면 그 값, 없으면 현재 살아 있는 {@code ATTACK_DAMAGE} 다. 소닉 피해는
+     * 여기를 지나지 않는다 — {@link #getSonicDamage()} 가 따로 계산한다.
+     */
+    public double effectiveMeleeDamage() {
+        Double override = this.testAttackDamageOverride;
+        return override != null ? override : getAttributeValue(Attributes.ATTACK_DAMAGE);
+    }
+
+    /** 시험 override 를 실을 때 쓰는 고정 UUID. 한 호출 안에서 붙였다가 곧바로 뗀다. */
+    private static final java.util.UUID TEST_DAMAGE_MODIFIER =
+            java.util.UUID.fromString("8f1a3c4e-2b6d-4f70-9c11-5d2e7a0b3c48");
+
+    /**
+     * 일반 근접 타격의 <b>단일 진입점</b>. 평소에는 바닐라 {@code Mob.doHurtTarget} 을 그대로
+     * 부른다 — 인챈트 보정·넉백·화염·{@code setLastHurtMob}·방어구·무적 틱이 전부 바닐라다.
+     *
+     * <p>시험 override 가 있을 때만 그 한 번의 호출 동안 {@code ATTACK_DAMAGE} 에
+     * <b>transient</b> modifier 를 실어 최종값을 override 로 맞추고 {@code finally} 에서 뗀다.
+     * base value 를 바꾸지 않으므로 {@link #recalculatePowerStats} 도, 저장되는 성장값도
+     * 영향을 받지 않는다. transient modifier 는 저장 대상이 아니며 같은 호출 안에서 사라지므로
+     * NBT 에 남을 수도 없다.
+     */
+    public boolean performMeleeAttack(Entity target) {
+        Double override = this.testAttackDamageOverride;
+        AttributeInstance instance = getAttribute(Attributes.ATTACK_DAMAGE);
+        if (override == null || instance == null) {
+            return doHurtTarget(target);
+        }
+        net.minecraft.world.entity.ai.attributes.AttributeModifier mod =
+                new net.minecraft.world.entity.ai.attributes.AttributeModifier(
+                        TEST_DAMAGE_MODIFIER, "wardengirl test attack_damage",
+                        override - instance.getValue(),
+                        net.minecraft.world.entity.ai.attributes.AttributeModifier.Operation.ADDITION);
+        instance.addTransientModifier(mod);
+        try {
+            return doHurtTarget(target);
+        } finally {
+            instance.removeModifier(mod);
+        }
     }
 
     // ---- T23 나무문 길찾기·개폐 --------------------------------------------------------------
