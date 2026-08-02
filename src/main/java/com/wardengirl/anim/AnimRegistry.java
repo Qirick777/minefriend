@@ -114,8 +114,31 @@ public final class AnimRegistry {
 
     // ---- T30 gap dive. 서버 playAction 채널로 재생되는 3구간 한 세트다 -----------------------
 
+    /**
+     * T30 — 도약 직전 지상 준비 자세.
+     *
+     * <p>차징이 아니라 <b>반동</b>이다. {@link #GAP_DIVE_PREPARE_TICKS}틱만 유지하고 바로
+     * 발사로 넘어간다. 이 구간이 없으면 지상에서 평범하게 서 있다가 공중에서 몸만 굽는
+     * 것처럼 보인다 — 사용자 관측이 그것이었다.
+     */
+    public static final String GAP_DIVE_PREPARE = "gap_dive_prepare";
     public static final String GAP_DIVE_AIR = "gap_dive_air";
     public static final String GAP_DIVE_LAND = "gap_dive_land";
+
+    /**
+     * 발사가 허용되는 {@code GAP_DIVE_PREPARE} <b>상태 나이</b>. 실측 표시 시간은 3틱이고
+     * json {@code animation_length} 0.15초(=3틱)와 정확히 같다.
+     *
+     * <p>임계값을 "tickDive 호출 횟수"가 아니라 <b>절대 상태 나이</b>로 둔 이유가 있다.
+     * 계획을 만드는 {@code beginDive} 는 접근 Goal 안에서 돌지만 {@code tickDive} 를 굴리는
+     * {@link com.wardengirl.entity.WardenGirlSpecialMovementGoal} 은 selector 가 다음에
+     * 집어야 시작한다 — 실측 지연 2틱이다. 나이로 재면 그 지연이 0이든 2든 준비 자세가
+     * 화면에 머무는 시간은 언제나 3틱이 된다.
+     *
+     * <p>서버는 애니메이션 리소스를 읽지 않으므로 클립 길이와 상태 유지 시간의 유일한
+     * 연결점이 여기다. 5틱 이상의 긴 차징을 만들지 않는다는 요구를 이 상수 하나가 지킨다.
+     */
+    public static final int GAP_DIVE_PREPARE_TICKS = 2;
 
     /**
      * {@code gap_dive_land} 의 json {@code animation_length} 초.

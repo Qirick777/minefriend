@@ -1023,9 +1023,13 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         // C1 vital·4.3.4 기본 오프셋·시선·headgear·C3 다이브 자세는 그대로 남는다.
         // AIR 는 제거율 1(보행 주기 완전 제거), LAND 는 액션 envelope 를 그대로 제거율로 써서
         // fade-out 이 진행될수록 C2 가 자연스럽게 돌아온다 — 새 타이머를 만들지 않는다.
+        // PREPARE 는 navigation 이 멈춘 뒤라 보행 기여가 거의 없어야 하지만, 직전 접근의
+        // 잔여 C2 가 반동 자세에 섞이면 준비 동작이 흔들려 보인다. AIR 와 같은 제거율을 쓴다.
+        boolean divePrepare = AnimRegistry.GAP_DIVE_PREPARE.equals(action.clip());
         boolean diveAir = AnimRegistry.GAP_DIVE_AIR.equals(action.clip());
         boolean diveLand = AnimRegistry.GAP_DIVE_LAND.equals(action.clip());
-        double c2Removal = age < 0.0D ? 0.0D : (diveAir ? 1.0D : (diveLand ? weight : 0.0D));
+        double c2Removal = age < 0.0D ? 0.0D
+                : ((divePrepare || diveAir) ? 1.0D : (diveLand ? weight : 0.0D));
         if (c2Removal > 0.0D) {
             for (Map.Entry<String, double[]> e : this.c2Rot.entrySet()) {
                 double[] v = e.getValue();
@@ -1038,7 +1042,7 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             }
         }
         // 다이브가 C2 를 통째로 걷어내는 동안에는 네 축 블렌드가 뺄 walk 몫이 남아 있지 않다.
-        double[] eff = (diveAir || diveLand) ? new double[walkOnly.length]
+        double[] eff = (divePrepare || diveAir || diveLand) ? new double[walkOnly.length]
                 : applyWalkBlend(walkOnly, weight);
         return new ActionInfo(blendChannels(pose, weight), eff, weight);
     }

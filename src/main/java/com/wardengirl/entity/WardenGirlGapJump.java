@@ -239,12 +239,21 @@ public final class WardenGirlGapJump {
         this.predictedFlightTicks = sol.flightTicks();
         this.takeoffVelocity = null;                // 발사 tick 에 실제 위치로 다시 푼다
         this.diveGeometry = geom;
-        // 이동을 멈추고 <b>같은 tick 에</b> 발사한다. 눈에 보이는 차징 구간은 두지 않는다.
+        // T30 — 이동을 멈추고 GAP_DIVE_PREPARE 에 머문다. 발사는 tickDive 가
+        // GAP_DIVE_PREPARE_TICKS 뒤에 현재 위치로 해를 다시 풀어서 한 번만 한다.
         this.mob.getNavigation().stop();
         this.mob.getMoveControl().setWantedPosition(
                 this.mob.getX(), this.mob.getY(), this.mob.getZ(), 0.0D);
         this.mob.setSprinting(false);
-        launchDive(sol);
+        // 준비 중 앞으로 미끄러져 가장자리를 넘지 않게 수평 관성만 지운다. 위치·Y 는
+        // 건드리지 않으므로 순간이동도, 낙하 취소도, 공중 속도 선입력도 아니다.
+        Vec3 dm = this.mob.getDeltaMovement();
+        this.mob.setDeltaMovement(0.0D, dm.y, 0.0D);
+        // 준비 자세부터 도약 방향을 본다. 회전만 소유하고 위치·속도는 건드리지 않는다.
+        this.diveYaw = (float) (Mth.atan2(geom.direction().z, geom.direction().x)
+                * (180.0D / Math.PI)) - 90.0F;
+        this.diveFacingHeld = true;
+        this.mob.playAction(com.wardengirl.anim.AnimRegistry.GAP_DIVE_PREPARE);
     }
 
     /**
@@ -320,9 +329,25 @@ public final class WardenGirlGapJump {
             return;
         }
         if (sm.getState() == WardenGirlSpecialMovement.State.GAP_DIVE_PREPARE) {
-            // 같은 tick 에 AIR 로 넘어가므로 여기 남아 있으면 발사가 실패한 것이다.
-            this.mob.playAction("");
-            sm.fail(WardenGirlSpecialMovement.Reason.EXECUTION_FAILED);
+            GapGeometry geom = this.diveGeometry;
+            // 준비 중에도 목적·착지 안전은 계속 성립해야 한다. 무너지면 기존 실패 경로다.
+            if (geom == null || !this.mob.onGround()
+                    || !WardenGirlMovementSafety.safeLanding(this.mob, geom.landing())) {
+                this.mob.playAction("");
+                sm.fail(WardenGirlSpecialMovement.Reason.EXECUTION_FAILED);
+                return;
+            }
+            if (sm.getStateAge() < com.wardengirl.anim.AnimRegistry.GAP_DIVE_PREPARE_TICKS) {
+                return;                             // 준비 자세 유지 — 별도 카운터를 두지 않는다
+            }
+            // 발사 직전 재검사. 준비 동안 위치가 조금 달라졌을 수 있으므로 현재 위치로 푼다.
+            JumpSolution sol = solveDive(this.mob.position(), geom);
+            if (sol == null) {
+                this.mob.playAction("");
+                sm.fail(WardenGirlSpecialMovement.Reason.EXECUTION_FAILED);
+                return;
+            }
+            launchDive(sol);
             return;
         }
         // ---- GAP_DIVE_AIR ----

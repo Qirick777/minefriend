@@ -157,7 +157,11 @@ public final class ActionMotion {
         // T30 gap dive — air 와 land 가 자세를 서로 이어받으므로 구간 사이 페이드를 두지 않는다.
         double fadeIn;
         double fadeOut;
-        if (com.wardengirl.anim.AnimRegistry.GAP_DIVE_AIR.equals(clip)) {
+        if (com.wardengirl.anim.AnimRegistry.GAP_DIVE_PREPARE.equals(clip)) {
+            // 0 자세에서 시작해 air 첫 자세로 끝난다. 3틱짜리 반동이라 페이드가 들어가면
+            // 준비 동작이 화면에 남지 않는다.
+            fadeIn = 0.0D; fadeOut = 0.0D;
+        } else if (com.wardengirl.anim.AnimRegistry.GAP_DIVE_AIR.equals(clip)) {
             // 클립 자체가 0 자세에서 시작하고 land 첫 자세로 끝나므로 페이드가 할 일이 없다.
             fadeIn = 0.0D; fadeOut = 0.0D;
         } else if (com.wardengirl.anim.AnimRegistry.GAP_DIVE_LAND.equals(clip)) {
