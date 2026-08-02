@@ -164,6 +164,7 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         // T29 보정 — 도약 위치 접근. 근접 전투(4) 뒤에 등록해 전투가 우선하고,
         // TestMove(5)·Follow(6)·Stroll(7) 은 접근 중 선점된다.
         this.goalSelector.addGoal(4, new WardenGirlGapJumpApproachGoal(this));
+        this.goalSelector.addGoal(4, new WardenGirlWallReboundApproachGoal(this));   // T31
         this.testMoveGoal = new WardenGirlTestMoveGoal(this);
         this.goalSelector.addGoal(5, this.testMoveGoal);
         this.goalSelector.addGoal(6, new WardenGirlFollowOwnerGoal(this));
@@ -449,6 +450,7 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         // T29 — navigation.tick() 뒤라서 이번 틱의 확정 경로를 보고 유격을 판단할 수 있고,
         // moveControl.tick() 앞이라 도약 속도가 그대로 travel 로 넘어간다(바이트코드 확인).
         this.gapJump.tryStart();
+        this.wallRebound.tryStart();                // T31 — 유격이 아닌 경우만 벽을 본다
         if (this.tickCount % STATE_CHECK_INTERVAL != 0) {
             return;
         }
@@ -662,6 +664,8 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         boolean applied = super.hurt(source, amount);
         if (getHealth() < before) {
             noteActualDamage();
+            // T31 — 실제 피해가 들어간 계획은 성공할 수 없다. 피해량·넉백은 건드리지 않는다.
+            this.wallRebound.onActualDamage();
         }
         return applied;
     }
@@ -725,6 +729,16 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     public WardenGirlGapJump gapJump() {
         return this.gapJump;
     }
+
+    /** T31 — 정확히 2블록 벽 박차기. 판정·궤적·반동·착지는 전부 그 클래스 안에 있다. */
+    private final WardenGirlWallRebound wallRebound = new WardenGirlWallRebound(this);
+
+    public WardenGirlWallRebound wallRebound() {
+        return this.wallRebound;
+    }
+
+    /** T31V-TEMP — mod-side velocity write 횟수. 검증 후 제거한다. */
+    public int tempWrites;
 
     /**
      * T29 — 바닐라 지상 점프 경로. {@code jumpFromGround} 와 {@code getJumpPower} 는

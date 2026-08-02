@@ -278,6 +278,7 @@ public final class WardenGirlSpecialMovement {
      */
     private void release() {
         this.mob.gapJump().reset();
+        this.mob.wallRebound().reset();             // T31
         this.plan = null;
         this.state = State.NONE;
         this.stateStartTick = 0L;
@@ -383,6 +384,8 @@ public final class WardenGirlSpecialMovement {
             this.mob.gapJump().tickActive(p);
         } else if (p.kind() == Kind.GAP_DIVE) {
             this.mob.gapJump().tickDive(p);         // T30
+        } else if (p.kind() == Kind.WALL_REBOUND) {
+            this.mob.wallRebound().tickActive(p);   // T31
         }
     }
 }
