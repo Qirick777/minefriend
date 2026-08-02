@@ -829,6 +829,7 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     public void cancelTestMovement() {
         // T28 — 특수 이동 취소가 여기 한 곳에 연결된다. 실패 기억은 새로 만들지 않는다.
         this.specialMovement.cancel(WardenGirlSpecialMovement.Reason.ADMIN_CANCEL);
+        this.gapJump.cancelApproach();          // T29 — 접근도 즉시 지운다. 실패 기억은 없다.
         clearTestDestination();
         getNavigation().stop();
     }

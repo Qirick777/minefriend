@@ -219,6 +219,30 @@ public final class WardenGirlGapJump {
         this.stalledTicks = 0;
     }
 
+    /**
+     * 접근 중 원래 목적이 아직 이 착지점과 맞는가.
+     *
+     * <p>고정 좌표 목적({@code TEST_DESTINATION}·{@code RETREAT_DESTINATION})은 좌표가 그대로여야
+     * 하지만, 살아 움직이는 목적({@code OWNER_FOLLOW}·{@code COMBAT_TARGET})은 대상이 조금
+     * 움직였다는 이유만으로 취소하지 않는다. 같은 대상인지와, <b>지금</b> 대상 위치에 대해
+     * 착지점이 여전히 진행 개선인지만 본다.
+     */
+    private boolean objectiveStillFits(Objective now, GapGeometry geom) {
+        return switch (now.purpose()) {
+            case OWNER_FOLLOW, COMBAT_TARGET ->
+                    java.util.Objects.equals(now.relatedEntity(), geom.relatedEntity())
+                    && WardenGirlMovementSafety.improvesProgress(
+                            this.mob.position(), geom.landing(), now.goal());
+            case TEST_DESTINATION, RETREAT_DESTINATION ->
+                    now.goal().distanceToSqr(geom.goal()) <= 1.0E-4D;
+        };
+    }
+
+    /** 관리자 취소용. 접근만 즉시 지운다 — 실패 기억을 만들지 않는다. */
+    public void cancelApproach() {
+        clearApproach();
+    }
+
     /** 접근 Goal 이 매 tick 부른다. 실패 기억은 만들지 않는다. */
     void tickApproach() {
         GapGeometry geom = this.approach;
@@ -226,8 +250,7 @@ public final class WardenGirlGapJump {
             return;
         }
         Objective now = currentObjective();
-        if (now == null || now.purpose() != geom.purpose()
-                || now.goal().distanceToSqr(geom.goal()) > 1.0E-4D
+        if (now == null || now.purpose() != geom.purpose() || !objectiveStillFits(now, geom)
                 || this.mob.specialMovement().isActive() || !this.mob.onGround()
                 || this.mob.level().dimension() != geom.dimension()
                 || geom.takeoffTarget() == null
