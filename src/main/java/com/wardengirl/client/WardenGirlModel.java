@@ -204,9 +204,17 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         // top of the same value it always did. walkOnly is what C2 contributed on the four axes it
         // shares with C3 - now known directly instead of read back off the bone.
         this.locoMoveWeight = 0.0D;     // 이관 전 경로에서는 C2 세기를 알 수 없다 → 정지 취급
-        double[] walkOnly = AnimParams.C2_SOURCE.get() < 0.5D
+        this.c2Rot.clear();
+        this.c2Pos.clear();
+        this.c2Recording = true;
+        double[] walkOnly;
+        try {
+            walkOnly = AnimParams.C2_SOURCE.get() < 0.5D
                 ? readBlendAxes()               // 이관 전: 컨트롤러가 이미 본에 썼다
-                : applyLocomotionMotion(animatable, animationState);
+                    : applyLocomotionMotion(animatable, animationState);
+        } finally {
+            this.c2Recording = false;
+        }
         VitalMotion.Contribution vital = applyVitalMotion(animatable);
         if (measured && VitalCheck.isRunning()) {
             VitalCheck.sample(readAllBones(), readAllPositions(), animatable.tickCount,
@@ -499,6 +507,23 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      * {@link #applyActionMotion} 이 읽는다. 개체별로 남길 상태가 아니다.
      */
     private double locoMoveWeight;
+
+    /**
+     * T30 — 이번 프레임에 <b>C2 로코모션이 실제로 더한 양</b>. 다이브가 리그를 소유하는 동안
+     * 정확히 이만큼만 되빼기 위해 기록한다. 최종 본 값을 스냅샷으로 되돌리면 C1·기본 자세·
+     * 시선까지 지워지므로 그렇게 하지 않는다.
+     *
+     * <p>{@link #applyLocomotionMotion} 이 도는 동안에만 켜지므로 여기 쌓이는 값은 전부 C2 다.
+     */
+    private boolean c2Recording;
+    private final LinkedHashMap<String, double[]> c2Rot = new LinkedHashMap<>();
+    private final LinkedHashMap<String, double[]> c2Pos = new LinkedHashMap<>();
+
+    private void noteC2Rot(String bone, int axis, double deg) {
+        if (this.c2Recording && deg != 0.0D) {
+            this.c2Rot.computeIfAbsent(bone, k -> new double[3])[axis] += deg;
+        }
+    }
 
     /**
      * Adds the walk cycle, cross-faded against idle. Design doc 4.4.1 / 4.4.2.
@@ -992,7 +1017,29 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
         // After the check, so the measured delta is C3's own contribution and not C3 plus a walk
         // rescale that has nothing to do with the clip.
 
-        double[] eff = applyWalkBlend(walkOnly, weight);
+        // T30 — 다이브가 리그를 소유하는 동안 C2 로코모션 기여를 <b>정확히 그만큼</b> 되뺀다.
+        //
+        // 최종 본을 기본 자세로 덮지 않는다. 이번 프레임에 C2 가 더한 값만 역가산하므로
+        // C1 vital·4.3.4 기본 오프셋·시선·headgear·C3 다이브 자세는 그대로 남는다.
+        // AIR 는 제거율 1(보행 주기 완전 제거), LAND 는 액션 envelope 를 그대로 제거율로 써서
+        // fade-out 이 진행될수록 C2 가 자연스럽게 돌아온다 — 새 타이머를 만들지 않는다.
+        boolean diveAir = AnimRegistry.GAP_DIVE_AIR.equals(action.clip());
+        boolean diveLand = AnimRegistry.GAP_DIVE_LAND.equals(action.clip());
+        double c2Removal = age < 0.0D ? 0.0D : (diveAir ? 1.0D : (diveLand ? weight : 0.0D));
+        if (c2Removal > 0.0D) {
+            for (Map.Entry<String, double[]> e : this.c2Rot.entrySet()) {
+                double[] v = e.getValue();
+                addRotX(e.getKey(), -v[0] * c2Removal);
+                addRotY(e.getKey(), -v[1] * c2Removal);
+                addRotZ(e.getKey(), -v[2] * c2Removal);
+            }
+            for (Map.Entry<String, double[]> e : this.c2Pos.entrySet()) {
+                addPositionRaw(e.getKey(), e.getValue(), -c2Removal);
+            }
+        }
+        // 다이브가 C2 를 통째로 걷어내는 동안에는 네 축 블렌드가 뺄 walk 몫이 남아 있지 않다.
+        double[] eff = (diveAir || diveLand) ? new double[walkOnly.length]
+                : applyWalkBlend(walkOnly, weight);
         return new ActionInfo(blendChannels(pose, weight), eff, weight);
     }
 
@@ -1052,6 +1099,12 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
      * in C2 and C3. See {@link ClipSampler}'s class doc and Part 11.
      */
     private void addPositionRaw(String bone, double[] raw, double weight) {
+        if (this.c2Recording) {
+            double[] acc = this.c2Pos.computeIfAbsent(bone, k -> new double[3]);
+            for (int i = 0; i < 3; i++) {
+                acc[i] += raw[i] * weight;
+            }
+        }
         getBone(bone).ifPresent(b -> {
             b.setPosX(b.getPosX() + (float) (raw[0] * weight));
             b.setPosY(b.getPosY() + (float) (raw[1] * weight));
@@ -1123,14 +1176,17 @@ public class WardenGirlModel extends GeoModel<WardenGirlEntity> {
             new HashMap<>();
 
     private void addRotX(String bone, double degrees) {
+        noteC2Rot(bone, 0, degrees);
         getBone(bone).ifPresent(b -> b.setRotX(b.getRotX() + AxisConvention.toRad(degrees)));
     }
 
     private void addRotY(String bone, double degrees) {
+        noteC2Rot(bone, 1, degrees);
         getBone(bone).ifPresent(b -> b.setRotY(b.getRotY() + AxisConvention.toRad(degrees)));
     }
 
     private void addRotZ(String bone, double degrees) {
+        noteC2Rot(bone, 2, degrees);
         getBone(bone).ifPresent(b -> b.setRotZ(b.getRotZ() + AxisConvention.toRad(degrees)));
     }
 
