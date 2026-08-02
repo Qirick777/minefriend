@@ -85,10 +85,15 @@ public final class WardenGirlGapJump {
     /** T30 이 다루는 최대 유격. 6 이상은 어느 쪽도 아니다. */
     public static final int DIVE_MAX_GAP = 5;
     /**
-     * 다이브 전용 수직 초기 속도. 바닐라 점프(0.42)보다 약간 높여 비행 시간을 벌고 도약이
-     * 힘있게 읽히게 한다. 거리별 표를 두지 않고 이 값 하나로 비행 tick 을 계산한다.
+     * 다이브 전용 수직 초기 속도.
+     *
+     * <p>위로 솟는 점프가 아니라 앞으로 몸을 던지는 도약이어야 하므로 0.50 에서 낮췄다.
+     * 0.44 와 비행 tick·필요 수평 속도가 같으면서 정점만 더 낮아 이 값을 골랐다(계산값:
+     * 0.50 → 14틱·정점 1.709 / 0.44 → 12틱·정점 1.366 / <b>0.42 → 12틱·정점 1.252</b>).
+     * 거리별 표를 두지 않고 이 값 하나로 비행 tick 을 계산하며, 수평 속도는 짧아진 비행
+     * 시간에 맞춰 착지점을 다시 풀어서 나온다 — 기존 속도에 더하지 않는다.
      */
-    public static final double DIVE_JUMP_POWER = 0.50D;
+    public static final double DIVE_JUMP_POWER = 0.42D;
     /** 다이브 전용 최대 도약 수평 속도. 하나만 쓴다. */
     public static final double DIVE_MAX_TAKEOFF_SPEED = 1.30D;
 
