@@ -682,6 +682,7 @@ public final class WardenGirlWallRebound {
     @Nullable
     private Solution solve(WallGeometry geom, double tdLo, double tdHi, @Nullable Vec3 origin) {
         this.tempReject.clear();                                  // T31V-TEMP
+        Solution best = null;
         double g = gravity();
         double floorY = geom.start().y;
         double wallTop = geom.wallTop();
@@ -727,11 +728,40 @@ public final class WardenGirlWallRebound {
                 for (Vec3 s : samples) {
                     apex = Math.max(apex, s.y - floorY);
                 }
-                return new Solution(launch, rebound, ta, tb, hc, apex, samples, from);
+                Solution cand = new Solution(launch, rebound, ta, tb, hc, apex, samples, from);
+                if (best == null || better(cand, best, geom)) {
+                    best = cand;                    // 첫 해로 끝내지 않고 전부 비교한다
+                }
             }
         }
         }
-        return null;
+        return best;
+    }
+
+    /**
+     * 유효 해 사이의 우선순위. 실제 충돌·관통 없음·안전 착지는 이미 위에서 걸렀으므로
+     * 여기서는 <b>궤적의 낮음</b>부터 본다.
+     *
+     * <p>이전 기준(접촉을 높은 쪽부터 골라 반동을 줄인다)은 폐기했다. 높은 접촉을 만들려면
+     * 최초 Y 속도를 크게 줘야 하고, 그러면 벽에 닿기도 전에 몸이 벽보다 훨씬 높이 올라가
+     * 전체 동작이 슈퍼점프가 된다. 낮은 정점을 1순위로 두면 그 원인이 사라진다.
+     *
+     * <pre>
+     *   1. 최고 feet Y 최소   (apex)
+     *   2. 총 공중 tick 최소  (ticksA + ticksB)
+     *   3. 반동 속도 크기 최소
+     * </pre>
+     */
+    private boolean better(Solution a, Solution b, WallGeometry geom) {
+        if (Math.abs(a.apex() - b.apex()) > 1.0E-6D) {
+            return a.apex() < b.apex();
+        }
+        int at = a.ticksA() + a.ticksB();
+        int bt = b.ticksA() + b.ticksB();
+        if (at != bt) {
+            return at < bt;
+        }
+        return a.rebound().length() < b.rebound().length();
     }
 
     /** 벽 앞면에서 {@code td} 만큼 떨어진 도약 발 좌표. */
