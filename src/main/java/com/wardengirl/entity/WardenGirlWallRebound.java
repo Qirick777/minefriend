@@ -78,8 +78,17 @@ public final class WardenGirlWallRebound {
     private static final double CLEAR_EPS = 0.03D;
     /** 접촉 발 높이 하한. 너무 낮게 닿으면 반동이 비현실적으로 커진다. */
     private static final double CONTACT_MIN_HEIGHT = 1.05D;
-    /** 접촉 발 높이 상한. 벽 상단을 이미 넘었으면 충돌하지 않는다. */
-    private static final double CONTACT_MAX_HEIGHT = 1.80D;
+    /**
+     * 접촉 발 높이 상한(출발 지면 기준 상승량). 벽 상단(2.0)을 이미 넘으면 충돌하지 않는다.
+     *
+     * <p>1.80 에서 올렸다. 접촉이 낮을수록 벽 상단까지 남은 거리가 커져 반동 Y 가 커지고,
+     * 그 반동이 그대로 정점과 낙하 시간을 늘린다(실측: 1.80 → 총 16틱·정점 초과 +0.243).
+     * 1.90 이면 반동 Y 가 0.23 → 0.13 으로 줄어 총 15틱·초과 +0.06 이 된다.
+     *
+     * <p>1.95 까지 올리면 14틱·초과 +0.030 이지만 몸과 벽의 겹침이 0.05블록뿐이라 실제
+     * 충돌을 놓칠 위험이 있어 쓰지 않는다. 1.90 은 0.10블록 겹침을 남긴다.
+     */
+    private static final double CONTACT_MAX_HEIGHT = 1.90D;
 
     private static final int EXECUTION_MARGIN_TICKS = 12;
     private static final int TAKEOFF_GRACE_TICKS = 3;
@@ -753,15 +762,18 @@ public final class WardenGirlWallRebound {
      * </pre>
      */
     private boolean better(Solution a, Solution b, WallGeometry geom) {
-        if (Math.abs(a.apex() - b.apex()) > 1.0E-6D) {
-            return a.apex() < b.apex();
-        }
         int at = a.ticksA() + a.ticksB();
         int bt = b.ticksA() + b.ticksB();
         if (at != bt) {
-            return at < bt;
+            return at < bt;                         // 4. 총 공중 시간 최소
         }
-        return a.rebound().length() < b.rebound().length();
+        if (Math.abs(a.launch().y - b.launch().y) > 1.0E-6D) {
+            return a.launch().y < b.launch().y;     // 5. 최초 수직 속도 최소
+        }
+        if (Math.abs(a.apex() - b.apex()) > 1.0E-6D) {
+            return a.apex() < b.apex();             // 6. 발 최고점 최소
+        }
+        return a.rebound().length() < b.rebound().length();   // 7. 반동 속도 최소
     }
 
     /** 벽 앞면에서 {@code td} 만큼 떨어진 도약 발 좌표. */
