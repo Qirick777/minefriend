@@ -225,6 +225,11 @@ public final class WardenGirlWallRebound {
             this.approach = geom;
             this.lastDistance = this.mob.position().distanceTo(geom.start());
             this.stalledTicks = 0;
+            com.wardengirl.WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
+                    "T31V ASET t=%d pos=(%.3f,%.3f,%.3f) wall=%s toFace=%.3f",
+                    this.mob.level().getGameTime(), this.mob.getX(), this.mob.getY(),
+                    this.mob.getZ(), geom.wall().toShortString(),
+                    Math.abs(axisCoord(geom, this.mob.position()) - geom.faceCoord())));
         }
     }
 
@@ -276,6 +281,13 @@ public final class WardenGirlWallRebound {
         clearApproach();
         Solution sol = solve(geom);
         if (sol == null) {
+            // T31V-TEMP
+            com.wardengirl.WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
+                    "T31V SOLVEFAIL t=%d pos=(%.3f,%.3f,%.3f) toFace=%.3f wall=%s reject=%s",
+                    this.mob.level().getGameTime(), this.mob.getX(), this.mob.getY(),
+                    this.mob.getZ(),
+                    Math.abs(axisCoord(geom, this.mob.position()) - geom.faceCoord()),
+                    geom.wall().toShortString(), this.tempReject));
             return;                                 // 자연스러운 해가 없으면 실행하지 않는다
         }
         WardenGirlSpecialMovement sm = this.mob.specialMovement();
@@ -660,8 +672,16 @@ public final class WardenGirlWallRebound {
      *        발 좌표에서 푼다. 발사 직전 재계산이 후자다 — 달려온 실제 위치가 계획 지점과
      *        조금 달라도 궤적이 어긋나지 않게 한다.
      */
+    /** T31V-TEMP — solve 거절 사유별 횟수. */
+    private final java.util.Map<String, Integer> tempReject = new java.util.LinkedHashMap<>();
+
+    private void rej(String k) {                                  // T31V-TEMP
+        this.tempReject.merge(k, 1, Integer::sum);
+    }
+
     @Nullable
     private Solution solve(WallGeometry geom, double tdLo, double tdHi, @Nullable Vec3 origin) {
+        this.tempReject.clear();                                  // T31V-TEMP
         double g = gravity();
         double floorY = geom.start().y;
         double wallTop = geom.wallTop();
@@ -678,45 +698,31 @@ public final class WardenGirlWallRebound {
             }
             for (int ta = 2; ta <= MAX_SEGMENT_TICKS; ta++) {
                 Double vy = solveJumpFor(hc, ta, g);
-                if (vy == null || vy > MAX_LAUNCH_JUMP) {
-                    continue;
-                }
-                if (verticalAt(vy, ta, g) < 0.0D) {
-                    continue;                       // 하강 중 접촉은 박차기가 아니다
-                }
+                if (vy == null) { rej("noJumpFit"); continue; }
+                if (vy > MAX_LAUNCH_JUMP) { rej("jumpCap"); continue; }
+                if (verticalAt(vy, ta, g) < 0.0D) { rej("descending"); continue; }
                 double ka = horizontalSum(ta, friction);
                 double vx = distA / ka;
-                if (vx > MAX_LAUNCH_SPEED || vx <= 0.0D) {
-                    continue;
-                }
+                if (vx > MAX_LAUNCH_SPEED || vx <= 0.0D) { rej("vxCap"); continue; }
                 double vyB = (wallTop - (floorY + hc)) + CLEAR_EPS;
-                if (vyB <= 0.0D || vyB > MAX_REBOUND_JUMP) {
-                    continue;
-                }
+                if (vyB <= 0.0D || vyB > MAX_REBOUND_JUMP) { rej("vyBRange"); continue; }
                 // 반동 tick 이후 착지까지의 비행 tick.
                 Integer tb = fallTicks(vyB, floorY + hc, floorY, g);
-                if (tb == null) {
-                    continue;
-                }
+                if (tb == null) { rej("noFall"); continue; }
                 double contactCoord = geom.faceCoord() - signOf(geom) * half;
                 double distB = Math.abs(axisCoord(geom, geom.landing()) - contactCoord);
                 double kb = airHorizontalSum(tb);
                 double vxB = distB / kb;
-                if (vxB > MAX_REBOUND_SPEED || vxB <= 0.0D) {
-                    continue;
-                }
+                if (vxB > MAX_REBOUND_SPEED || vxB <= 0.0D) { rej("vxBCap"); continue; }
                 Vec3 d = geom.direction();
                 Vec3 launch = new Vec3(d.x * vx, vy, d.z * vx);
                 Vec3 rebound = new Vec3(d.x * vxB, vyB, d.z * vxB);
                 List<Vec3> samples = new ArrayList<>();
-                Vec3 contact = simulate(from, launch, ta, friction, g, samples, false);
-                Vec3 end = simulate(contact, rebound, tb, 1.0D, g, samples, true);
-                if (Math.abs(end.y - floorY) > LANDING_Y_TOLERANCE) {
-                    continue;
-                }
+                Vec3 contact = simulate(from, launch, ta, friction, g, samples, false, null);
+                Vec3 end = simulate(contact, rebound, tb + 2, 1.0D, g, samples, true, floorY);
+                if (Math.abs(end.y - floorY) > LANDING_Y_TOLERANCE) { rej("landY"); continue; }
                 if (!WardenGirlMovementSafety.sweepClear(this.mob, samples)) {
-                    continue;
-                }
+                    rej("sweep"); continue; }
                 double apex = 0.0D;
                 for (Vec3 s : samples) {
                     apex = Math.max(apex, s.y - floorY);
@@ -814,11 +820,21 @@ public final class WardenGirlWallRebound {
      *        대각선으로 보간하면 표본이 벽 안을 지나 sweep 이 무조건 실패한다.
      */
     private Vec3 simulate(Vec3 from, Vec3 v0, int ticks, double firstFriction, double g,
-                          List<Vec3> out, boolean yFirstOnFirstTick) {
+                          List<Vec3> out, boolean yFirstOnFirstTick,
+                          @Nullable Double stopAtY) {
         Vec3 p = from;
         Vec3 v = v0;
         for (int i = 0; i < ticks; i++) {
             Vec3 next = p.add(v);
+            // 바닥에 닿으면 바닐라는 거기서 멈춘다. 정해진 tick 수만큼 계속 내려보내면
+            // 마지막 점이 지면 아래로 파고들어 착지 오차·sweep 이 무조건 실패한다.
+            if (stopAtY != null && v.y < 0.0D && next.y <= stopAtY) {
+                double span = p.y - next.y;
+                double frac = span <= 1.0E-9D ? 1.0D : (p.y - stopAtY) / span;
+                Vec3 hit = p.add(next.subtract(p).scale(Mth.clamp(frac, 0.0D, 1.0D)));
+                sample(p, hit, out);
+                return hit;
+            }
             if (i == 0 && yFirstOnFirstTick) {
                 Vec3 up = new Vec3(p.x, next.y, p.z);
                 sample(p, up, out);
@@ -932,6 +948,12 @@ public final class WardenGirlWallRebound {
     }
 
     private void clearApproach() {
+        if (this.approach != null) {                              // T31V-TEMP
+            com.wardengirl.WardenGirlMod.LOGGER.info(String.format(java.util.Locale.ROOT,
+                    "T31V ACLEAR t=%d pos=(%.3f,%.3f,%.3f) wall=%s",
+                    this.mob.level().getGameTime(), this.mob.getX(), this.mob.getY(),
+                    this.mob.getZ(), this.approach.wall().toShortString()));
+        }
         this.approach = null;
         this.stalledTicks = 0;
     }
