@@ -443,6 +443,9 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         // 확정된 최신 경로다(바이트코드 확인). 아래 T14 상태 점검의 20틱 간격과 달리 문은
         // 매 서버틱 봐야 하므로 게이트보다 앞에 둔다.
         this.doorHelper.tick();
+        // T29 — navigation.tick() 뒤라서 이번 틱의 확정 경로를 보고 유격을 판단할 수 있고,
+        // moveControl.tick() 앞이라 도약 속도가 그대로 travel 로 넘어간다(바이트코드 확인).
+        this.gapJump.tryStart();
         if (this.tickCount % STATE_CHECK_INTERVAL != 0) {
             return;
         }
@@ -700,6 +703,29 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
 
     public WardenGirlSpecialMovement specialMovement() {
         return this.specialMovement;
+    }
+
+    /**
+     * T29 — 유격 1~3블록 일반 점프. 탐색·궤적·착지 판정은 전부 그 클래스 안에 있고 여기에는
+     * 위임 API 만 둔다.
+     */
+    private final WardenGirlGapJump gapJump = new WardenGirlGapJump(this);
+
+    public WardenGirlGapJump gapJump() {
+        return this.gapJump;
+    }
+
+    /**
+     * T29 — 바닐라 지상 점프 경로. {@code jumpFromGround} 와 {@code getJumpPower} 는
+     * {@code LivingEntity} 에서 protected 라 같은 패키지의 helper 가 부를 수 있게 열어 준다.
+     * 값을 새로 만들지 않고 바닐라가 계산한 그대로를 쓴다.
+     */
+    void gapJumpFromGround() {
+        jumpFromGround();
+    }
+
+    float gapJumpPower() {
+        return getJumpPower();
     }
 
     /**

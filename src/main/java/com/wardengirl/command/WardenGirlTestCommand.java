@@ -166,6 +166,21 @@ public final class WardenGirlTestCommand {
                 g.getName().getString(), g.getId(), g.getUUID());
     }
 
+    /** T29 — 유격 점프 실행 정보. 계획이 없거나 다른 종류면 none 이다. */
+    private static String gapJumpLine(WardenGirlEntity g) {
+        com.wardengirl.entity.WardenGirlSpecialMovement.Plan p = g.specialMovement().getPlan();
+        if (p == null
+                || p.kind() != com.wardengirl.entity.WardenGirlSpecialMovement.Kind.SPRINT_GAP_JUMP) {
+            return "none";
+        }
+        com.wardengirl.entity.WardenGirlGapJump gj = g.gapJump();
+        net.minecraft.world.phys.Vec3 v = gj.takeoffVelocity();
+        return String.format(Locale.ROOT,
+                "gap=%d 예상비행=%dtick 실제공중=%dtick 도약속도=(%.5f, %.5f, %.5f)",
+                gj.gapLength(), gj.predictedFlightTicks(), gj.airTicks(),
+                v == null ? 0.0D : v.x, v == null ? 0.0D : v.y, v == null ? 0.0D : v.z);
+    }
+
     private static void ok(CommandSourceStack source, String body) {
         source.sendSuccess(() -> Component.literal("[test] ").withStyle(ChatFormatting.AQUA)
                 .append(Component.literal(body).withStyle(ChatFormatting.WHITE)), true);

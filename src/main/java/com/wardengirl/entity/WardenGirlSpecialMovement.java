@@ -277,6 +277,7 @@ public final class WardenGirlSpecialMovement {
      * 하고, 새 경로는 기존 Goal 이 다음 평가에서 스스로 만든다(route resume, 설계서 15절).
      */
     private void release() {
+        this.mob.gapJump().reset();
         this.plan = null;
         this.state = State.NONE;
         this.stateStartTick = 0L;
@@ -375,6 +376,11 @@ public final class WardenGirlSpecialMovement {
         }
         if (!purposeValid(p)) {
             cancel(Reason.PURPOSE_LOST);
+            return;
+        }
+        // T29 — 실제로 굴릴 이동이 생긴 종류는 각자의 helper 로 한 줄만 넘긴다.
+        if (p.kind() == Kind.SPRINT_GAP_JUMP) {
+            this.mob.gapJump().tickActive(p);
         }
     }
 }
