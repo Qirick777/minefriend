@@ -277,6 +277,12 @@ public final class WardenGirlGapJump {
      * <p>회전만 고정한다. 위치·속도·낙하는 건드리지 않고, yaw 를 목표를 향해 가속하지도
      * 않는다. 계획이 끝나면 소유권을 놓아 기존 시선·이동 체계로 돌아간다.
      */
+    /** T23-DOORPROBE — 읽기 전용 진단용. */
+    public boolean diveFacingHeld() { return this.diveFacingHeld; }
+
+    /** T23-DOORPROBE — 읽기 전용 진단용. */
+    public float diveYaw() { return this.diveYaw; }
+
     void holdDiveFacing() {
         if (!this.diveFacingHeld) {
             return;
