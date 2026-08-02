@@ -118,6 +118,19 @@ public final class AnimRegistry {
     public static final String GAP_DIVE_LAND = "gap_dive_land";
 
     /**
+     * {@code gap_dive_land} 의 json {@code animation_length} 초.
+     *
+     * <p>여기 있는 이유는 서버가 애니메이션 리소스를 읽지 않기 때문이다. 착지 액션의 종료
+     * 예정 시각은 이 <b>클립 길이</b>에서 계산하며, 임의의 매직 넘버를 쓰지 않는다.
+     * json 을 고치면 이 값도 같이 고쳐야 한다 — 두 값의 유일한 연결점이다.
+     */
+    public static final double GAP_DIVE_LAND_SECONDS = 0.32D;
+
+    /** 위 길이를 틱으로 올림한 값. 서버가 액션 슬롯을 비울 시점을 정하는 데 쓴다. */
+    public static final int GAP_DIVE_LAND_TICKS =
+            (int) Math.ceil(GAP_DIVE_LAND_SECONDS * 20.0D);
+
+    /**
      * 4.11 피격 움찔. 10틱.
      *
      * <p>바닐라는 {@code LivingEntity.hurt} 안에서 {@code walkAnimation.setSpeed(1.5F)} 로

@@ -249,12 +249,50 @@ public final class WardenGirlGapJump {
      */
     private void launchDive(JumpSolution sol) {
         WardenGirlSpecialMovement sm = this.mob.specialMovement();
+        // T30 — 도약 순간의 수평 방향이 공중 내내 몸통 방향을 소유한다. 공중에서 소유자·
+        // 전투 대상이 움직여도 몸이 새 목표를 향해 뒤집히지 않게 한다.
+        this.diveYaw = (float) (Mth.atan2(sol.velocity().z, sol.velocity().x)
+                * (180.0D / Math.PI)) - 90.0F;
+        this.diveFacingHeld = true;
         this.takeoffVelocity = sol.velocity();
         this.predictedFlightTicks = sol.flightTicks();
         this.mob.setDeltaMovement(sol.velocity());
         this.mob.hasImpulse = true;
         sm.transitionTo(WardenGirlSpecialMovement.State.GAP_DIVE_AIR);
         this.mob.playAction(com.wardengirl.anim.AnimRegistry.GAP_DIVE_AIR);
+    }
+
+    /** 도약 순간 확정된 진행 방향 yaw. 공중 구간 동안 몸통이 이 값을 유지한다. runtime only. */
+    private float diveYaw;
+    /** 방향 소유권이 살아 있는가. 착지·실패로 계획이 끝나면 해제한다. */
+    private boolean diveFacingHeld;
+
+    /** 다이브 중 머리가 발사 방향에서 벗어날 수 있는 최대 각. 몸통은 벗어나지 않는다. */
+    private static final float DIVE_HEAD_FREEDOM_DEG = 45.0F;
+
+    /**
+     * T30 — 공중 구간의 방향 소유권. {@code aiStep()} 이 {@code super.aiStep()} <b>뒤</b>에
+     * 부르므로 LookControl 과 {@code tickHeadTurn} 이 돌려놓은 값을 덮는다.
+     *
+     * <p>회전만 고정한다. 위치·속도·낙하는 건드리지 않고, yaw 를 목표를 향해 가속하지도
+     * 않는다. 계획이 끝나면 소유권을 놓아 기존 시선·이동 체계로 돌아간다.
+     */
+    void holdDiveFacing() {
+        if (!this.diveFacingHeld) {
+            return;
+        }
+        WardenGirlSpecialMovement sm = this.mob.specialMovement();
+        if (sm.getState() != WardenGirlSpecialMovement.State.GAP_DIVE_AIR
+                && sm.getState() != WardenGirlSpecialMovement.State.GAP_DIVE_PREPARE) {
+            this.diveFacingHeld = false;            // 착지·실패 — 소유권 해제
+            return;
+        }
+        this.mob.setYRot(this.diveYaw);
+        this.mob.yBodyRot = this.diveYaw;
+        this.mob.yBodyRotO = this.diveYaw;
+        float headOffset = Mth.wrapDegrees(this.mob.yHeadRot - this.diveYaw);
+        this.mob.yHeadRot = this.diveYaw
+                + Mth.clamp(headOffset, -DIVE_HEAD_FREEDOM_DEG, DIVE_HEAD_FREEDOM_DEG);
     }
 
     /** 이번 다이브의 지형. PREPARE 재검사와 발사 계산에 쓴다. runtime only. */
@@ -297,7 +335,8 @@ public final class WardenGirlGapJump {
         }
         if (landedOnPlan(plan)) {
             // 실제 착지를 확인한 tick 에만 land 를 튼다. 별도 서버 상태는 두지 않는다.
-            this.mob.playAction(com.wardengirl.anim.AnimRegistry.GAP_DIVE_LAND);
+            this.mob.playActionFor(com.wardengirl.anim.AnimRegistry.GAP_DIVE_LAND,
+                    com.wardengirl.anim.AnimRegistry.GAP_DIVE_LAND_TICKS);
             sm.finishSuccess();
         } else {
             this.mob.playAction("");
@@ -840,6 +879,7 @@ public final class WardenGirlGapJump {
         this.airborne = false;
         this.airTicks = 0;
         this.diveGeometry = null;
+        this.diveFacingHeld = false;
         clearApproach();
     }
 }

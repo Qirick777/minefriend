@@ -598,8 +598,16 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
             // goalSelector 평가에서 후퇴 Goal 이 끝난다.
             passiveHealTick();
             updateRetreatState();
+            // T30 — 재생이 끝난 액션 슬롯을 비운다. 특수 이동 종료와 무관하게 매 틱 돈다.
+            tickPendingAction();
         }
         super.aiStep();
+        if (!level().isClientSide) {
+            // T30 — 다이브 공중 구간의 <b>방향 소유권</b>. super.aiStep() 안에서 LookControl 이
+            // 머리를, tickHeadTurn 이 몸통을 돌린 <b>뒤</b>라야 덮어쓸 수 있다. 위치·속도는
+            // 건드리지 않는다 — 회전만 도약 순간 방향으로 고정한다.
+            this.gapJump.holdDiveFacing();
+        }
     }
 
     // ---- T22 비전투 체력 회복 (서버 runtime 전용) ---------------------------------------------
@@ -1089,6 +1097,55 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
     public void playAction(String clip) {
         this.entityData.set(DATA_ACTION_CLIP, clip);
         this.entityData.set(DATA_ACTION_SEQ, getActionSeq() + 1);
+    }
+
+    // ---- T30 액션 수명 (서버 runtime 전용, 저장하지 않는다) ----------------------------------
+    //
+    // 액션 슬롯은 "새 액션이 덮을 때까지" 남는 채널이다. 특수 이동이 끝나도 서버가 비워
+    // 주지 않으면 이후 공격·피격이 끝난 뒤 오래된 착지 자세가 다시 나타난다. 그래서 클립
+    // 하나를 재생할 때 <b>언제 비울지</b>도 함께 예약한다. 새 패킷도 새 SynchedEntityData 도
+    // 만들지 않는다 — 기존 두 채널과 서버 tick 하나면 된다.
+
+    /** 예약된 정리 대상 clip. 없으면 {@code null}. */
+    @javax.annotation.Nullable
+    private String pendingActionClip;
+    /** 예약 당시의 sequence. 이것이 바뀌었으면 다른 액션이 슬롯을 가져간 것이다. */
+    private int pendingActionSeq;
+    /** 비울 예정 gameTime. */
+    private long pendingActionEndTick;
+
+    /**
+     * 클립을 재생하고 그 길이가 지나면 슬롯을 비우도록 예약한다.
+     *
+     * @param lengthTicks 클립 길이(틱). 재생 시간 자체에서 나온 값이어야 한다
+     */
+    public void playActionFor(String clip, int lengthTicks) {
+        playAction(clip);
+        this.pendingActionClip = clip;
+        this.pendingActionSeq = getActionSeq();
+        this.pendingActionEndTick = level().getGameTime() + lengthTicks;
+    }
+
+    /**
+     * 예약된 액션 정리. 특수 이동이 끝난 뒤에도 도는 서버 tick 에서 불린다.
+     *
+     * <p>clip 과 sequence 가 <b>둘 다</b> 예약 당시와 같을 때만 비운다. 그 사이에 공격·피격·
+     * 소닉이 시작됐다면 sequence 가 올라가 있으므로 오래된 예약이 새 액션을 지우지 않고
+     * 예약 정보만 버린다.
+     */
+    private void tickPendingAction() {
+        String clip = this.pendingActionClip;
+        if (clip == null) {
+            return;
+        }
+        if (!clip.equals(getActionClip()) || getActionSeq() != this.pendingActionSeq) {
+            this.pendingActionClip = null;          // 새 액션이 슬롯을 가져갔다
+            return;
+        }
+        if (level().getGameTime() >= this.pendingActionEndTick) {
+            this.pendingActionClip = null;
+            playAction("");
+        }
     }
 
     // ---- GeoEntity --------------------------------------------------------------------------
