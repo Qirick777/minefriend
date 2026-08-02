@@ -47,7 +47,7 @@ public final class WardenGirlGapJump {
     /** T29 가 다루는 최대 유격(블록). 4 이상은 T30 영역이라 여기서 거절한다. */
     public static final int MAX_GAP = 3;
     /** 진행 방향으로 훑어보는 최대 거리(블록). 유격 최대 + 출발 칸 + 착지 칸 + 착지 뒤 한 칸. */
-    private static final double SCAN_DISTANCE = MAX_GAP + 3.0D;
+    private static final double SCAN_DISTANCE = 5 + 3.0D;   // DIVE_MAX_GAP + 출발/착지/착지 뒤
     /** 블록 열을 빠짐없이 지나가기 위한 훑기 간격. */
     private static final double SCAN_STEP = 0.2D;
 
@@ -77,6 +77,22 @@ public final class WardenGirlGapJump {
      * 일반 점프로 보이지 않을 만큼 빠른 도약을 임의로 확정하지 않기 위한 상한이다.
      */
     public static final double MAX_TAKEOFF_SPEED = 0.80D;
+
+    // ---- T30 다이브 (유격 4~5) --------------------------------------------------------------
+
+    /** T30 이 다루는 최소 유격. 이 미만은 T29 일반 점프다. */
+    public static final int DIVE_MIN_GAP = 4;
+    /** T30 이 다루는 최대 유격. 6 이상은 어느 쪽도 아니다. */
+    public static final int DIVE_MAX_GAP = 5;
+    /**
+     * 다이브 전용 수직 초기 속도. 바닐라 점프(0.42)보다 약간 높여 비행 시간을 벌고 도약이
+     * 힘있게 읽히게 한다. 거리별 표를 두지 않고 이 값 하나로 비행 tick 을 계산한다.
+     */
+    public static final double DIVE_JUMP_POWER = 0.50D;
+    /** 다이브 전용 최대 도약 수평 속도. 하나만 쓴다. */
+    public static final double DIVE_MAX_TAKEOFF_SPEED = 1.30D;
+    /** READY(준비) 유지 tick. 발사 프레임이 읽힐 최소 시간이며 한 곳에만 있다. */
+    public static final int DIVE_READY_TICKS = 5;
 
     /** 예상 비행 tick 에 더해 주는 실행 제한 여유. */
     private static final int EXECUTION_MARGIN_TICKS = 10;
@@ -164,6 +180,20 @@ public final class WardenGirlGapJump {
         if (geom == null) {
             return;
         }
+        if (geom.gap() >= DIVE_MIN_GAP) {
+            // T30 — 다이브는 즉석 도약이 없다. 가장자리까지 접근한 뒤 정지·준비를 거친다.
+            if (geom.takeoffTarget() == null) {
+                return;
+            }
+            if (this.mob.position().distanceTo(geom.takeoffTarget()) <= APPROACH_ARRIVE) {
+                beginDive(geom, objective);
+            } else {
+                this.approach = geom;
+                this.lastDistance = this.mob.position().distanceTo(geom.takeoffTarget());
+                this.stalledTicks = 0;
+            }
+            return;
+        }
         JumpSolution sol = solveFrom(this.mob.position(), geom);
         if (sol != null) {
             jump(geom, sol, objective);
@@ -175,6 +205,123 @@ public final class WardenGirlGapJump {
             this.approach = geom;
             this.lastDistance = this.mob.position().distanceTo(geom.takeoffTarget());
             this.stalledTicks = 0;
+        }
+    }
+
+    /**
+     * T30 — 준비 시작. 도약 위치에서 다이브 물리 해가 나올 때만 T28 Plan 을 시작하고
+     * {@code GAP_DIVE_PREPARE} 로 들어간다. 발사는 {@link #tickDive} 가 READY 뒤에 한다.
+     */
+    private void beginDive(GapGeometry geom, Objective objective) {
+        clearApproach();
+        JumpSolution sol = solveDive(this.mob.position(), geom);
+        if (sol == null) {
+            return;                                 // 여기서도 상한을 넘으면 다이브하지 않는다
+        }
+        WardenGirlSpecialMovement sm = this.mob.specialMovement();
+        WardenGirlSpecialMovement.Plan plan = new WardenGirlSpecialMovement.Plan(
+                WardenGirlSpecialMovement.Kind.GAP_DIVE,
+                this.mob.position(), geom.landing(), objective.purpose(), objective.goal(),
+                objective.relatedEntity(), this.mob.level().dimension(),
+                this.mob.level().getGameTime(),
+                this.mob.level().getGameTime()
+                        + DIVE_READY_TICKS + sol.flightTicks() + EXECUTION_MARGIN_TICKS,
+                null, null, true);
+        if (sm.tryBegin(plan) != null) {
+            return;
+        }
+        this.airborne = false;
+        this.airTicks = 0;
+        this.gapLength = geom.gap();
+        this.predictedFlightTicks = sol.flightTicks();
+        this.takeoffVelocity = null;                // 발사 tick 에 실제 위치로 다시 푼다
+        this.diveGeometry = geom;
+        // 준비: 이동을 실제로 멈춘다. 위치·속도는 건드리지 않는다.
+        this.mob.getNavigation().stop();
+        this.mob.getMoveControl().setWantedPosition(
+                this.mob.getX(), this.mob.getY(), this.mob.getZ(), 0.0D);
+        this.mob.setSprinting(false);
+        this.mob.playAction(com.wardengirl.anim.AnimRegistry.GAP_DIVE_READY); // PREPARE 진입과 같은 tick
+    }
+
+    /** 이번 다이브의 지형. PREPARE 재검사와 발사 계산에 쓴다. runtime only. */
+    @Nullable
+    private GapGeometry diveGeometry;
+
+    /** {@link WardenGirlSpecialMovement#tick()} 이 GAP_DIVE 일 때만 부른다. */
+    void tickDive(WardenGirlSpecialMovement.Plan plan) {
+        WardenGirlSpecialMovement sm = this.mob.specialMovement();
+        Long limit = plan.expectedEndTick();
+        if (limit != null && this.mob.level().getGameTime() > limit) {
+            this.mob.playAction("");
+            sm.fail(WardenGirlSpecialMovement.Reason.EXECUTION_FAILED);
+            return;
+        }
+        if (sm.getState() == WardenGirlSpecialMovement.State.GAP_DIVE_PREPARE) {
+            GapGeometry geom = this.diveGeometry;
+            if (geom == null) {
+                this.mob.playAction("");
+                sm.fail(WardenGirlSpecialMovement.Reason.EXECUTION_FAILED);
+                return;
+            }
+            // 준비 중 매 tick 재검사 — 지상·출발 위치·착지 안전. 실패하면 발사하지 않는다.
+            if (!this.mob.onGround()
+                    || this.mob.position().distanceTo(plan.origin())
+                            > WardenGirlSpecialMovement.ORIGIN_TOLERANCE) {
+                this.mob.playAction("");
+                sm.fail(WardenGirlSpecialMovement.Reason.ORIGIN_MOVED);
+                return;
+            }
+            if (!WardenGirlMovementSafety.safeLanding(this.mob, geom.landing())
+                    || !standable(this.mob.position())) {
+                this.mob.playAction("");
+                sm.fail(WardenGirlSpecialMovement.Reason.LANDING_UNSAFE);
+                return;
+            }
+            if (sm.getStateAge() < DIVE_READY_TICKS) {
+                return;                             // 아직 준비 중
+            }
+            JumpSolution sol = solveDive(this.mob.position(), geom);
+            if (sol == null) {
+                this.mob.playAction("");
+                sm.fail(WardenGirlSpecialMovement.Reason.EXECUTION_FAILED);
+                return;
+            }
+            // 발사 — 초기 속도는 이 tick 한 번뿐이다. 같은 tick 에 클립·상태를 함께 바꾼다.
+            this.takeoffVelocity = sol.velocity();
+            this.predictedFlightTicks = sol.flightTicks();
+            this.mob.setDeltaMovement(sol.velocity());
+            this.mob.hasImpulse = true;
+            sm.transitionTo(WardenGirlSpecialMovement.State.GAP_DIVE_AIR);
+            this.mob.playAction(com.wardengirl.anim.AnimRegistry.GAP_DIVE_AIR);
+            return;
+        }
+        // ---- GAP_DIVE_AIR ----
+        if (!this.airborne) {
+            if (!this.mob.onGround()) {
+                this.airborne = true;
+            } else if (sm.getStateAge() > TAKEOFF_GRACE_TICKS) {
+                this.mob.playAction("");
+                sm.fail(WardenGirlSpecialMovement.Reason.EXECUTION_FAILED);
+            }
+            return;
+        }
+        this.airTicks++;
+        if (this.mob.getY() < plan.landing().y - FALL_TOLERANCE) {
+            this.mob.playAction("");
+            sm.fail(WardenGirlSpecialMovement.Reason.EXECUTION_FAILED);
+            return;
+        }
+        if (!this.mob.onGround()) {
+            return;
+        }
+        if (landedOnPlan(plan)) {
+            // 실제 착지를 확인한 tick 에만 land 를 튼다. 별도 서버 상태는 두지 않는다.
+            this.mob.playAction(com.wardengirl.anim.AnimRegistry.GAP_DIVE_LAND);
+            sm.finishSuccess();
+        } else {
+            this.mob.playAction("");
+            sm.fail(WardenGirlSpecialMovement.Reason.EXECUTION_FAILED);
         }
     }
 
@@ -208,7 +355,7 @@ public final class WardenGirlGapJump {
 
     private static final int APPROACH_STALL_LIMIT = 40;
     private static final double APPROACH_MIN_GAIN = 0.01D;
-    private static final double APPROACH_ARRIVE = 0.15D;
+    private static final double APPROACH_ARRIVE = 0.35D;
 
     public boolean hasApproachTarget() {
         return this.approach != null;
@@ -259,14 +406,20 @@ public final class WardenGirlGapJump {
             clearApproach();
             return;
         }
-        JumpSolution sol = solveFrom(this.mob.position(), geom);
-        if (sol != null) {
-            jump(geom, sol, now);
-            return;
+        if (geom.gap() < DIVE_MIN_GAP) {
+            JumpSolution sol = solveFrom(this.mob.position(), geom);
+            if (sol != null) {
+                jump(geom, sol, now);
+                return;
+            }
         }
         double d = this.mob.position().distanceTo(geom.takeoffTarget());
         if (d <= APPROACH_ARRIVE) {
-            clearApproach();                        // 도착했는데도 상한 초과 — 점프하지 않는다
+            if (geom.gap() >= DIVE_MIN_GAP) {
+                beginDive(geom, now);               // 다이브는 가장자리에서 준비로 들어간다
+            } else {
+                clearApproach();                    // 도착했는데도 상한 초과 — 점프하지 않는다
+            }
             return;
         }
         if (this.lastDistance - d < APPROACH_MIN_GAIN) {
@@ -279,8 +432,9 @@ public final class WardenGirlGapJump {
         }
         this.lastDistance = d;
         Vec3 t = geom.takeoffTarget();
+        // 가장자리 근처에서는 걸음을 늦춰 관성 미끄러짐을 줄인다. 속도를 직접 깎지는 않는다.
         this.mob.getMoveControl().setWantedPosition(t.x, t.y, t.z,
-                WardenGirlFollowOwnerGoal.CRUISE_SPEED);
+                d < 2.0D ? 1.0D : WardenGirlFollowOwnerGoal.CRUISE_SPEED);
     }
 
     /**
@@ -441,8 +595,8 @@ public final class WardenGirlGapJump {
         while (gap + 1 < columns.size()
                 && classify(columns.get(gap + 1), floorY) == Column.EMPTY) {
             gap++;
-            if (gap > MAX_GAP) {
-                return null;                        // 4칸 이상 — T29 가 아니다
+            if (gap > DIVE_MAX_GAP) {
+                return null;                        // 6칸 이상 — T29 도 T30 도 아니다                        // 4칸 이상 — T29 가 아니다
             }
         }
         if (gap < MIN_GAP) {
@@ -479,10 +633,15 @@ public final class WardenGirlGapJump {
     private Vec3 takeoffTarget(Vec3 dir, int floorY) {
         Vec3 feet = this.mob.position();
         Vec3 best = null;
+        double half = this.mob.getBbWidth() / 2.0D;
         for (double t = 0.0D; t <= 2.0D; t += 0.05D) {
             Vec3 p = feet.add(dir.scale(t));
             Vec3 q = new Vec3(p.x, floorY + 1.0D, p.z);
-            if (standable(q)) {
+            // 발 중심만이 아니라 진행 방향 앞쪽 발끝까지 지면 열 위에 있어야 한다 — 접근
+            // 관성으로 몇 틱 미끄러져도 발 중심이 유격 열로 넘어가지 않게 반폭만큼 물러선다.
+            boolean leadingOk = WardenGirlMovementSafety.safeFloorBlock(this.mob.level(),
+                    BlockPos.containing(q.add(dir.scale(half))));
+            if (standable(q) && leadingOk) {
                 best = q;
             } else if (best != null) {
                 break;
@@ -548,10 +707,21 @@ public final class WardenGirlGapJump {
      */
     @Nullable
     private JumpSolution solveFrom(Vec3 feet, GapGeometry geom) {
+        return solveWith(feet, geom, this.mob.gapJumpPower(), MAX_TAKEOFF_SPEED);
+    }
+
+    /** T30 — 다이브 물리 해. 수직 속도와 상한만 다르고 계산은 T29 와 같은 식이다. */
+    @Nullable
+    private JumpSolution solveDive(Vec3 feet, GapGeometry geom) {
+        return solveWith(feet, geom, DIVE_JUMP_POWER, DIVE_MAX_TAKEOFF_SPEED);
+    }
+
+    @Nullable
+    private JumpSolution solveWith(Vec3 feet, GapGeometry geom, double jumpPower,
+                                   double maxSpeed) {
         Vec3 landing = geom.landing();
         int floorY = geom.landingSupport().getY();
         double gravity = gravity();
-        double jumpPower = this.mob.gapJumpPower();
         int ticks = flightTicks(jumpPower, gravity);
         if (ticks < 2) {
             return null;
@@ -574,8 +744,8 @@ public final class WardenGirlGapJump {
         double current = new Vec3(this.mob.getDeltaMovement().x, 0.0D,
                 this.mob.getDeltaMovement().z).dot(unit);
         double speed = Math.max(needed, current);
-        if (speed > MAX_TAKEOFF_SPEED) {
-            return null;                            // 일반 점프로 보이지 않는 속도는 쓰지 않는다
+        if (speed > maxSpeed) {
+            return null;                            // 종류별 상한을 넘는 속도는 쓰지 않는다
         }
         Vec3 velocity = new Vec3(unit.x * speed, jumpPower, unit.z * speed);
         List<Vec3> samples = trajectory(feet, velocity, gravity, groundDrag, ticks);
@@ -689,6 +859,7 @@ public final class WardenGirlGapJump {
     void reset() {
         this.airborne = false;
         this.airTicks = 0;
+        this.diveGeometry = null;
         clearApproach();
     }
 }

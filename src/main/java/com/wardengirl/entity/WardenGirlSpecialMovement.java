@@ -381,6 +381,8 @@ public final class WardenGirlSpecialMovement {
         // T29 — 실제로 굴릴 이동이 생긴 종류는 각자의 helper 로 한 줄만 넘긴다.
         if (p.kind() == Kind.SPRINT_GAP_JUMP) {
             this.mob.gapJump().tickActive(p);
+        } else if (p.kind() == Kind.GAP_DIVE) {
+            this.mob.gapJump().tickDive(p);         // T30
         }
     }
 }

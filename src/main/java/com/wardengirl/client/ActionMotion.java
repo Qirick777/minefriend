@@ -154,9 +154,21 @@ public final class ActionMotion {
         if (com.wardengirl.anim.AnimRegistry.IDLE_SNIFF.equals(clip)) {
             return age < 0.0D || age > lengthTicks ? 0.0D : 1.0D;
         }
-        boolean hurt = com.wardengirl.anim.AnimRegistry.IDLE_HURT.equals(clip);
-        double fadeIn = hurt ? AnimParams.HURT_FADE_IN.get() : AnimParams.ATTACK_FADE_IN.get();
-        double fadeOut = hurt ? AnimParams.HURT_FADE_OUT.get() : AnimParams.ATTACK_FADE_OUT.get();
+        // T30 gap dive — 세 구간이 자세를 서로 이어받으므로 구간 사이 페이드는 최소로 둔다.
+        // ready 는 run/walk 에서 2틱에 걸쳐 들어오고, land 만 5틱에 걸쳐 이동 자세로 돌아간다.
+        double fadeIn;
+        double fadeOut;
+        if (com.wardengirl.anim.AnimRegistry.GAP_DIVE_READY.equals(clip)) {
+            fadeIn = 2.0D; fadeOut = 1.0D;
+        } else if (com.wardengirl.anim.AnimRegistry.GAP_DIVE_AIR.equals(clip)) {
+            fadeIn = 1.0D; fadeOut = 1.0D;
+        } else if (com.wardengirl.anim.AnimRegistry.GAP_DIVE_LAND.equals(clip)) {
+            fadeIn = 1.0D; fadeOut = 5.0D;
+        } else {
+            boolean hurt = com.wardengirl.anim.AnimRegistry.IDLE_HURT.equals(clip);
+            fadeIn = hurt ? AnimParams.HURT_FADE_IN.get() : AnimParams.ATTACK_FADE_IN.get();
+            fadeOut = hurt ? AnimParams.HURT_FADE_OUT.get() : AnimParams.ATTACK_FADE_OUT.get();
+        }
         double rising = fadeIn <= 0.0D ? 1.0D : age / fadeIn;
         double falling = fadeOut <= 0.0D ? 1.0D : (lengthTicks - age) / fadeOut;
         return Math.max(0.0D, Math.min(1.0D, Math.min(rising, falling)));
