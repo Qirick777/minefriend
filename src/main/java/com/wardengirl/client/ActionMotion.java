@@ -154,16 +154,15 @@ public final class ActionMotion {
         if (com.wardengirl.anim.AnimRegistry.IDLE_SNIFF.equals(clip)) {
             return age < 0.0D || age > lengthTicks ? 0.0D : 1.0D;
         }
-        // T30 gap dive — 세 구간이 자세를 서로 이어받으므로 구간 사이 페이드는 최소로 둔다.
-        // ready 는 run/walk 에서 2틱에 걸쳐 들어오고, land 만 5틱에 걸쳐 이동 자세로 돌아간다.
+        // T30 gap dive — air 와 land 가 자세를 서로 이어받으므로 구간 사이 페이드를 두지 않는다.
         double fadeIn;
         double fadeOut;
-        if (com.wardengirl.anim.AnimRegistry.GAP_DIVE_READY.equals(clip)) {
-            fadeIn = 2.0D; fadeOut = 1.0D;
-        } else if (com.wardengirl.anim.AnimRegistry.GAP_DIVE_AIR.equals(clip)) {
-            fadeIn = 1.0D; fadeOut = 1.0D;
+        if (com.wardengirl.anim.AnimRegistry.GAP_DIVE_AIR.equals(clip)) {
+            // 클립 자체가 0 자세에서 시작하고 land 첫 자세로 끝나므로 페이드가 할 일이 없다.
+            fadeIn = 0.0D; fadeOut = 0.0D;
         } else if (com.wardengirl.anim.AnimRegistry.GAP_DIVE_LAND.equals(clip)) {
-            fadeIn = 1.0D; fadeOut = 5.0D;
+            // 첫 자세는 air 마지막과 같고, 마지막 자세는 0 이다. 복귀만 짧게 깎는다.
+            fadeIn = 0.0D; fadeOut = 3.0D;
         } else {
             boolean hurt = com.wardengirl.anim.AnimRegistry.IDLE_HURT.equals(clip);
             fadeIn = hurt ? AnimParams.HURT_FADE_IN.get() : AnimParams.ATTACK_FADE_IN.get();

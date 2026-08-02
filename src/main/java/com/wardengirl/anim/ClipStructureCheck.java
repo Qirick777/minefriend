@@ -79,7 +79,17 @@ public final class ClipStructureCheck {
             // T6 4.12: 킁킁 전 몸통 회전이 root.yRot 에 가산된다. 이 줄이 없어서 root.yRot 이
             // -16734 ~ +7747 로 폭주했고 검사기는 통과를 찍었다 - 세트가 수작업이라는 것이
             // 이 검사기의 유일한 약점이다. Java 가산 채널을 늘리면 반드시 여기도 늘려라.
-            new Key(Bones.ROOT, Channel.ROTATION)));
+            new Key(Bones.ROOT, Channel.ROTATION),
+            // T30: C3 액션 클립은 pose.positionsRaw() 를 addPositionRaw 로 <b>가산</b>하므로
+            // 어떤 본이든 position 채널을 쓸 수 있다. hip.position 이 이 목록에 없어서
+            // gap_dive 가 hip 을 내린 뒤 모델이 영구히 지면 아래로 내려갔다 — 검사기는
+            // 통과를 찍었다. 액션 레이어가 닿을 수 있는 본의 position 을 전부 등록한다.
+            new Key(Bones.HIP, Channel.POSITION),
+            new Key(Bones.HEAD, Channel.POSITION),
+            new Key(Bones.ARM_RIGHT, Channel.POSITION),
+            new Key(Bones.ARM_LEFT, Channel.POSITION),
+            new Key(Bones.LEG_RIGHT, Channel.POSITION),
+            new Key(Bones.LEG_LEFT, Channel.POSITION)));
 
     /**
      * Checks that every {@link #JAVA_ADDED} channel is assigned every frame, for one locomotion clip.

@@ -91,8 +91,6 @@ public final class WardenGirlGapJump {
     public static final double DIVE_JUMP_POWER = 0.50D;
     /** 다이브 전용 최대 도약 수평 속도. 하나만 쓴다. */
     public static final double DIVE_MAX_TAKEOFF_SPEED = 1.30D;
-    /** READY(준비) 유지 tick. 발사 프레임이 읽힐 최소 시간이며 한 곳에만 있다. */
-    public static final int DIVE_READY_TICKS = 5;
 
     /** 예상 비행 tick 에 더해 주는 실행 제한 여유. */
     private static final int EXECUTION_MARGIN_TICKS = 10;
@@ -225,7 +223,7 @@ public final class WardenGirlGapJump {
                 objective.relatedEntity(), this.mob.level().dimension(),
                 this.mob.level().getGameTime(),
                 this.mob.level().getGameTime()
-                        + DIVE_READY_TICKS + sol.flightTicks() + EXECUTION_MARGIN_TICKS,
+                        + sol.flightTicks() + EXECUTION_MARGIN_TICKS,
                 null, null, true);
         if (sm.tryBegin(plan) != null) {
             return;
@@ -236,12 +234,27 @@ public final class WardenGirlGapJump {
         this.predictedFlightTicks = sol.flightTicks();
         this.takeoffVelocity = null;                // 발사 tick 에 실제 위치로 다시 푼다
         this.diveGeometry = geom;
-        // 준비: 이동을 실제로 멈춘다. 위치·속도는 건드리지 않는다.
+        // 이동을 멈추고 <b>같은 tick 에</b> 발사한다. 눈에 보이는 차징 구간은 두지 않는다.
         this.mob.getNavigation().stop();
         this.mob.getMoveControl().setWantedPosition(
                 this.mob.getX(), this.mob.getY(), this.mob.getZ(), 0.0D);
         this.mob.setSprinting(false);
-        this.mob.playAction(com.wardengirl.anim.AnimRegistry.GAP_DIVE_READY); // PREPARE 진입과 같은 tick
+        launchDive(sol);
+    }
+
+    /**
+     * 실제 발사. 초기 속도를 한 번 넣고 같은 tick 에 AIR 로 넘어가며 클립을 튼다.
+     * {@code GAP_DIVE_PREPARE} 는 T28 이 계획 종류로부터 정하는 첫 상태라 한 tick 도 머물지
+     * 않고 지나간다 — 사용자가 볼 수 있는 준비 자세는 없다.
+     */
+    private void launchDive(JumpSolution sol) {
+        WardenGirlSpecialMovement sm = this.mob.specialMovement();
+        this.takeoffVelocity = sol.velocity();
+        this.predictedFlightTicks = sol.flightTicks();
+        this.mob.setDeltaMovement(sol.velocity());
+        this.mob.hasImpulse = true;
+        sm.transitionTo(WardenGirlSpecialMovement.State.GAP_DIVE_AIR);
+        this.mob.playAction(com.wardengirl.anim.AnimRegistry.GAP_DIVE_AIR);
     }
 
     /** 이번 다이브의 지형. PREPARE 재검사와 발사 계산에 쓴다. runtime only. */
@@ -258,42 +271,9 @@ public final class WardenGirlGapJump {
             return;
         }
         if (sm.getState() == WardenGirlSpecialMovement.State.GAP_DIVE_PREPARE) {
-            GapGeometry geom = this.diveGeometry;
-            if (geom == null) {
-                this.mob.playAction("");
-                sm.fail(WardenGirlSpecialMovement.Reason.EXECUTION_FAILED);
-                return;
-            }
-            // 준비 중 매 tick 재검사 — 지상·출발 위치·착지 안전. 실패하면 발사하지 않는다.
-            if (!this.mob.onGround()
-                    || this.mob.position().distanceTo(plan.origin())
-                            > WardenGirlSpecialMovement.ORIGIN_TOLERANCE) {
-                this.mob.playAction("");
-                sm.fail(WardenGirlSpecialMovement.Reason.ORIGIN_MOVED);
-                return;
-            }
-            if (!WardenGirlMovementSafety.safeLanding(this.mob, geom.landing())
-                    || !standable(this.mob.position())) {
-                this.mob.playAction("");
-                sm.fail(WardenGirlSpecialMovement.Reason.LANDING_UNSAFE);
-                return;
-            }
-            if (sm.getStateAge() < DIVE_READY_TICKS) {
-                return;                             // 아직 준비 중
-            }
-            JumpSolution sol = solveDive(this.mob.position(), geom);
-            if (sol == null) {
-                this.mob.playAction("");
-                sm.fail(WardenGirlSpecialMovement.Reason.EXECUTION_FAILED);
-                return;
-            }
-            // 발사 — 초기 속도는 이 tick 한 번뿐이다. 같은 tick 에 클립·상태를 함께 바꾼다.
-            this.takeoffVelocity = sol.velocity();
-            this.predictedFlightTicks = sol.flightTicks();
-            this.mob.setDeltaMovement(sol.velocity());
-            this.mob.hasImpulse = true;
-            sm.transitionTo(WardenGirlSpecialMovement.State.GAP_DIVE_AIR);
-            this.mob.playAction(com.wardengirl.anim.AnimRegistry.GAP_DIVE_AIR);
+            // 같은 tick 에 AIR 로 넘어가므로 여기 남아 있으면 발사가 실패한 것이다.
+            this.mob.playAction("");
+            sm.fail(WardenGirlSpecialMovement.Reason.EXECUTION_FAILED);
             return;
         }
         // ---- GAP_DIVE_AIR ----

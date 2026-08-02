@@ -114,7 +114,6 @@ public final class AnimRegistry {
 
     // ---- T30 gap dive. 서버 playAction 채널로 재생되는 3구간 한 세트다 -----------------------
 
-    public static final String GAP_DIVE_READY = "gap_dive_ready";
     public static final String GAP_DIVE_AIR = "gap_dive_air";
     public static final String GAP_DIVE_LAND = "gap_dive_land";
 
