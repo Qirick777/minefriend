@@ -161,6 +161,9 @@ public class WardenGirlEntity extends PathfinderMob implements GeoEntity {
         // T28 — 특수 이동. 활성일 때만 canUse 가 참이라 평소에는 없는 Goal 과 같다. priority 1
         // 의 소닉은 LOOK 만 잡으므로 함께 실행된다.
         this.goalSelector.addGoal(1, new WardenGirlSpecialMovementGoal(this));
+        // T29 보정 — 도약 위치 접근. 근접 전투(4) 뒤에 등록해 전투가 우선하고,
+        // TestMove(5)·Follow(6)·Stroll(7) 은 접근 중 선점된다.
+        this.goalSelector.addGoal(4, new WardenGirlGapJumpApproachGoal(this));
         this.testMoveGoal = new WardenGirlTestMoveGoal(this);
         this.goalSelector.addGoal(5, this.testMoveGoal);
         this.goalSelector.addGoal(6, new WardenGirlFollowOwnerGoal(this));

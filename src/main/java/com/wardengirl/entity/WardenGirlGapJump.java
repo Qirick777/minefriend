@@ -140,43 +140,124 @@ public final class WardenGirlGapJump {
      */
     void tryStart() {
         WardenGirlSpecialMovement sm = this.mob.specialMovement();
-        if (sm.isActive() || !this.mob.onGround() || this.mob.isPassenger()) {
+        if (sm.isActive() || this.mob.isPassenger()) {
+            clearApproach();
+            return;
+        }
+        if (!this.mob.onGround() || this.approach != null) {
             return;
         }
         Objective objective = currentObjective();
         if (objective == null) {
             return;
         }
-        PathNavigation nav = this.mob.getNavigation();
-        Path path = nav.getPath();
+        Path path = this.mob.getNavigation().getPath();
         if (path != null && path.canReach()) {
             return;                                 // 정상 바닐라 경로가 있다 — 개입하지 않는다
         }
-        Vec3 dir = travelDirection(path, objective.goal());
-        if (dir == null) {
+        Vec3 pathDir = pathDirection(path);
+        Vec3 goalDir = flat(objective.goal().subtract(this.mob.position()));
+        GapGeometry geom = pathDir == null ? null : findGeometry(pathDir, objective);
+        if (geom == null && goalDir != null && !sameDirection(pathDir, goalDir)) {
+            geom = findGeometry(goalDir, objective);
+        }
+        if (geom == null) {
             return;
         }
-        Candidate candidate = findCandidate(dir, objective);
-        if (candidate == null) {
+        JumpSolution sol = solveFrom(this.mob.position(), geom);
+        if (sol != null) {
+            jump(geom, sol, objective);
             return;
         }
+        // 속도 상한 초과는 "지형 후보 없음" 이 아니다. 도약 가능한 위치까지 걸어간다.
+        if (geom.takeoffTarget() != null
+                && geom.takeoffTarget().distanceToSqr(this.mob.position()) > 1.0E-4D) {
+            this.approach = geom;
+            this.lastDistance = this.mob.position().distanceTo(geom.takeoffTarget());
+            this.stalledTicks = 0;
+        }
+    }
+
+    private void jump(GapGeometry geom, JumpSolution sol, Objective objective) {
+        WardenGirlSpecialMovement sm = this.mob.specialMovement();
         WardenGirlSpecialMovement.Plan plan = new WardenGirlSpecialMovement.Plan(
                 WardenGirlSpecialMovement.Kind.SPRINT_GAP_JUMP,
-                this.mob.position(), candidate.landing(), objective.purpose(), objective.goal(),
+                sol.origin(), geom.landing(), objective.purpose(), objective.goal(),
                 objective.relatedEntity(), this.mob.level().dimension(),
                 this.mob.level().getGameTime(),
-                this.mob.level().getGameTime()
-                        + candidate.flightTicks() + EXECUTION_MARGIN_TICKS,
+                this.mob.level().getGameTime() + sol.flightTicks() + EXECUTION_MARGIN_TICKS,
                 null, null, true);
+        clearApproach();
         if (sm.tryBegin(plan) != null) {
-            return;                                 // T28 이 거절했다. 실패 기억은 T28 이 남긴다
+            return;
         }
         this.airborne = false;
         this.airTicks = 0;
-        this.gapLength = candidate.gap();
-        this.predictedFlightTicks = candidate.flightTicks();
-        this.takeoffVelocity = candidate.velocity();
-        launch(candidate.velocity());
+        this.gapLength = geom.gap();
+        this.predictedFlightTicks = sol.flightTicks();
+        this.takeoffVelocity = sol.velocity();
+        launch(sol.velocity());
+    }
+
+    // ---- 가장자리 접근 (runtime only, 저장하지 않는다) --------------------------------------
+
+    @Nullable
+    private GapGeometry approach;
+    private double lastDistance;
+    private int stalledTicks;
+
+    private static final int APPROACH_STALL_LIMIT = 40;
+    private static final double APPROACH_MIN_GAIN = 0.01D;
+    private static final double APPROACH_ARRIVE = 0.15D;
+
+    public boolean hasApproachTarget() {
+        return this.approach != null;
+    }
+
+    private void clearApproach() {
+        this.approach = null;
+        this.stalledTicks = 0;
+    }
+
+    /** 접근 Goal 이 매 tick 부른다. 실패 기억은 만들지 않는다. */
+    void tickApproach() {
+        GapGeometry geom = this.approach;
+        if (geom == null) {
+            return;
+        }
+        Objective now = currentObjective();
+        if (now == null || now.purpose() != geom.purpose()
+                || now.goal().distanceToSqr(geom.goal()) > 1.0E-4D
+                || this.mob.specialMovement().isActive() || !this.mob.onGround()
+                || this.mob.level().dimension() != geom.dimension()
+                || geom.takeoffTarget() == null
+                || !WardenGirlMovementSafety.safeLanding(this.mob, geom.landing())
+                || !standable(geom.takeoffTarget())) {
+            clearApproach();
+            return;
+        }
+        JumpSolution sol = solveFrom(this.mob.position(), geom);
+        if (sol != null) {
+            jump(geom, sol, now);
+            return;
+        }
+        double d = this.mob.position().distanceTo(geom.takeoffTarget());
+        if (d <= APPROACH_ARRIVE) {
+            clearApproach();                        // 도착했는데도 상한 초과 — 점프하지 않는다
+            return;
+        }
+        if (this.lastDistance - d < APPROACH_MIN_GAIN) {
+            if (++this.stalledTicks > APPROACH_STALL_LIMIT) {
+                clearApproach();
+                return;
+            }
+        } else {
+            this.stalledTicks = 0;
+        }
+        this.lastDistance = d;
+        Vec3 t = geom.takeoffTarget();
+        this.mob.getMoveControl().setWantedPosition(t.x, t.y, t.z,
+                WardenGirlFollowOwnerGoal.CRUISE_SPEED);
     }
 
     /**
@@ -265,15 +346,16 @@ public final class WardenGirlGapJump {
      * 다음 노드를 먼저 쓰고, 쓸 수 없으면 목적 좌표를 쓴다. 수평 성분만 정규화한다.
      */
     @Nullable
-    private Vec3 travelDirection(@Nullable Path path, Vec3 goal) {
-        if (path != null && !path.isDone()) {
-            Vec3 next = path.getNextEntityPos(this.mob);
-            Vec3 d = flat(next.subtract(this.mob.position()));
-            if (d != null) {
-                return d;
-            }
+    private Vec3 pathDirection(@Nullable Path path) {
+        if (path == null || path.isDone()) {
+            return null;
         }
-        return flat(goal.subtract(this.mob.position()));
+        return flat(path.getNextEntityPos(this.mob).subtract(this.mob.position()));
+    }
+
+    /** 정규화된 두 방향이 사실상 같은가. 각도 문턱이 아니라 점 비교다. */
+    private static boolean sameDirection(@Nullable Vec3 a, @Nullable Vec3 b) {
+        return a != null && b != null && a.distanceToSqr(b) < 1.0E-6D;
     }
 
     @Nullable
@@ -292,7 +374,16 @@ public final class WardenGirlGapJump {
         BLOCKED
     }
 
-    private record Candidate(Vec3 landing, int gap, Vec3 velocity, int flightTicks) {
+    /** 지형 연결만 표현한다. 물리 해가 없어도 폐기하지 않는다. */
+    public record GapGeometry(Vec3 direction, BlockPos originSupport, int gap,
+                              BlockPos landingSupport, Vec3 landing, @Nullable Vec3 takeoffTarget,
+                              WardenGirlSpecialMovement.Purpose purpose, Vec3 goal,
+                              @Nullable UUID relatedEntity,
+                              net.minecraft.resources.ResourceKey<Level> dimension) {
+    }
+
+    /** 실제 출발 위치 기준의 물리 해. */
+    public record JumpSolution(Vec3 origin, Vec3 velocity, int flightTicks, List<Vec3> samples) {
     }
 
     /**
@@ -301,7 +392,7 @@ public final class WardenGirlGapJump {
      * <p>월드 축으로 제한하지 않는다 — 대각선 접근이면 대각선으로 훑는다.
      */
     @Nullable
-    private Candidate findCandidate(Vec3 dir, Objective objective) {
+    private GapGeometry findGeometry(Vec3 dir, Objective objective) {
         Vec3 feet = this.mob.position();
         int floorY = BlockPos.containing(feet).below().getY();
 
@@ -352,7 +443,39 @@ public final class WardenGirlGapJump {
         if (!WardenGirlMovementSafety.improvesProgress(feet, landing, objective.goal())) {
             return null;                            // 목적에서 멀어지는 방향이다
         }
-        return solve(feet, landing, floorY, gap);
+        return new GapGeometry(dir, BlockPos.containing(feet).below(), gap, landingCol, landing,
+                takeoffTarget(dir, floorY), objective.purpose(), objective.goal(),
+                objective.relatedEntity(), this.mob.level().dimension());
+    }
+
+    /**
+     * 출발 지면 위에서 진행 방향으로 가장 앞선, 실제 AABB 가 완전히 지지되는 위치.
+     * 임의 여백 상수를 쓰지 않고 {@code getBoundingBox()} 를 옮겨 검사한다.
+     */
+    @Nullable
+    private Vec3 takeoffTarget(Vec3 dir, int floorY) {
+        Vec3 feet = this.mob.position();
+        Vec3 best = null;
+        for (double t = 0.0D; t <= 2.0D; t += 0.05D) {
+            Vec3 p = feet.add(dir.scale(t));
+            Vec3 q = new Vec3(p.x, floorY + 1.0D, p.z);
+            if (standable(q)) {
+                best = q;
+            } else if (best != null) {
+                break;
+            }
+        }
+        return best;
+    }
+
+    /** 이 발 위치에 실제 AABB 로 안전하게 설 수 있는가. */
+    private boolean standable(Vec3 feet) {
+        Level level = this.mob.level();
+        AABB box = WardenGirlMovementSafety.destinationBox(this.mob, feet);
+        return WardenGirlMovementSafety.chunksLoaded(level, box)
+                && level.noCollision(this.mob, box)
+                && flushFloor(feet, box)
+                && WardenGirlMovementSafety.safeFloorBlock(level, BlockPos.containing(feet));
     }
 
     /**
@@ -401,7 +524,9 @@ public final class WardenGirlGapJump {
      * {@code s = 필요거리 / K} 로 초기 수평 속도를 한 번에 얻는다. 거리별 상수를 쓰지 않는다.
      */
     @Nullable
-    private Candidate solve(Vec3 feet, Vec3 landing, int floorY, int gap) {
+    private JumpSolution solveFrom(Vec3 feet, GapGeometry geom) {
+        Vec3 landing = geom.landing();
+        int floorY = geom.landingSupport().getY();
         double gravity = gravity();
         double jumpPower = this.mob.gapJumpPower();
         int ticks = flightTicks(jumpPower, gravity);
@@ -438,7 +563,7 @@ public final class WardenGirlGapJump {
         if (!WardenGirlMovementSafety.safeLanding(this.mob, predicted)) {
             return null;                            // 실제로 닿을 자리가 안전한지도 본다
         }
-        return new Candidate(landing, gap, velocity, ticks);
+        return new JumpSolution(feet, velocity, ticks, samples);
     }
 
     /** 발이 다시 출발 높이까지 내려오는 데 걸리는 tick. 수평 속도와 무관하다. */
@@ -541,5 +666,6 @@ public final class WardenGirlGapJump {
     void reset() {
         this.airborne = false;
         this.airTicks = 0;
+        clearApproach();
     }
 }
