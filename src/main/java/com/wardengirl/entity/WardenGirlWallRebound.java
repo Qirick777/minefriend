@@ -206,6 +206,15 @@ public final class WardenGirlWallRebound {
             clearApproach();
             return;
         }
+        // T31GATE-TEMP — 진단 게이트. 실제 최고점이 벽보다 훨씬 높고 착지에서 낙하 피해가
+        // 발생하는 원인이 확정될 때까지 <b>자연 발동을 막는다</b>. 고정 시험 목적
+        // (wardengirl test move) 에서만 실행되므로 계측은 그대로 할 수 있고, 소유자 추종·
+        // 전투·후퇴 중에는 시도조차 하지 않아 생존 플레이가 피해를 입지 않는다.
+        // 원인 확정과 궤적 정상화 뒤 제거한다. T29·T30 은 이 게이트의 영향을 받지 않는다.
+        if (objective.purpose() != WardenGirlSpecialMovement.Purpose.TEST_DESTINATION) {
+            clearApproach();
+            return;
+        }
         Path path = this.mob.getNavigation().getPath();
         if (path != null && path.canReach()) {
             clearApproach();
